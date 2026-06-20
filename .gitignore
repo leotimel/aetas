@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.turbo/
+.env
+.env.local
+*.local
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# OS
+.DS_Store
+Thumbs.db
