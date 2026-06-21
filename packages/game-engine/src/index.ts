@@ -1,4 +1,11 @@
 // @aetas/game-engine — pure TS, no I/O, no DB, no network.
 // All game rules live here. Clients never re-implement this logic.
-// Exports added module-by-module as each phase is built.
-export {}
+export * from './types.js'
+export * from './map.js'
+export * from './economy.js'
+export * from './turn.js'
+export * from './combat.js'
+export * from './actions.js'
+export * from './ai.js'
+export * from './diplomacy.js'
+export * from './scoring.js'
