@@ -7,3 +7,6 @@
 export * from './repository.js'
 export * from './disputes.js'
 export * from './orchestration.js'
+// Re-export the full game-engine so Edge Functions and the create-game function
+// can import generateMap, computeVisibleHexes, types, etc. from a single bundle.
+export * from '@aetas/game-engine'
