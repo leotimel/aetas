@@ -1,0 +1,66 @@
+# Supabase local development configuration.
+# Run `supabase start` to spin up a local Supabase stack using these settings.
+# Production settings live in the Supabase Dashboard (supabase.com).
+
+[api]
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+port = 54323
+api_url = "http://localhost"
+
+[inbucket]
+port = 54324
+
+[storage]
+file_size_limit = "50MiB"
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+[auth]
+enabled = true
+# The URL of your application. Supabase will redirect here after OAuth.
+# In production, update to your actual domain.
+site_url = "http://localhost:3000"
+# Allowed redirect URLs (add production URL when deploying)
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# Disable email/password auth entirely — OAuth only (Google + Apple)
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+enable_anonymous_sign_ins = false
+
+# Disable phone auth
+[auth.sms]
+enable_signup = false
+
+# ── Google OAuth ───────────────────────────────────────────────────────────────
+# See docs/AUTH_SETUP.md → Section 1 for how to get these values.
+# For local dev, copy .env.example to .env and fill in your credentials.
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+# Leave redirect_uri empty — Supabase computes it automatically
+redirect_uri = ""
+
+# ── Apple OAuth ────────────────────────────────────────────────────────────────
+# See docs/AUTH_SETUP.md → Section 2 for how to get these values.
+# Apple requires a Service ID (not an App ID) as client_id.
+# The "secret" is a JWT you generate from your .p8 private key.
+[auth.external.apple]
+enabled = true
+client_id = "env(APPLE_SERVICE_ID)"
+secret = "env(APPLE_SECRET_JWT)"
+redirect_uri = ""

@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@aetas/backend-core": "../../packages/backend-core/dist/index.js",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  }
+}

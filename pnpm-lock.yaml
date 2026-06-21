@@ -19,6 +19,22 @@ importers:
 
   apps/web: {}
 
+  packages/backend-core:
+    dependencies:
+      '@aetas/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
+    devDependencies:
+      esbuild:
+        specifier: ^0.21.5
+        version: 0.21.5
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9
+
   packages/game-engine:
     devDependencies:
       typescript:

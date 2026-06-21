@@ -1,0 +1,36 @@
+// POST /resolve-dispute — the attacker or defender resolves a pending combat
+// dispute (possibly out of their own turn — a dispute response is not turn-gated).
+//
+// Thin shell: auth → SupabaseGameRepo → orchestration.resolveDispute → HTTP.
+
+import { resolveDispute } from '@aetas/backend-core'
+import { SupabaseGameRepo } from '../_shared/supabase-repository.ts'
+import { serviceClient, getUserId } from '../_shared/clients.ts'
+import { corsHeaders, json, statusForKind } from '../_shared/cors.ts'
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
+
+  const userId = await getUserId(req)
+  if (!userId) return json({ error: 'unauthorized' }, 401)
+
+  let body: { gameId?: string; disputeId?: string }
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400)
+  }
+  if (!body.gameId || !body.disputeId) return json({ error: 'gameId and disputeId are required' }, 400)
+
+  const repo = new SupabaseGameRepo(serviceClient())
+  const result = await resolveDispute(repo, {
+    gameId: body.gameId,
+    userId,
+    disputeId: body.disputeId,
+    now: Date.now(),
+  })
+
+  if (result.ok) return json({ ok: true, state: result.state }, 200)
+  return json({ ok: false, kind: result.kind, reason: result.reason }, statusForKind(result.kind))
+})

@@ -1,0 +1,27 @@
+{
+  "name": "@aetas/backend-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@aetas/game-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
