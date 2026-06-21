@@ -11,7 +11,7 @@
 //   This keeps packages/game-engine completely untouched (pure, noEmit).
 
 import { build } from 'esbuild'
-import { existsSync } from 'node:fs'
+import { existsSync, copyFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
@@ -41,4 +41,12 @@ await build({
   plugins: [jsToTsResolve],
 })
 
+// Copy bundle into supabase/functions/_shared/ so `supabase functions deploy`
+// can include it (the remote bundler only sees files under supabase/functions/).
+const sharedDir = resolve(pkgRoot, '../../supabase/functions/_shared')
+mkdirSync(sharedDir, { recursive: true })
+const sharedDest = resolve(sharedDir, 'backend-core.js')
+copyFileSync(resolve(pkgRoot, 'dist/index.js'), sharedDest)
+
 console.log('✓ backend-core bundled → dist/index.js')
+console.log('✓ backend-core copied  → supabase/functions/_shared/backend-core.js')

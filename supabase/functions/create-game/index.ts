@@ -8,7 +8,7 @@
 import {
   generateMap,
   computeVisibleHexes,
-} from '@aetas/backend-core'
+} from '../_shared/backend-core.js'
 import { serviceClient, getUserId } from '../_shared/clients.ts'
 import { corsHeaders, json } from '../_shared/cors.ts'
 
@@ -24,16 +24,26 @@ Deno.serve(async (req) => {
   const MAP_RADIUS = 4
   const MAX_TURNS = 10
 
+  const svc = serviceClient()
+  const { data: profile } = await svc.from('profiles').select('selected_civ').eq('user_id', userId).single()
+  const selectedCiv = (profile?.selected_civ as string | null) ?? 'romans'
+
   const gameMap = generateMap(MAP_RADIUS, gameId, 2)
   const [p0Start, p1Start] = gameMap.startPositions
 
   const now = Date.now()
 
+  // Debug: warriors placed adjacent at center for immediate combat testing.
+  // Cities remain at their natural start positions. Movement is v2, so without
+  // this override the warriors would never be close enough to initiate combat.
+  const w0Pos = { q: 0, r: 0 }
+  const w1Pos = { q: 1, r: 0 }  // axial neighbor of (0,0)
+
   // Units
   const w0 = {
     id: `u-${userId.slice(0, 6)}-${now}`,
     unitType: 'warrior',
-    position: p0Start,
+    position: w0Pos,
     stats: { attack: 10, defense: 5, hp: 10, maxHp: 10, movement: 2 },
     ownerId: userId,
     hasMoved: false,
@@ -42,7 +52,7 @@ Deno.serve(async (req) => {
   const w1 = {
     id: `u-${aiId.slice(0, 6)}-${now + 1}`,
     unitType: 'warrior',
-    position: p1Start,
+    position: w1Pos,
     stats: { attack: 10, defense: 5, hp: 10, maxHp: 10, movement: 2 },
     ownerId: aiId,
     hasMoved: false,
@@ -89,7 +99,7 @@ Deno.serve(async (req) => {
       {
         id: userId,
         displayName: 'You',
-        civilizationId: 'romans',
+        civilizationId: selectedCiv,
         resources: { gold: 10, food: 10, production: 10 },
         isEliminated: false,
         isAIControlled: false,
@@ -118,8 +128,6 @@ Deno.serve(async (req) => {
     winner: null,
     isFinished: false,
   }
-
-  const svc = serviceClient()
 
   const { error: gameError } = await svc.from('games').insert({
     id: gameId,

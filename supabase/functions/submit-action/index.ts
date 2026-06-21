@@ -3,7 +3,7 @@
 // Thin shell: auth → build SupabaseGameRepo → orchestration.submitAction → HTTP.
 // All game rules + CAS concurrency live in @aetas/backend-core (tested in Vitest).
 
-import { submitAction, type SubmitableAction } from '@aetas/backend-core'
+import { submitAction, sweepTimeouts, type SubmitableAction } from '../_shared/backend-core.js'
 import { SupabaseGameRepo } from '../_shared/supabase-repository.ts'
 import { serviceClient, getUserId } from '../_shared/clients.ts'
 import { corsHeaders, json, statusForKind } from '../_shared/cors.ts'
@@ -31,6 +31,16 @@ Deno.serve(async (req) => {
     now: Date.now(),
   })
 
-  if (result.ok) return json({ ok: true, state: result.state }, 200)
-  return json({ ok: false, kind: result.kind, reason: result.reason }, statusForKind(result.kind))
+  if (!result.ok) return json({ ok: false, kind: result.kind, reason: result.reason }, statusForKind(result.kind))
+
+  // If the next player is AI-controlled, advance their turn immediately so human players
+  // don't need a cron job during development. Uses far-future 'now' so the freshly-set
+  // turn_deadline (now + TURN_TIMEOUT_MS) is already considered expired.
+  const nextPlayer = result.state.players.find(p => p.id === result.state.currentPlayerId)
+  if (!result.state.isFinished && nextPlayer?.isAIControlled) {
+    const farFuture = Date.now() + 30 * 24 * 60 * 60 * 1000
+    await sweepTimeouts(new SupabaseGameRepo(serviceClient()), { now: farFuture })
+  }
+
+  return json({ ok: true, state: result.state }, 200)
 })

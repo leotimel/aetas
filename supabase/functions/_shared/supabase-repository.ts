@@ -7,13 +7,13 @@
 // fully covered in packages/backend-core via the FakeGameRepo. Real end-to-end
 // exercise happens at the integration checkpoint (Phase 3) against a live stack.
 
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import type {
   GameRepo,
   LoadedGame,
   ApplyTurnArgs,
   ResolveDisputeArgs,
-} from '@aetas/backend-core'
+} from './backend-core.js'
 
 const toIso = (ms: number | null): string | null => (ms === null ? null : new Date(ms).toISOString())
 const toMs = (iso: string | null): number | null => (iso === null ? null : Date.parse(iso))

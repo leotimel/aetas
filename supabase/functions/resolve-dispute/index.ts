@@ -3,7 +3,7 @@
 //
 // Thin shell: auth → SupabaseGameRepo → orchestration.resolveDispute → HTTP.
 
-import { resolveDispute } from '@aetas/backend-core'
+import { resolveDispute } from '../_shared/backend-core.js'
 import { SupabaseGameRepo } from '../_shared/supabase-repository.ts'
 import { serviceClient, getUserId } from '../_shared/clients.ts'
 import { corsHeaders, json, statusForKind } from '../_shared/cors.ts'

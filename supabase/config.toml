@@ -11,7 +11,7 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 54320
-major_version = 15
+major_version = 17
 
 [studio]
 port = 54323
@@ -39,7 +39,6 @@ refresh_token_reuse_interval = 10
 [auth.email]
 enable_signup = false
 enable_confirmations = false
-enable_anonymous_sign_ins = false
 
 # Disable phone auth
 [auth.sms]

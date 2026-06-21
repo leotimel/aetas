@@ -4,7 +4,7 @@
 // players whose turn deadline has passed. Authenticated by a shared cron secret,
 // NOT a user JWT. Idempotent: re-running is safe (CAS guards make repeats no-ops).
 
-import { sweepTimeouts } from '@aetas/backend-core'
+import { sweepTimeouts } from '../_shared/backend-core.js'
 import { SupabaseGameRepo } from '../_shared/supabase-repository.ts'
 import { serviceClient } from '../_shared/clients.ts'
 import { corsHeaders, json } from '../_shared/cors.ts'

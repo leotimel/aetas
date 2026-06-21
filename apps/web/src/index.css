@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  --color-aetas-gold: #c9a84c;
+  --color-aetas-gold-light: #e8c97a;
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+}
