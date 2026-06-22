@@ -16,7 +16,7 @@ export const CIVILIZATIONS: readonly CivDefinition[] = [
   { id: 'vikings',   name: 'Vikings',   flag: '⚔️',  color: '#6b7280', unlockLevel: 3, description: 'Guerreiros do norte inclemente.' },
   { id: 'egyptians', name: 'Egípcios',  flag: '☀️',  color: '#f59e0b', unlockLevel: 4, description: 'Construtores de civilizações eternas.' },
   { id: 'mongols',   name: 'Mongóis',   flag: '🏹',  color: '#22c55e', unlockLevel: 6, description: 'Conquistadores das estepes sem fim.' },
-  { id: 'aztecs',    name: 'Astecas',   flag: '🌺',  color: '#a855f7', unlockLevel: 8, description: 'Sacerdotes de um império solar.' },
+  { id: 'china',     name: 'China',     flag: '🐉',  color: '#c0392b', unlockLevel: 8, description: 'Comércio e tecnologia avançada.' },
 ] as const
 
 // ─── Level / XP ──────────────────────────────────────────────────────────────

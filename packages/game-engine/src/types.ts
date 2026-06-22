@@ -46,10 +46,16 @@ export enum TerrainType {
 
 /** Base unit types available to all civilizations. */
 export enum UnitType {
-  Warrior = 'warrior',
-  Archer  = 'archer',
-  Knight  = 'knight',
-  Settler = 'settler',
+  // Era Ancient
+  Warrior     = 'warrior',
+  Archer      = 'archer',
+  Settler     = 'settler',
+  // Era Classical
+  Cavalry     = 'cavalry',
+  Catapult    = 'catapult',
+  // Era Medieval
+  Knight      = 'knight',
+  Crossbowman = 'crossbowman',
 }
 
 export enum CombatDisputeStatus {
@@ -73,12 +79,16 @@ export interface Resources {
 }
 
 export interface UnitStats {
-  attack:   number
-  defense:  number
-  hp:       number
-  maxHp:    number
+  attack:           number
+  defense:          number
+  hp:               number
+  maxHp:            number
   /** Hexes this unit can move per turn. */
-  movement: number
+  movement:         number
+  /** Attack range in hexes. Omitted = 1 (melee). */
+  range?:           number
+  /** Extra damage against cities (siege units only). */
+  cityAttackBonus?: number
 }
 
 // ─── Civilization ─────────────────────────────────────────────────────────────
@@ -91,6 +101,7 @@ export type CivilizationAbilityEffect =
   | { type: 'productionBonus'; multiplier: number }
   | { type: 'combatBonus';     multiplier: number }
   | { type: 'goldBonus';       multiplier: number }
+  | { type: 'foodBonus';       multiplier: number }
   | { type: 'visionBonus';     extraRadius: number }
 
 export interface CivilizationAbility {
@@ -142,6 +153,28 @@ export interface Unit {
   /** Resets to false at the start of the owner's turn. */
   hasMoved:           boolean
   hasAttacked:        boolean
+  /** True only for Settler units; allows founding a new city. */
+  canFoundCity?:      boolean
+}
+
+// ─── Buildings ────────────────────────────────────────────────────────────────
+
+/** One completed building slot per city, keyed by type. Max one of each. */
+export enum BuildingType {
+  Barracks = 'barracks',
+  Wall     = 'wall',
+  Market   = 'market',
+  Port     = 'port',
+  Library  = 'library',
+  Temple   = 'temple',
+}
+
+/** Tracks a building currently under construction. Cleared when turnsRemaining hits 0. */
+export interface BuildingConstruction {
+  readonly buildingType:  BuildingType
+  turnsRemaining:         number
+  /** Original turn count (unchanged after start — used for progress display). */
+  readonly totalTurns:    number
 }
 
 // ─── City ─────────────────────────────────────────────────────────────────────
@@ -156,6 +189,10 @@ export interface City {
   level:              number
   /** Accumulated food toward next population growth. Resets (partially) on growth. */
   foodStored:         number
+  /** Completed buildings. Optional for backward compat with existing DB rows (treat as []). */
+  buildings?:         readonly BuildingType[]
+  /** Active construction slot. Optional; null/undefined = idle. */
+  construction?:      BuildingConstruction | null
 }
 
 // ─── Map ──────────────────────────────────────────────────────────────────────

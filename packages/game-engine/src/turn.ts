@@ -1,6 +1,7 @@
 import { TurnState, CombatDisputeStatus } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
 import { processTurnEconomy } from './economy.js'
+import { getCivEconomyMultipliers } from './civilizations.js'
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -123,14 +124,20 @@ export function endTurn(
   let cities = state.cities.map(c => ({ ...c }))
   let combatDisputes = state.combatDisputes.map(d => ({ ...d }))
 
-  // Step 2 — economy for the actor only.
+  // Step 2 — economy for the actor only (civ bonus applied to income, not stockpile).
   const actor = players.find(p => p.id === actorId)
   if (actor) {
     const actorCities = cities.filter(c => c.ownerId === actorId)
+    const preResources = { ...actor.resources }
     const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources)
     const updatedById = new Map(updatedCities.map(c => [c.id, c]))
     cities = cities.map(c => updatedById.get(c.id) ?? c)
-    actor.resources = updatedResources
+    const m = getCivEconomyMultipliers(actor.civilizationId)
+    actor.resources = {
+      gold:       Math.round(preResources.gold       + (updatedResources.gold       - preResources.gold)       * m.gold),
+      food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production),
+    }
   }
 
   // Step 3 — resolve expired disputes (deterministic order by id).

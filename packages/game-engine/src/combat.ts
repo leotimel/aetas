@@ -1,6 +1,7 @@
 import { TerrainType, CombatDisputeStatus } from './types.js'
 import type { Unit, CombatDispute, GameState, HexCoord } from './types.js'
 import { hexKey } from './map.js'
+import { getCivCombatMultiplier } from './civilizations.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,10 +40,14 @@ export interface CombatResult {
 }
 
 export interface ResolveCombatOpts {
-  defenderTerrain: TerrainType
-  attackerTerrain?: TerrainType
+  defenderTerrain:         TerrainType
+  attackerTerrain?:        TerrainType
   /** True only when the defender actively responded (human or substitute AI). */
-  defenderActiveDefense?: boolean
+  defenderActiveDefense?:  boolean
+  /** Multiplier applied to attacker's base attack (from civ combatBonus). Default 1. */
+  attackerCivMultiplier?:  number
+  /** Multiplier applied to defender's base attack when counterattacking. Default 1. */
+  defenderCivMultiplier?:  number
 }
 
 function withHp(unit: Unit, hp: number): Unit {
@@ -84,7 +89,8 @@ export function resolveCombat(
     defender.stats.defense +
     terrainDefenseBonus(opts.defenderTerrain) +
     (activeDefense ? ACTIVE_DEFENSE_BONUS : 0)
-  const damageToDefender = Math.max(MIN_DAMAGE, attacker.stats.attack - defenderDefense)
+  const attackMult = opts.attackerCivMultiplier ?? 1
+  const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense)
   const defenderHp = defender.stats.hp - damageToDefender
 
   // Defender destroyed → no counterattack.
@@ -102,7 +108,8 @@ export function resolveCombat(
 
   // Defender survives → counterattacks.
   const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain)
-  const damageToAttacker = Math.max(MIN_DAMAGE, defender.stats.attack - attackerDefense)
+  const defMult = opts.defenderCivMultiplier ?? 1
+  const damageToAttacker = Math.max(MIN_DAMAGE, Math.floor(defender.stats.attack * defMult) - attackerDefense)
   const attackerHp = attacker.stats.hp - damageToAttacker
   const attackerDestroyed = attackerHp <= 0
 
@@ -246,10 +253,14 @@ export function resolveDisputeByAction(
     }
   }
 
+  const atkPlayer = state.players.find(p => p.id === dispute.attackerPlayerId)
+  const defPlayer = state.players.find(p => p.id === dispute.defenderPlayerId)
   const result = resolveCombat(attacker, defender, {
-    defenderTerrain: terrainAt(state, defender.position),
-    attackerTerrain: terrainAt(state, attacker.position),
-    defenderActiveDefense: actingPlayerId === dispute.defenderPlayerId,
+    defenderTerrain:        terrainAt(state, defender.position),
+    attackerTerrain:        terrainAt(state, attacker.position),
+    defenderActiveDefense:  actingPlayerId === dispute.defenderPlayerId,
+    attackerCivMultiplier:  atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier:  defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
   })
 
   const applied = applyCombatResult(state, result)
@@ -281,10 +292,14 @@ export function resolveTimedOutDispute(dispute: CombatDispute, state: GameState)
   const defender = findUnit(state, dispute.defenderUnitId)
   if (!attacker || !defender) return state
 
+  const atkPlayer = state.players.find(p => p.id === dispute.attackerPlayerId)
+  const defPlayer = state.players.find(p => p.id === dispute.defenderPlayerId)
   const result = resolveCombat(attacker, defender, {
-    defenderTerrain: terrainAt(state, defender.position),
-    attackerTerrain: terrainAt(state, attacker.position),
+    defenderTerrain:       terrainAt(state, defender.position),
+    attackerTerrain:       terrainAt(state, attacker.position),
     defenderActiveDefense: false,
+    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
   })
 
   return applyCombatResult(state, result)

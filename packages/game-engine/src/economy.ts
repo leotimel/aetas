@@ -1,5 +1,6 @@
 import { CitySpecialization } from './types.js'
 import type { City, Resources } from './types.js'
+import { applyBuildingBonuses, tickConstruction } from './buildings.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -68,11 +69,13 @@ export function computeCityProduction(city: City): Resources {
   const m = SPECIALIZATION_MULTIPLIERS[city.specialization]
   const lv = 1 + (city.level - 1) * LEVEL_BONUS_PER_LEVEL
 
-  return {
+  const base: Resources = {
     gold:       Math.round(city.population * BASE_GOLD_PER_POP        * m.gold       * lv),
     food:       Math.round(city.population * BASE_FOOD_PER_POP        * m.food       * lv),
     production: Math.round(city.population * BASE_PRODUCTION_PER_POP  * m.production * lv),
   }
+
+  return applyBuildingBonuses(city.buildings ?? [], base)
 }
 
 // ─── Population growth ────────────────────────────────────────────────────────
@@ -135,7 +138,8 @@ export function processTurnEconomy(
     gold       += produced.gold
     food       += produced.food
     production += produced.production
-    updatedCities.push(applyGrowth(city, produced.food))
+    const grown = applyGrowth(city, produced.food)
+    updatedCities.push(tickConstruction(grown))
   }
 
   return {
