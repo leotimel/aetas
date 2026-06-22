@@ -1,0 +1,35 @@
+@theme {
+  /* Fontes */
+  --font-family-display: 'Cinzel', Georgia, serif;
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+
+  /* Ouro — ação primária */
+  --color-aetas-gold:       #c9a84c;
+  --color-aetas-gold-light: #e8c97a;
+  --color-aetas-gold-dark:  #8f6b20;
+
+  /* Vermelho imperial — ação destrutiva / guerra */
+  --color-aetas-red:      #8b1a1a;
+  --color-aetas-red-dark: #6b1414;
+
+  /* Azul-pedra — estados diplomáticos / neutro */
+  --color-aetas-blue: #1a2744;
+
+  /* Verde-floresta — aliança / positivo */
+  --color-aetas-green: #1a3d1a;
+
+  /* Fundos warm-dark */
+  --color-aetas-bg:      #0e0c09;
+  --color-aetas-surface: #17140f;
+  --color-aetas-raised:  #211d16;
+  --color-aetas-panel:   #2b261e;
+
+  /* Bordas */
+  --color-aetas-border:        #38301f;
+  --color-aetas-border-strong: #4d4230;
+
+  /* Hierarquia de texto — warm cream */
+  --color-aetas-text:  #e8dcc8;
+  --color-aetas-muted: #9d8c75;
+  --color-aetas-dim:   #6b5d48;
+}
