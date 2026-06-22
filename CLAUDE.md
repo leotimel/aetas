@@ -23,6 +23,28 @@ Violar essa regra duplica bugs em 3 interfaces. Não fazer.
 
 ---
 
+## Estado atual das fases
+
+| Fase | Status | Entrega |
+|---|---|---|
+| 0 — Monorepo + CLAUDE.md + Glossário | ✅ | scaffold, docs base |
+| 1 — Motor de jogo (game-engine) | ✅ | types, map, turn, combat, economy, diplomacy, ai, scoring |
+| 1.5 — Profundidade de conteúdo | ✅ | 8 tipos de unidade, 6 edifícios/spec, 6 civilizações |
+| 2 — Backend Supabase | ✅ | schema Postgres, OAuth, Edge Functions, Realtime |
+| 3 — Debug client | ✅ | mapa hex visual, ações de turno, inspeção de estado |
+| 4 — Web básica | ✅ | auth, mapa SVG, fog of war, modal de cidade, perfil/XP, daily |
+| 4 (polimento 4.4–4.7) | ✅ | cores de civ, tema dark/dourado (Cinzel + gold), [v2] removido, nomes de civ no lugar de IDs |
+| **4.5 — Web Jogável** | 🔜 | estética Roma Antiga, movimento com preview, Colono, combate narrativo, eras, diplomacia, i18n |
+| 5 — Android (Kotlin) | ⏳ | — |
+| 6 — Google Play | ⏳ | — |
+| 7 — iOS (Swift/SwiftUI) | ⏳ | requer Mac |
+| 8 — App Store | ⏳ | — |
+
+**Próximo:** Fase 4.5 — Bloco A (design system Roma Antiga + texturas + sprites + animações).
+**AskUserQuestions é obrigatório** antes de qualquer decisão de design, UX ou arquitetura não coberta no playbook.
+
+---
+
 ## Estrutura do monorepo
 
 ```
@@ -32,16 +54,16 @@ aetas/
 │   ├── migrations/         # schema Postgres
 │   └── functions/          # Edge Functions TS (importam game-engine)
 ├── apps/
-│   ├── debug-client/       # Fase 3 — valida motor+backend, grade visual de hex
-│   ├── web/                # Fase 4 — React + Vite + Tailwind
-│   ├── ios/                # Fase 5 — Swift/SwiftUI  ← NÃO criar agora
-│   └── android/            # Fase 6 — Kotlin         ← NÃO criar agora
-└── docs/                   # GAME_DESIGN.md · ARCHITECTURE.md · PLAYBOOK_PROMPTS.md · GLOSSARY.md
+│   ├── debug-client/       # Fase 3 ✅ — valida motor+backend, grade visual de hex
+│   ├── web/                # Fase 4 ✅ — React + Vite + Tailwind v4
+│   ├── android/            # Fase 5 — Kotlin  ← NÃO criar agora
+│   └── ios/                # Fase 7 — Swift/SwiftUI  ← NÃO criar agora (requer Mac)
+└── docs/                   # GAME_DESIGN.md · ARCHITECTURE.md · GLOSSARY.md
 ```
 
-**Ordem de construção por risco decrescente:**
-motor → backend → debug-client → web → iOS → Android.
-Cada etapa só começa com a anterior testada e com CHECKPOINT aprovado.
+**Ordem real de construção:**
+motor → backend → debug-client → web → **Android** → Google Play → iOS → App Store.
+Android vem antes de iOS porque não requer Mac. iOS fica por último.
 
 ---
 
@@ -54,13 +76,15 @@ Cada etapa só começa com a anterior testada e com CHECKPOINT aprovado.
 | Mapa | Hex procedural, fog of war, tamanho a calibrar em playtesting |
 | Economia | 3 recursos: ouro, comida, produção; cidades com crescimento passivo + especialização |
 | Progressão | Por eras (poucos níveis), não árvore ramificada |
-| Civilizações | 1-2 habilidades + 1 unidade especial; desbloqueáveis por XP |
+| Civilizações | 6 civilizações; 1-2 habilidades + 1 unidade especial; desbloqueáveis por XP |
 | Combate | Tático (stats + terreno + ordem); disputa assíncrona ~24h com timeout automático |
 | Diplomacia | Pacto de não-agressão + troca de recursos, só após contato |
 | Vitória | Pontuação combinada (território + população + desenvolvimento) ao fim de N turnos |
 | Eliminação | Jogador sai; território vira neutro |
 | Auth | OAuth apenas — Google + Apple, sem e-mail/senha |
 | Retenção | Múltiplas partidas + desafio diário seed do dia + meta-progressão XP |
+| Visual (web) | Paleta dark quente (pedra à noite), dourado, fonte Cinzel nos títulos |
+| Idioma (web) | EN padrão, PT disponível; seletor no header |
 
 ## Decisões V2+ — NÃO construir agora
 
@@ -76,18 +100,19 @@ Cada etapa só começa com a anterior testada e com CHECKPOINT aprovado.
 
 | Tarefa | Modelo |
 |---|---|
-| Scaffold, configs, schema Postgres, UI de qualquer client | Sonnet |
-| `types.ts`, `economy.ts`, `diplomacy.ts`, `scoring.ts` | Sonnet |
-| Geração de mapa hex + fog of war | Sonnet |
-| Edge Functions simples (auth, read-only) | Sonnet |
-| **`turn.ts` — máquina de estados do turno sequencial** | **Opus** |
-| **`combat.ts` — disputa assíncrona + timeout** | **Opus** |
-| **`ai.ts` — IA seguradora de posição + oponente** | **Opus** |
-| **Edge Functions de orquestração (concorrência real)** | **Opus** |
-| **Debugging de sincronização entre clients** | **Opus** |
+| Scaffold, configs, schema Postgres, UI de qualquer client | Sonnet 4.6 |
+| `types.ts`, `economy.ts`, `diplomacy.ts`, `scoring.ts` | Sonnet 4.6 |
+| Geração de mapa hex + fog of war | Sonnet 4.6 |
+| Edge Functions simples (auth, read-only) | Sonnet 4.6 |
+| **`turn.ts` — máquina de estados do turno sequencial** | **Opus 4.8** |
+| **`combat.ts` — disputa assíncrona + timeout** | **Opus 4.8** |
+| **`ai.ts` — IA seguradora de posição + oponente** | **Opus 4.8** |
+| **Edge Functions de orquestração (concorrência real)** | **Opus 4.8** |
+| **Debugging de sincronização entre clients** | **Opus 4.8** |
+| **Diplomacia (estado de relação multi-jogador)** | **Opus 4.8** |
 
-Regra prática: **comece em Sonnet**; troque para Opus só no prompt específico
-que mexe com estado distribuído ou condições de corrida.
+Regra prática: **comece em Sonnet 4.6**; troque para Opus 4.8 só no prompt
+específico que mexe com estado distribuído ou condições de corrida.
 
 ---
 
@@ -100,6 +125,8 @@ que mexe com estado distribuído ou condições de corrida.
 - Termos de domínio: `docs/GLOSSARY.md` — Swift e Kotlin seguem suas convenções
   nativas mas mapeiam para os mesmos conceitos canônicos
 - Commits por fase; CHECKPOINTs do playbook não são opcionais
+- **AskUserQuestions é regra** — qualquer decisão de design/UX/arquitetura não
+  coberta no playbook deve ser resolvida via pergunta antes de codar
 
 ---
 

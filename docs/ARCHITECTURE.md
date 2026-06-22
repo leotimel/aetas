@@ -13,9 +13,10 @@ persistente — por isso o backend é o coração do produto, não um adendo.
   compartilhado entre backend (Supabase Edge Functions) e os clients, evita
   duplicar regras de jogo em duas linguagens.
 - **Clients:** três front-ends completos e independentes, todos consumindo a
-  mesma API: **Web** (React), **iOS nativo** (Swift/SwiftUI), **Android
-  nativo** (Kotlin). Ambos os nativos desde a v1 — decisão consciente de
-  maior escopo, não um meio-termo via React Native ou PWA.
+  mesma API: **Web** (React), **Android nativo** (Kotlin), **iOS nativo**
+  (Swift/SwiftUI). Ambos os nativos desde a v1 — decisão consciente de maior
+  escopo, não um meio-termo via React Native ou PWA. Ordem de construção:
+  Android antes de iOS (iOS requer Mac; Android roda no Windows sem restrição).
 - **Autenticação:** OAuth apenas (Google + Apple) — sem e-mail/senha. Login
   social já entrega nome e foto prontos, úteis para identificar jogadores
   numa partida de 4-8 pessoas, sem construir fluxo de recuperação de senha.
@@ -28,9 +29,11 @@ persistente — por isso o backend é o coração do produto, não um adendo.
   TS, Swift e Kotlin devem seguir nas suas convenções nativas de nomenclatura
   — evita o mesmo conceito ganhar nomes diferentes em cada client.
   1. Motor + backend, validado por um cliente de debug mínimo (texto/web simples).
-  2. Web completa.
-  3. iOS nativo.
-  4. Android nativo.
+  2. Web completa (Fase 4 ✅) + Web Jogável (Fase 4.5 🔜).
+  3. Android nativo (Kotlin) — sem restrição de plataforma.
+  4. Publicação Google Play.
+  5. iOS nativo (Swift/SwiftUI) — requer Mac ou CI na nuvem (Codemagic).
+  6. Publicação App Store.
   Cada etapa só começa com a anterior testada — o motor de jogo (a parte
   mais arriscada: regras, turnos, combate) é validado ANTES de qualquer
   investimento em UI bonita, nativa ou não.
@@ -66,10 +69,10 @@ aetas/
 │   ├── migrations/           # schema Postgres (partidas, jogadores, estado)
 │   └── functions/            # Edge Functions TS que usam @aetas/game-engine
 ├── apps/
-│   ├── debug-client/         # CLI ou web mínima — valida motor+backend primeiro
-│   ├── web/                  # React — segundo a ser construído
-│   ├── ios/                  # Swift/SwiftUI — terceiro
-│   └── android/              # Kotlin — quarto
+│   ├── debug-client/         # ✅ web mínima — valida motor+backend
+│   ├── web/                  # ✅ React/Vite/Tailwind v4 — Fase 4 completa
+│   ├── android/              # Kotlin — Fase 5 (próximo após 4.5)
+│   └── ios/                  # Swift/SwiftUI — Fase 7 (requer Mac)
 └── docs/
     ├── GAME_DESIGN.md
     └── ARCHITECTURE.md       # este arquivo
