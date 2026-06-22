@@ -82,8 +82,10 @@ export default function HexMap({
   const clickMoved = useRef(false)
   const [dyingUnits, setDyingUnits] = useState<DyingUnit[]>([])
   const [newCityIds, setNewCityIds] = useState<Set<string>>(new Set())
-  const prevUnitsRef   = useRef<Map<string, { position: HexCoord; unitType: string; ownerId: string }> | null>(null)
-  const prevCityIdsRef = useRef<Set<string> | null>(null)
+  const [capturedCityIds, setCapturedCityIds] = useState<Set<string>>(new Set())
+  const prevUnitsRef      = useRef<Map<string, { position: HexCoord; unitType: string; ownerId: string }> | null>(null)
+  const prevCityIdsRef    = useRef<Set<string> | null>(null)
+  const prevCityOwnerRef  = useRef<Map<string, string> | null>(null)
 
   // Measure SVG container to set initial center
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function HexMap({
       for (const u of gameState.units) init.set(u.id, { position: u.position, unitType: u.unitType, ownerId: u.ownerId })
       prevUnitsRef.current = init
       prevCityIdsRef.current = new Set(gameState.cities.map(c => c.id))
+      prevCityOwnerRef.current = new Map(gameState.cities.map(c => [c.id, c.ownerId]))
       return
     }
 
@@ -134,10 +137,21 @@ export default function HexMap({
       setTimeout(() => setNewCityIds(new Set()), 950)
     }
 
+    const prevOwners = prevCityOwnerRef.current!
+    const captured = new Set<string>()
+    gameState.cities.forEach(c => {
+      if (prevOwners.has(c.id) && prevOwners.get(c.id) !== c.ownerId) captured.add(c.id)
+    })
+    if (captured.size > 0) {
+      setCapturedCityIds(captured)
+      setTimeout(() => setCapturedCityIds(new Set()), 1500)
+    }
+
     const newMap = new Map<string, { position: HexCoord; unitType: string; ownerId: string }>()
     for (const u of gameState.units) newMap.set(u.id, { position: u.position, unitType: u.unitType, ownerId: u.ownerId })
     prevUnitsRef.current = newMap
     prevCityIdsRef.current = currentCityIds
+    prevCityOwnerRef.current = new Map(gameState.cities.map(c => [c.id, c.ownerId]))
   }, [gameState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Zoom/pan: mouse wheel ---
@@ -372,10 +386,13 @@ export default function HexMap({
           const color = playerColorMap.get(city.ownerId) ?? '#888'
           return (
             <g key={city.id}
-               className={newCityIds.has(city.id) ? 'anim-city-spring' : undefined}
+               className={
+                 newCityIds.has(city.id) ? 'anim-city-spring' :
+                 capturedCityIds.has(city.id) ? 'anim-city-capture' : undefined
+               }
                style={{ transform: `translate(${px}px, ${py}px)`, cursor: 'pointer' }}
                onClick={() => handleHexClick(city.position)}>
-              <CityIcon cx={0} cy={0} color={color} level={city.level} />
+              <CityIcon cx={0} cy={0} color={color} level={city.level} hp={city.hp} maxHp={city.maxHp} />
             </g>
           )
         })}
@@ -417,8 +434,13 @@ export default function HexMap({
   )
 }
 
-function CityIcon({ cx, cy, color, level }: { cx: number; cy: number; color: string; level: number }) {
+function CityIcon({ cx, cy, color, level, hp, maxHp }: {
+  cx: number; cy: number; color: string; level: number; hp?: number; maxHp?: number
+}) {
   const Sprite = level >= 3 ? CapitalSprite : CitySprite
+  const showHpBar = hp !== undefined && maxHp !== undefined && hp < maxHp
+  const hpRatio = showHpBar ? hp / maxHp : 1
+  const hpColor = hpRatio > 0.5 ? '#4ade80' : hpRatio > 0.25 ? '#facc15' : '#ef4444'
   return (
     <>
       <svg x={cx - 11} y={cy - 11} width={22} height={22} viewBox="0 0 40 40" overflow="hidden">
@@ -427,6 +449,13 @@ function CityIcon({ cx, cy, color, level }: { cx: number; cy: number; color: str
       {/* Level badge */}
       <circle cx={cx + 7} cy={cy + 7} r={5} fill="#0e0c09" />
       <text x={cx + 7} y={cy + 11} fontSize={7} fill="#c9a84c" textAnchor="middle" fontWeight="bold">{level}</text>
+      {/* HP bar — only when damaged */}
+      {showHpBar && (
+        <>
+          <rect x={cx - 11} y={cy + 13} width={22} height={3} rx={1.5} fill="#111" />
+          <rect x={cx - 11} y={cy + 13} width={22 * hpRatio} height={3} rx={1.5} fill={hpColor} />
+        </>
+      )}
     </>
   )
 }

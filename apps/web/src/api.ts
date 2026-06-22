@@ -1,5 +1,5 @@
 import { supabase } from './supabase.ts'
-import type { GameAction } from '@aetas/game-engine'
+import type { GameAction, GameState } from '@aetas/game-engine'
 
 const FUNCTIONS_BASE = (import.meta.env.VITE_SUPABASE_URL as string) + '/functions/v1'
 
@@ -40,7 +40,7 @@ export const submitAction = (gameId: string, action: GameAction) =>
   post<{ ok: boolean }>('/submit-action', { gameId, action })
 
 export const resolveDispute = (gameId: string, disputeId: string) =>
-  post<{ ok: boolean }>('/resolve-dispute', { gameId, disputeId })
+  post<{ ok: boolean; state?: GameState }>('/resolve-dispute', { gameId, disputeId })
 
 export const createTestGame = () =>
   post<{ gameId: string }>('/create-game', {})

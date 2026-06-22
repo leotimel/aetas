@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { GameState, HexCoord, CitySpecialization } from '@aetas/game-engine'
-import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG } from '@aetas/game-engine'
+import type { GameState, HexCoord, CitySpecialization, Unit } from '@aetas/game-engine'
+import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -8,6 +8,7 @@ import ActionSheet from '../components/ActionSheet.tsx'
 import PlayerBar from '../components/PlayerBar.tsx'
 import CityModal from '../components/CityModal.tsx'
 import FoundCityModal from '../components/FoundCityModal.tsx'
+import CombatPreviewModal from '../components/CombatPreviewModal.tsx'
 import GameOverScreen from '../components/GameOverScreen.tsx'
 
 interface Props {
@@ -29,6 +30,35 @@ function unitLabel(unitType: string): string {
 
 function buildingLabel(buildingType: BuildingType): string {
   return BUILDING_CATALOG.get(buildingType)?.name ?? buildingType
+}
+
+function formatDisputeResolutionLog(pre: GameState, post: GameState, atk: Unit, def: Unit): string {
+  const atkName = unitLabel(atk.unitType)
+  const defName = unitLabel(def.unitType)
+  const defCiv  = civName(pre.players, def.ownerId)
+  const atkPostHp = post.units.find(u => u.id === atk.id)?.stats.hp
+  const defPostHp = post.units.find(u => u.id === def.id)?.stats.hp
+  const atkDestroyed = atkPostHp === undefined
+  const defDestroyed = defPostHp === undefined
+  const dmgToDef = defDestroyed ? def.stats.hp : def.stats.hp - (defPostHp ?? def.stats.hp)
+  const dmgToAtk = atkDestroyed ? atk.stats.hp : atk.stats.hp - (atkPostHp ?? atk.stats.hp)
+  if (defDestroyed)
+    return `⚔️ Seu ${atkName} destruiu o ${defName} dos ${defCiv}. (+${dmgToDef} dano${dmgToAtk > 0 ? `, −${dmgToAtk} HP` : ''})`
+  if (atkDestroyed)
+    return `⚔️ Seu ${atkName} foi destruído pelo ${defName} dos ${defCiv}. (inimigo: ${defPostHp} HP)`
+  return `⚔️ Seu ${atkName} atacou o ${defName} dos ${defCiv}. (−${dmgToDef} HP deles, −${dmgToAtk} HP seus)`
+}
+
+function formatCityAttackLog(pre: GameState, post: GameState | null, unitId: string, cityId: string): string {
+  const unit = pre.units.find(u => u.id === unitId)
+  const city = pre.cities.find(c => c.id === cityId)
+  if (!unit || !city) return '🏰 Ataque à cidade realizado'
+  const postCity = post?.cities.find(c => c.id === cityId)
+  const captured = postCity && postCity.ownerId !== city.ownerId
+  const name = unitLabel(unit.unitType)
+  if (captured) return `🏰 Seu ${name} capturou ${city.name}!`
+  const dmg = (city.hp ?? 10) - (postCity?.hp ?? city.hp ?? 10)
+  return `🏰 Seu ${name} atacou ${city.name} (−${dmg} HP, restante: ${postCity?.hp ?? '?'}/${city.maxHp ?? 10})`
 }
 
 function errorLabel(err?: string | null): string {
@@ -54,6 +84,8 @@ function errorLabel(err?: string | null): string {
     'unit cannot found a city': 'unidade não pode fundar cidade',
     'cannot found a city on water': 'não é possível fundar em água',
     'too close to an existing city': 'muito perto de outra cidade',
+    'cannot attack your own city': 'não é possível atacar sua própria cidade',
+    'city is not adjacent': 'cidade não é adjacente',
   }
   return known[err] ?? err
 }
@@ -71,6 +103,8 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [error, setError] = useState('')
   const [foundingUnitId, setFoundingUnitId] = useState<string | null>(null)
   const [foundCityLoading, setFoundCityLoading] = useState(false)
+  const [combatPreview, setCombatPreview] = useState<{ attackerId: string; defenderId: string } | null>(null)
+  const [combatLoading, setCombatLoading] = useState(false)
 
   const gameStateRef = useRef<GameState | null>(null)
   useEffect(() => { gameStateRef.current = gameState }, [gameState])
@@ -80,15 +114,17 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     setLog(l => [`${ts} ${msg}`, ...l].slice(0, 40))
   }
 
-  const fetchGame = useCallback(async () => {
+  const fetchGame = useCallback(async (): Promise<GameState | null> => {
     const { data, error: err } = await supabase
       .from('games')
       .select('game_state, turn_number, current_player_id, is_finished, winner_id')
       .eq('id', gameId)
       .single()
-    if (err) { setError(err.message); return }
-    setGameState(data.game_state as GameState)
+    if (err) { setError(err.message); return null }
+    const gs = data.game_state as GameState
+    setGameState(gs)
     setLoading(false)
+    return gs
   }, [gameId])
 
   useEffect(() => {
@@ -118,8 +154,23 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         void fetchGame()
       })
       .on('broadcast', { event: 'dispute_resolved' }, () => {
-        addLog('Resultado de combate disponível')
-        void fetchGame()
+        const preState = gameStateRef.current
+        void fetchGame().then(postState => {
+          if (preState && postState) {
+            const resolved = preState.combatDisputes.find(
+              d => d.status === CombatDisputeStatus.Pending &&
+                   !postState.combatDisputes.some(pd => pd.id === d.id && pd.status === CombatDisputeStatus.Pending),
+            )
+            if (resolved) {
+              const atk = preState.units.find(u => u.id === resolved.attackerUnitId)
+              const def = preState.units.find(u => u.id === resolved.defenderUnitId)
+              if (atk && def) addLog(formatDisputeResolutionLog(preState, postState, atk, def))
+              else addLog('⚔️ Combate resolvido — ver log para resultado')
+            } else {
+              addLog('⚔️ Combate resolvido')
+            }
+          }
+        })
       })
       .on('broadcast', { event: 'game_over' }, (msg) => {
         const p = msg.payload as { winnerId: string | null }
@@ -150,22 +201,51 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) { setSelectedUnitId(null); void fetchGame() }
   }
 
-  const handleInitiateCombat = async (attackerUnitId: string, defenderUnitId: string) => {
+  const handleInitiateCombat = (attackerUnitId: string, defenderUnitId: string) => {
+    setCombatPreview({ attackerId: attackerUnitId, defenderId: defenderUnitId })
+  }
+
+  const handleConfirmAttack = async (attackerUnitId: string, defenderUnitId: string) => {
+    setCombatLoading(true)
     const res = await submitAction(gameId, { type: 'initiateCombat', attackerUnitId, defenderUnitId })
-    addLog(res.ok ? 'Combate iniciado' : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setSelectedUnitId(null); void fetchGame() }
+    setCombatLoading(false)
+    addLog(res.ok ? 'Ataque iniciado ⚔️ — aguardando resposta do adversário' : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) { setCombatPreview(null); setSelectedUnitId(null); void fetchGame() }
   }
 
   const handleResolveDispute = async (disputeId: string) => {
+    const preState = gameState!
+    const dispute = preState.combatDisputes.find(d => d.id === disputeId)
+    const preAtk = preState.units.find(u => u.id === dispute?.attackerUnitId)
+    const preDef = preState.units.find(u => u.id === dispute?.defenderUnitId)
     const res = await resolveDispute(gameId, disputeId)
-    addLog(res.ok ? 'Combate resolvido' : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok && res.data?.state) {
+      const post = res.data.state
+      setGameState(post)
+      if (preAtk && preDef) addLog(formatDisputeResolutionLog(preState, post, preAtk, preDef))
+      else addLog('⚔️ Combate resolvido')
+    } else {
+      addLog(`✗ ${errorLabel(res.error)}`)
+      void fetchGame()
+    }
   }
 
   const handleConstructBuilding = async (cityId: string, buildingType: BuildingType) => {
     const res = await submitAction(gameId, { type: 'constructBuilding', cityId, buildingType })
     addLog(res.ok ? `${buildingLabel(buildingType)} em construção` : `✗ ${errorLabel(res.error)}`)
     if (res.ok) void fetchGame()
+  }
+
+  const handleAttackCity = async (unitId: string, cityId: string) => {
+    const preState = gameState!
+    const res = await submitAction(gameId, { type: 'attackCity', unitId, cityId })
+    if (res.ok) {
+      const postState = await fetchGame()
+      addLog(formatCityAttackLog(preState, postState, unitId, cityId))
+      setSelectedUnitId(null)
+    } else {
+      addLog(`✗ ${errorLabel(res.error)}`)
+    }
   }
 
   const handleMoveUnit = async (unitId: string, targetCoord: HexCoord) => {
@@ -290,7 +370,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             selectedUnitId={selectedUnitId}
             godMode={godMode}
             onSelectUnit={setSelectedUnitId}
-            onInitiateCombat={(atk, def) => { void handleInitiateCombat(atk, def) }}
+            onInitiateCombat={handleInitiateCombat}
             onCityClick={setSelectedCityId}
             onMoveUnit={(id, coord) => { void handleMoveUnit(id, coord) }}
           />
@@ -305,8 +385,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           log={log}
           onEndTurn={() => { void handleEndTurn() }}
           onResolveDispute={(id) => { void handleResolveDispute(id) }}
-          onInitiateCombat={(atk, def) => { void handleInitiateCombat(atk, def) }}
+          onInitiateCombat={handleInitiateCombat}
           onFoundCity={setFoundingUnitId}
+          onAttackCity={(uid, cid) => { void handleAttackCity(uid, cid) }}
         />
       </div>
 
@@ -333,6 +414,24 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           isLoading={foundCityLoading}
         />
       )}
+
+      {/* ── Combat preview modal ── */}
+      {combatPreview && (() => {
+        const atk = gameState?.units.find(u => u.id === combatPreview.attackerId)
+        const def = gameState?.units.find(u => u.id === combatPreview.defenderId)
+        return atk && def && gameState ? (
+          <CombatPreviewModal
+            attacker={atk}
+            defender={def}
+            attackerCivName={civName(gameState.players, atk.ownerId)}
+            defenderCivName={civName(gameState.players, def.ownerId)}
+            gameState={gameState}
+            onConfirm={() => { void handleConfirmAttack(atk.id, def.id) }}
+            onCancel={() => setCombatPreview(null)}
+            isLoading={combatLoading}
+          />
+        ) : null
+      })()}
 
       {/* ── Game over screen ── */}
       {showGameOver && (

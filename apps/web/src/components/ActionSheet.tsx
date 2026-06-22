@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { GameState, Unit } from '@aetas/game-engine'
 import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance, hexKey } from '@aetas/game-engine'
 
@@ -12,6 +12,7 @@ interface Props {
   onResolveDispute: (disputeId: string) => void
   onInitiateCombat?: (attackerUnitId: string, defenderUnitId: string) => void
   onFoundCity?: (unitId: string) => void
+  onAttackCity?: (unitId: string, cityId: string) => void
 }
 
 function civName(players: GameState['players'], playerId: string): string {
@@ -21,7 +22,7 @@ function civName(players: GameState['players'], playerId: string): string {
 
 export default function ActionSheet({
   gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log,
-  onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity,
+  onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity, onAttackCity,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
 
@@ -94,11 +95,13 @@ export default function ActionSheet({
                 myEnginePlayerId={myEnginePlayerId}
                 players={players}
                 units={units}
+                cities={gameState.cities}
                 log={log}
                 onResolveDispute={onResolveDispute}
                 onInitiateCombat={onInitiateCombat}
                 isFoundCityValid={isFoundCityValid}
                 onFoundCity={onFoundCity}
+                onAttackCity={onAttackCity}
               />
             </div>
           )}
@@ -127,9 +130,11 @@ export default function ActionSheet({
             myEnginePlayerId={myEnginePlayerId}
             players={players}
             units={units}
+            cities={gameState.cities}
             log={log}
             onResolveDispute={onResolveDispute}
             onInitiateCombat={onInitiateCombat}
+            onAttackCity={onAttackCity}
           />
         </div>
       </div>
@@ -137,9 +142,16 @@ export default function ActionSheet({
   )
 }
 
+function formatCountdown(expiresAt: number, now: number): string {
+  const ms = Math.max(0, expiresAt - now)
+  const h = Math.floor(ms / 3_600_000)
+  const m = Math.floor((ms % 3_600_000) / 60_000)
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
 function ExpandedContent({
-  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, units, log,
-  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity,
+  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, units, cities, log,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
@@ -147,12 +159,19 @@ function ExpandedContent({
   myEnginePlayerId: string
   players: GameState['players']
   units: GameState['units']
+  cities: GameState['cities']
   log: string[]
   onResolveDispute: (id: string) => void
   onInitiateCombat?: (atk: string, def: string) => void
   isFoundCityValid?: boolean
   onFoundCity?: (unitId: string) => void
+  onAttackCity?: (unitId: string, cityId: string) => void
 }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
   return (
     <>
       {/* Selected unit panel */}
@@ -185,25 +204,39 @@ function ExpandedContent({
             ))}
           </div>
 
-          {/* Action row: Mover hint + Atacar button */}
+          {/* Action row: Mover hint + Atacar button + Atacar Cidade button */}
           {isMyTurn && selectedUnit.ownerId === myEnginePlayerId && (() => {
             const adjacentEnemies = units.filter(
               u => u.ownerId !== myEnginePlayerId &&
                    hexDistance(u.position, selectedUnit.position) === 1,
             )
+            const adjacentEnemyCities = cities.filter(
+              c => c.ownerId !== myEnginePlayerId &&
+                   hexDistance(c.position, selectedUnit.position) === 1,
+            )
             return (
-              <div className="flex gap-1.5">
-                <div className={`flex-1 py-1.5 text-center rounded-lg text-[10px] font-medium ${
-                  selectedUnit.hasMoved ? 'text-aetas-dim' : 'border border-aetas-border text-aetas-muted'
-                }`}>
-                  {selectedUnit.hasMoved ? '— Moveu' : 'Mover → clique no mapa'}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex gap-1.5">
+                  <div className={`flex-1 py-1.5 text-center rounded-lg text-[10px] font-medium ${
+                    selectedUnit.hasMoved ? 'text-aetas-dim' : 'border border-aetas-border text-aetas-muted'
+                  }`}>
+                    {selectedUnit.hasMoved ? '— Moveu' : 'Mover → clique no mapa'}
+                  </div>
+                  {adjacentEnemies.length > 0 && !selectedUnit.hasAttacked && (
+                    <button
+                      onClick={() => onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id)}
+                      className="flex-1 py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors"
+                    >
+                      Atacar ⚔
+                    </button>
+                  )}
                 </div>
-                {adjacentEnemies.length > 0 && !selectedUnit.hasAttacked && (
+                {adjacentEnemyCities.length > 0 && !selectedUnit.hasAttacked && (
                   <button
-                    onClick={() => onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id)}
-                    className="flex-1 py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors"
+                    onClick={() => onAttackCity?.(selectedUnit.id, adjacentEnemyCities[0].id)}
+                    className="w-full py-1.5 rounded-lg bg-orange-900/70 text-orange-300 text-[10px] font-medium hover:bg-orange-800 transition-colors"
                   >
-                    Atacar ⚔
+                    Atacar Cidade 🏰
                   </button>
                 )}
               </div>
@@ -255,7 +288,9 @@ function ExpandedContent({
                   {attacker} → {defender}
                 </p>
                 <p className="text-aetas-dim text-xs mt-0.5">
-                  {isDefender ? 'Você está sendo atacado' : 'Aguardando resolução'}
+                  {isDefender
+                    ? `Você está sendo atacado — expira em ${formatCountdown(d.expiresAt, now)}`
+                    : `⏳ Aguardando resposta de ${defender} — ${formatCountdown(d.expiresAt, now)}`}
                 </p>
                 {isDefender && (
                   <button

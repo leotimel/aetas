@@ -26,6 +26,7 @@ export type GameAction =
   | { type: 'constructBuilding'; cityId: string; buildingType: BuildingType }
   | { type: 'moveUnit'; unitId: string; targetCoord: HexCoord }
   | { type: 'foundCity'; unitId: string; cityId: string; cityName: string; specialization: CitySpecialization }
+  | { type: 'attackCity'; unitId: string; cityId: string }
 
 export type ActionValidation =
   | { valid: true }
@@ -186,6 +187,18 @@ export function validateAction(
 
       return { valid: true }
     }
+
+    case 'attackCity': {
+      const unit = findUnit(state, action.unitId)
+      if (!unit) return { valid: false, reason: 'unit not found' }
+      if (unit.ownerId !== playerId) return { valid: false, reason: 'unit is not yours' }
+      if (unit.hasAttacked) return { valid: false, reason: 'unit has already attacked this turn' }
+      const city = state.cities.find(c => c.id === action.cityId)
+      if (!city) return { valid: false, reason: 'city not found' }
+      if (city.ownerId === playerId) return { valid: false, reason: 'cannot attack your own city' }
+      if (hexDistance(unit.position, city.position) !== 1) return { valid: false, reason: 'city is not adjacent' }
+      return { valid: true }
+    }
   }
 }
 
@@ -297,9 +310,33 @@ export function applyAction(
         foodStored:     0,
         buildings:      [],
         construction:   null,
+        hp:             10,
+        maxHp:          10,
       }
       const units = state.units.filter(u => u.id !== action.unitId)
       return { ok: true, state: { ...state, units, cities: [...state.cities, newCity] } }
+    }
+
+    case 'attackCity': {
+      const unit = findUnit(state, action.unitId)!
+      const city = state.cities.find(c => c.id === action.cityId)!
+      const cityMaxHp = city.maxHp ?? 10
+      const cityHp    = city.hp ?? cityMaxHp
+      const cityDef   = 2 + city.level
+      const dmg       = Math.max(1, unit.stats.attack + (unit.stats.cityAttackBonus ?? 0) - cityDef)
+      const newHp     = Math.max(0, cityHp - dmg)
+      const captured  = newHp <= 0
+      const updatedCity = captured
+        ? { ...city, ownerId: playerId, hp: cityMaxHp, maxHp: cityMaxHp }
+        : { ...city, hp: newHp, maxHp: cityMaxHp }
+      return {
+        ok: true,
+        state: {
+          ...state,
+          cities: state.cities.map(c => c.id === city.id ? updatedCity : c),
+          units:  state.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
+        },
+      }
     }
   }
 }

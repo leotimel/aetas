@@ -189,16 +189,22 @@ export function endTurn(
     }
   }
 
-  // Step 6 — advance to the next active player + reset their units for a fresh turn.
+  // Step 6 — advance to the next active player + reset their units + regen their cities.
   const nextId = nextActivePlayerId(players, actorId)
   const units = state.units.map(u =>
     u.ownerId === nextId ? { ...u, hasMoved: false, hasAttacked: false } : u,
+  )
+  const nextCities = working.cities.map(c =>
+    c.ownerId === nextId
+      ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 }
+      : c,
   )
   return {
     ok: true,
     state: {
       ...working,
       units,
+      cities: nextCities,
       currentPlayerId: nextId ?? actorId,
       turnNumber: state.turnNumber + (wrap ? 1 : 0),
       turnState: TurnState.WaitingForAction,

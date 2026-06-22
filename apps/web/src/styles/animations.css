@@ -35,6 +35,18 @@
   transform-origin: center;
 }
 
+/* Cidade capturada — flash de luz + nova cor */
+@keyframes city-capture {
+  0%   { filter: brightness(4) saturate(0); }
+  25%  { filter: brightness(2.5) saturate(2); }
+  100% { filter: brightness(1) saturate(1); }
+}
+.anim-city-capture {
+  animation: city-capture 1.5s ease-out forwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 /* Partículas de vitória */
 @keyframes particle-fall {
   0%   { transform: translateY(0) rotate(0deg);    opacity: 1; }

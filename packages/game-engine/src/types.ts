@@ -193,6 +193,9 @@ export interface City {
   buildings?:         readonly BuildingType[]
   /** Active construction slot. Optional; null/undefined = idle. */
   construction?:      BuildingConstruction | null
+  /** City HP for siege mechanics. Optional for backward compat; defaults to 10 when absent. */
+  hp?:                number
+  maxHp?:             number
 }
 
 // ─── Map ──────────────────────────────────────────────────────────────────────
