@@ -1,4 +1,4 @@
-// packages/backend-core/src/disputes.ts
+// src/disputes.ts
 function toRow(dispute, gameId) {
   return {
     id: dispute.id,
@@ -24,7 +24,7 @@ function diffDisputes(pre, post, gameId) {
   return { inserts, statusUpdates };
 }
 
-// packages/game-engine/src/types.ts
+// ../game-engine/src/types.ts
 var TurnState = /* @__PURE__ */ ((TurnState2) => {
   TurnState2["WaitingForAction"] = "waitingForAction";
   TurnState2["Processing"] = "processing";
@@ -89,7 +89,7 @@ var BuildingType = /* @__PURE__ */ ((BuildingType3) => {
   return BuildingType3;
 })(BuildingType || {});
 
-// packages/game-engine/src/map.ts
+// ../game-engine/src/map.ts
 function djb2(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -240,7 +240,7 @@ function updateFogOfWar(current, playerUnits, playerCities, mapRadius) {
   };
 }
 
-// packages/game-engine/src/buildings.ts
+// ../game-engine/src/buildings.ts
 var CATALOG_ENTRIES = [
   // ── Military ─────────────────────────────────────────────────────────────
   {
@@ -381,7 +381,7 @@ function getCityScoreBonus(buildings) {
   }, 0);
 }
 
-// packages/game-engine/src/economy.ts
+// ../game-engine/src/economy.ts
 var BASE_GOLD_PER_POP = 1;
 var BASE_FOOD_PER_POP = 2;
 var BASE_PRODUCTION_PER_POP = 1;
@@ -449,7 +449,7 @@ function processTurnEconomy(cities, existingResources) {
   };
 }
 
-// packages/game-engine/src/units.ts
+// ../game-engine/src/units.ts
 var ERA_ORDER = {
   ["ancient" /* Ancient */]: 0,
   ["classical" /* Classical */]: 1,
@@ -580,7 +580,7 @@ function createUnitFromDef(id, def, ownerId, position) {
   };
 }
 
-// packages/game-engine/src/civilizations.ts
+// ../game-engine/src/civilizations.ts
 var SPECIAL_UNITS = [
   // Roma — Warrior replacement: stronger defense and HP, slightly more attack
   {
@@ -815,7 +815,7 @@ function getCivVisionBonus(civId) {
   }
 }
 
-// packages/game-engine/src/turn.ts
+// ../game-engine/src/turn.ts
 function getPlayerById(state, id) {
   return state.players.find((p) => p.id === id);
 }
@@ -912,10 +912,14 @@ function endTurn(state, playerId, now, hooks = {}) {
     };
   }
   const nextId = nextActivePlayerId(players, actorId);
+  const units = state.units.map(
+    (u) => u.ownerId === nextId ? { ...u, hasMoved: false, hasAttacked: false } : u
+  );
   return {
     ok: true,
     state: {
       ...working,
+      units,
       currentPlayerId: nextId ?? actorId,
       turnNumber: state.turnNumber + (wrap ? 1 : 0),
       turnState: "waitingForAction" /* WaitingForAction */
@@ -923,7 +927,7 @@ function endTurn(state, playerId, now, hooks = {}) {
   };
 }
 
-// packages/game-engine/src/combat.ts
+// ../game-engine/src/combat.ts
 var COMBAT_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var MIN_DAMAGE = 1;
 var ACTIVE_DEFENSE_BONUS = 2;
@@ -1078,7 +1082,7 @@ function resolveTimedOutDispute(dispute, state) {
   return applyCombatResult(state, result);
 }
 
-// packages/game-engine/src/actions.ts
+// ../game-engine/src/actions.ts
 var DEFAULT_HOOKS = { resolveTimedOutDispute };
 function findUnit2(state, id) {
   return state.units.find((u) => u.id === id);
@@ -1164,6 +1168,21 @@ function validateAction(state, playerId, action, _now) {
       }
       return { valid: true };
     }
+    case "moveUnit": {
+      const unit = findUnit2(state, action.unitId);
+      if (!unit) return { valid: false, reason: "unit not found" };
+      if (unit.ownerId !== playerId) return { valid: false, reason: "unit is not yours" };
+      if (unit.hasMoved) return { valid: false, reason: "unit has already moved this turn" };
+      const tile = state.map.tiles.find((t) => hexKey(t.coord) === hexKey(action.targetCoord));
+      if (!tile) return { valid: false, reason: "target hex not on map" };
+      if (tile.terrainType === "water" /* Water */) return { valid: false, reason: "cannot move to water" };
+      const dist = hexDistance(unit.position, action.targetCoord);
+      if (dist === 0) return { valid: false, reason: "unit is already there" };
+      if (dist > unit.stats.movement) return { valid: false, reason: "target out of movement range" };
+      const occupied = state.units.some((u) => hexKey(u.position) === hexKey(action.targetCoord));
+      if (occupied) return { valid: false, reason: "target hex is occupied" };
+      return { valid: true };
+    }
   }
 }
 function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
@@ -1231,10 +1250,17 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
         state: { ...state, cities: updatedCities, players: updatedPlayers }
       };
     }
+    case "moveUnit": {
+      const unit = findUnit2(state, action.unitId);
+      const units = state.units.map(
+        (u) => u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u
+      );
+      return { ok: true, state: { ...state, units } };
+    }
   }
 }
 
-// packages/game-engine/src/ai.ts
+// ../game-engine/src/ai.ts
 function isFavorableAttack(state, attacker, defender) {
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
@@ -1293,7 +1319,7 @@ function decideOpponentTurn(state, playerId, now) {
   return [...actions, END_TURN];
 }
 
-// packages/game-engine/src/diplomacy.ts
+// ../game-engine/src/diplomacy.ts
 function haveMadeContact(state, playerAId, playerBId) {
   const fogA = state.fogOfWar.find((f) => f.playerId === playerAId);
   const fogB = state.fogOfWar.find((f) => f.playerId === playerBId);
@@ -1473,7 +1499,7 @@ function respondToResourceTrade(state, responderId, proposalId, accept) {
   };
 }
 
-// packages/game-engine/src/scoring.ts
+// ../game-engine/src/scoring.ts
 var TERRITORY_POINTS_PER_CITY = 10;
 var POPULATION_POINTS_PER_POP = 3;
 var DEVELOPMENT_POINTS_PER_LEVEL = 5;
@@ -1509,7 +1535,7 @@ function eliminatePlayersWithNoCities(state) {
   };
 }
 
-// packages/game-engine/src/civs.ts
+// ../game-engine/src/civs.ts
 var CIVILIZATIONS = [
   { id: "romans", name: "Romanos", flag: "\u{1F3DB}\uFE0F", color: "#ef4444", unlockLevel: 1, description: "Mestres da engenharia e da lei." },
   { id: "greeks", name: "Gregos", flag: "\u26A1", color: "#3b82f6", unlockLevel: 1, description: "Fil\xF3sofos e estrategistas." },
@@ -1546,7 +1572,7 @@ function getCiv(id) {
   return CIVILIZATIONS.find((c) => c.id === id) ?? CIVILIZATIONS[0];
 }
 
-// packages/backend-core/src/orchestration.ts
+// src/orchestration.ts
 var TURN_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var FULL_HOOKS = { resolveTimedOutDispute, determineWinner };
 var NOT_FOUND = (reason) => ({ ok: false, kind: "not_found", reason });

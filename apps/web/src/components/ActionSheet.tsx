@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { GameState } from '@aetas/game-engine'
-import { CombatDisputeStatus, CIVILIZATIONS } from '@aetas/game-engine'
+import type { GameState, Unit } from '@aetas/game-engine'
+import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance } from '@aetas/game-engine'
 
 interface Props {
   gameState: GameState
@@ -10,6 +10,7 @@ interface Props {
   log: string[]
   onEndTurn: () => void
   onResolveDispute: (disputeId: string) => void
+  onInitiateCombat?: (attackerUnitId: string, defenderUnitId: string) => void
 }
 
 function civName(players: GameState['players'], playerId: string): string {
@@ -18,7 +19,7 @@ function civName(players: GameState['players'], playerId: string): string {
 }
 
 export default function ActionSheet({
-  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log, onEndTurn, onResolveDispute,
+  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log, onEndTurn, onResolveDispute, onInitiateCombat,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
 
@@ -82,8 +83,10 @@ export default function ActionSheet({
                 myPendingDisputes={myPendingDisputes}
                 myEnginePlayerId={myEnginePlayerId}
                 players={players}
+                units={units}
                 log={log}
                 onResolveDispute={onResolveDispute}
+                onInitiateCombat={onInitiateCombat}
               />
             </div>
           )}
@@ -111,8 +114,10 @@ export default function ActionSheet({
             myPendingDisputes={myPendingDisputes}
             myEnginePlayerId={myEnginePlayerId}
             players={players}
+            units={units}
             log={log}
             onResolveDispute={onResolveDispute}
+            onInitiateCombat={onInitiateCombat}
           />
         </div>
       </div>
@@ -121,23 +126,75 @@ export default function ActionSheet({
 }
 
 function ExpandedContent({
-  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, log, onResolveDispute,
+  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, units, log,
+  onResolveDispute, onInitiateCombat,
 }: {
-  selectedUnit: { unitType: string } | undefined
+  selectedUnit: Unit | undefined
   isMyTurn: boolean
   myPendingDisputes: ReturnType<typeof Array.prototype.filter>
   myEnginePlayerId: string
   players: GameState['players']
+  units: GameState['units']
   log: string[]
   onResolveDispute: (id: string) => void
+  onInitiateCombat?: (atk: string, def: string) => void
 }) {
   return (
     <>
-      {/* Selected unit info / guidance */}
+      {/* Selected unit panel */}
       {selectedUnit ? (
-        <div className="bg-aetas-raised rounded-lg p-2.5 text-xs text-aetas-muted">
-          <span className="text-aetas-text font-medium capitalize">{selectedUnit.unitType}</span> selecionado
-          {isMyTurn && <p className="mt-0.5 text-aetas-dim">Clique numa unidade inimiga adjacente para atacar.</p>}
+        <div className="bg-aetas-raised rounded-lg p-2.5 text-xs">
+          {/* Header: unit name + exhausted badge */}
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-aetas-text font-medium capitalize">
+              {(UNIT_CATALOG.get(selectedUnit.unitType as UnitType) ?? SPECIAL_UNIT_CATALOG.get(selectedUnit.unitType))?.name ?? selectedUnit.unitType}
+            </span>
+            {selectedUnit.hasMoved && selectedUnit.ownerId === myEnginePlayerId && (
+              <span className="text-aetas-dim bg-aetas-bg px-1.5 py-0.5 rounded-full border border-aetas-border text-[10px]">
+                Esgotado
+              </span>
+            )}
+          </div>
+
+          {/* Stats: Atk / Def / HP / Mov */}
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {[
+              { label: 'Atk', value: selectedUnit.stats.attack },
+              { label: 'Def', value: selectedUnit.stats.defense },
+              { label: 'HP',  value: `${selectedUnit.stats.hp}/${selectedUnit.stats.maxHp}` },
+              { label: 'Mov', value: selectedUnit.hasMoved ? 0 : selectedUnit.stats.movement },
+            ].map(s => (
+              <div key={s.label} className="bg-aetas-bg rounded p-1 text-center">
+                <p className="text-aetas-dim text-[9px]">{s.label}</p>
+                <p className="text-aetas-text font-medium">{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Action row: Mover hint + Atacar button */}
+          {isMyTurn && selectedUnit.ownerId === myEnginePlayerId && (() => {
+            const adjacentEnemies = units.filter(
+              u => u.ownerId !== myEnginePlayerId &&
+                   hexDistance(u.position, selectedUnit.position) === 1,
+            )
+            return (
+              <div className="flex gap-1.5">
+                <div className={`flex-1 py-1.5 text-center rounded-lg text-[10px] font-medium ${
+                  selectedUnit.hasMoved ? 'text-aetas-dim' : 'border border-aetas-border text-aetas-muted'
+                }`}>
+                  {selectedUnit.hasMoved ? '— Moveu' : 'Mover → clique no mapa'}
+                </div>
+                {adjacentEnemies.length > 0 && !selectedUnit.hasAttacked && (
+                  <button
+                    onClick={() => onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id)}
+                    className="flex-1 py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors"
+                  >
+                    Atacar ⚔
+                  </button>
+                )}
+              </div>
+            )
+          })()}
         </div>
       ) : isMyTurn ? (
         <p className="text-aetas-dim text-xs py-1">Selecione uma unidade no mapa para agir.</p>

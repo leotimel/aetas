@@ -1,5 +1,5 @@
-import { CombatDisputeStatus, BuildingType } from './types.js'
-import type { GameState, Unit } from './types.js'
+import { CombatDisputeStatus, BuildingType, TerrainType } from './types.js'
+import type { GameState, Unit, HexCoord } from './types.js'
 import { canSubmitAction, endTurn, getPlayerById, type TurnHooks } from './turn.js'
 import {
   createCombatDispute,
@@ -17,9 +17,6 @@ import { canBuildBuilding, getBuildingDef, startConstruction } from './buildings
  * The canonical set of player actions the engine currently supports. Both the
  * AI (ai.ts) and future human action handlers (Edge Functions) go through this
  * SAME layer, so "the AI passes the same validation a human passes" is literal.
- *
- * Movement and city founding are deliberately absent — those systems do not
- * exist yet, so no legal action references them.
  */
 export type GameAction =
   | { type: 'endTurn' }
@@ -27,6 +24,7 @@ export type GameAction =
   | { type: 'initiateCombat'; attackerUnitId: string; defenderUnitId: string }
   | { type: 'trainUnit'; cityId: string; unitType: string; unitId: string }
   | { type: 'constructBuilding'; cityId: string; buildingType: BuildingType }
+  | { type: 'moveUnit'; unitId: string; targetCoord: HexCoord }
 
 export type ActionValidation =
   | { valid: true }
@@ -150,6 +148,26 @@ export function validateAction(
 
       return { valid: true }
     }
+
+    case 'moveUnit': {
+      const unit = findUnit(state, action.unitId)
+      if (!unit) return { valid: false, reason: 'unit not found' }
+      if (unit.ownerId !== playerId) return { valid: false, reason: 'unit is not yours' }
+      if (unit.hasMoved) return { valid: false, reason: 'unit has already moved this turn' }
+
+      const tile = state.map.tiles.find(t => hexKey(t.coord) === hexKey(action.targetCoord))
+      if (!tile) return { valid: false, reason: 'target hex not on map' }
+      if (tile.terrainType === TerrainType.Water) return { valid: false, reason: 'cannot move to water' }
+
+      const dist = hexDistance(unit.position, action.targetCoord)
+      if (dist === 0) return { valid: false, reason: 'unit is already there' }
+      if (dist > unit.stats.movement) return { valid: false, reason: 'target out of movement range' }
+
+      const occupied = state.units.some(u => hexKey(u.position) === hexKey(action.targetCoord))
+      if (occupied) return { valid: false, reason: 'target hex is occupied' }
+
+      return { valid: true }
+    }
   }
 }
 
@@ -238,6 +256,14 @@ export function applyAction(
         ok: true,
         state: { ...state, cities: updatedCities, players: updatedPlayers },
       }
+    }
+
+    case 'moveUnit': {
+      const unit = findUnit(state, action.unitId)!
+      const units = state.units.map(u =>
+        u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u,
+      )
+      return { ok: true, state: { ...state, units } }
     }
   }
 }

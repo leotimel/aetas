@@ -189,12 +189,16 @@ export function endTurn(
     }
   }
 
-  // Step 6 — advance to the next active player.
+  // Step 6 — advance to the next active player + reset their units for a fresh turn.
   const nextId = nextActivePlayerId(players, actorId)
+  const units = state.units.map(u =>
+    u.ownerId === nextId ? { ...u, hasMoved: false, hasAttacked: false } : u,
+  )
   return {
     ok: true,
     state: {
       ...working,
+      units,
       currentPlayerId: nextId ?? actorId,
       turnNumber: state.turnNumber + (wrap ? 1 : 0),
       turnState: TurnState.WaitingForAction,

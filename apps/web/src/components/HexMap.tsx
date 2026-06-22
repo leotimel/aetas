@@ -67,10 +67,11 @@ interface Props {
   onSelectUnit: (unitId: string | null) => void
   onInitiateCombat: (attackerUnitId: string, defenderUnitId: string) => void
   onCityClick?: (cityId: string) => void
+  onMoveUnit?: (unitId: string, targetCoord: HexCoord) => void
 }
 
 export default function HexMap({
-  gameState, myEnginePlayerId, selectedUnitId, godMode, onSelectUnit, onInitiateCombat, onCityClick,
+  gameState, myEnginePlayerId, selectedUnitId, godMode, onSelectUnit, onInitiateCombat, onCityClick, onMoveUnit,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [origin, setOrigin] = useState({ x: 300, y: 300 })
@@ -225,9 +226,9 @@ export default function HexMap({
 
   const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : undefined
 
-  // Movement range: hexes reachable by selected unit (visual only, v2 mechanic)
+  // Movement range: hexes reachable by selected unit (only when unit hasn't moved yet)
   const moveRangeSet = new Set<string>()
-  if (selectedUnit?.ownerId === myEnginePlayerId) {
+  if (selectedUnit?.ownerId === myEnginePlayerId && !selectedUnit.hasMoved) {
     for (const tile of map.tiles) {
       if (
         tile.terrainType !== 'water' &&
@@ -253,6 +254,17 @@ export default function HexMap({
         onInitiateCombat(selectedUnit.id, unit.id)
         return
       }
+    }
+
+    if (
+      selectedUnit &&
+      selectedUnit.ownerId === myEnginePlayerId &&
+      moveRangeSet.has(key) &&
+      !unit &&
+      onMoveUnit
+    ) {
+      onMoveUnit(selectedUnit.id, coord)
+      return
     }
 
     if (unit?.ownerId === myEnginePlayerId) {
@@ -378,7 +390,14 @@ export default function HexMap({
           const color = playerColorMap.get(unit.ownerId) ?? '#888'
           return (
             <g key={unit.id}
-               style={{ transform: `translate(${px}px, ${uy}px)`, transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)', cursor: 'pointer' }}
+               style={{
+                 transform: `translate(${px}px, ${uy}px)`,
+                 transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                 cursor: 'pointer',
+                 filter: (unit.hasMoved && unit.ownerId === myEnginePlayerId)
+                   ? 'grayscale(0.65) brightness(0.65)'
+                   : undefined,
+               }}
                onClick={() => handleHexClick(unit.position)}>
               <UnitIcon cx={0} cy={0} color={color} unitType={unit.unitType} selected={selectedUnit?.id === unit.id} />
             </g>

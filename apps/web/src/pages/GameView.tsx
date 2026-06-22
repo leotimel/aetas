@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { GameState } from '@aetas/game-engine'
+import type { GameState, HexCoord } from '@aetas/game-engine'
 import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp } from '../api.ts'
@@ -34,9 +34,15 @@ function errorLabel(err?: string | null): string {
   if (!err) return 'ação inválida'
   const known: Record<string, string> = {
     'unit has already attacked this turn': 'unidade já atacou neste turno',
+    'unit has already moved this turn': 'unidade já se moveu neste turno',
     'city hex occupied': 'hex da cidade ocupado',
     'insufficient production': 'produção insuficiente',
     'target is not adjacent': 'alvo não é adjacente',
+    'cannot move to water': 'não é possível mover para água',
+    'target hex is occupied': 'hex alvo está ocupado',
+    'target out of movement range': 'alvo fora do alcance de movimento',
+    'unit is not yours': 'unidade não é sua',
+    'unit is already there': 'unidade já está neste hex',
     'not your city': 'não é sua cidade',
     'city not found': 'cidade não encontrada',
     'unit not found': 'unidade não encontrada',
@@ -156,6 +162,12 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) void fetchGame()
   }
 
+  const handleMoveUnit = async (unitId: string, targetCoord: HexCoord) => {
+    const res = await submitAction(gameId, { type: 'moveUnit', unitId, targetCoord })
+    addLog(res.ok ? 'Unidade movida' : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) { setSelectedUnitId(null); void fetchGame() }
+  }
+
   const handleTrainUnit = async (cityId: string, unitType: string) => {
     const unitId = crypto.randomUUID()
     const res = await submitAction(gameId, { type: 'trainUnit', cityId, unitType, unitId })
@@ -251,6 +263,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             onSelectUnit={setSelectedUnitId}
             onInitiateCombat={(atk, def) => { void handleInitiateCombat(atk, def) }}
             onCityClick={setSelectedCityId}
+            onMoveUnit={(id, coord) => { void handleMoveUnit(id, coord) }}
           />
         </div>
 
@@ -263,6 +276,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           log={log}
           onEndTurn={() => { void handleEndTurn() }}
           onResolveDispute={(id) => { void handleResolveDispute(id) }}
+          onInitiateCombat={(atk, def) => { void handleInitiateCombat(atk, def) }}
         />
       </div>
 
