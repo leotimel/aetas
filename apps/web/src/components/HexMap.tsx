@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GameState, HexCoord } from '@aetas/game-engine'
 import { hexKey, hexDistance, UnitType, Era, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, CIVILIZATIONS } from '@aetas/game-engine'
+import TerrainPatterns from '../assets/terrain-patterns.tsx'
+import { UNIT_SPRITES, CitySprite, CapitalSprite } from '../assets/units/index'
 
 const HEX_SIZE = 36
 
@@ -29,21 +31,6 @@ const TERRAIN_STROKE: Record<string, string> = {
   water:    '#0e3a52',
 }
 
-const UNIT_ABBREV: Record<string, string> = {
-  warrior:            'Gu',
-  archer:             'Ar',
-  settler:            'Co',
-  cavalry:            'Cv',
-  catapult:           'Ka',
-  knight:             'Cn',
-  crossbowman:        'Be',
-  roman_legionary:    'Lg',
-  mongol_cavalry:     'Mc',
-  egypt_war_chariot:  'Cc',
-  greek_hoplite:      'Ho',
-  viking_berserker:   'Bk',
-  china_horse_archer: 'Ac',
-}
 
 function eraStroke(unitType: string): string {
   const def = UNIT_CATALOG.get(unitType as UnitType) ?? SPECIAL_UNIT_CATALOG.get(unitType)
@@ -68,6 +55,8 @@ function hexPolygonPoints(cx: number, cy: number, r: number): string {
   }).join(' ')
 }
 
+type DyingUnit = { id: string; x: number; y: number; color: string; unitType: string }
+
 interface Transform { x: number; y: number; scale: number }
 
 interface Props {
@@ -90,6 +79,10 @@ export default function HexMap({
   const isDragging = useRef(false)
   const dragStart = useRef({ mx: 0, my: 0, tx: 0, ty: 0 })
   const clickMoved = useRef(false)
+  const [dyingUnits, setDyingUnits] = useState<DyingUnit[]>([])
+  const [newCityIds, setNewCityIds] = useState<Set<string>>(new Set())
+  const prevUnitsRef   = useRef<Map<string, { position: HexCoord; unitType: string; ownerId: string }> | null>(null)
+  const prevCityIdsRef = useRef<Set<string> | null>(null)
 
   // Measure SVG container to set initial center
   useEffect(() => {
@@ -104,6 +97,47 @@ export default function HexMap({
     if (svgRef.current) ro.observe(svgRef.current)
     return () => ro.disconnect()
   }, [])
+
+  // Detect dying units + new cities for animation
+  useEffect(() => {
+    const colorMap = new Map<string, string>()
+    gameState.players.forEach((p, i) =>
+      colorMap.set(p.id, civColor(p.civilizationId, PLAYER_COLORS[i % PLAYER_COLORS.length])))
+
+    if (prevUnitsRef.current === null) {
+      const init = new Map<string, { position: HexCoord; unitType: string; ownerId: string }>()
+      for (const u of gameState.units) init.set(u.id, { position: u.position, unitType: u.unitType, ownerId: u.ownerId })
+      prevUnitsRef.current = init
+      prevCityIdsRef.current = new Set(gameState.cities.map(c => c.id))
+      return
+    }
+
+    const currentUnitIds = new Set(gameState.units.map(u => u.id))
+    const dead: DyingUnit[] = []
+    for (const [id, info] of prevUnitsRef.current) {
+      if (!currentUnitIds.has(id)) {
+        const [x, y] = hexToPixel(info.position.q, info.position.r)
+        dead.push({ id, x, y, color: colorMap.get(info.ownerId) ?? '#888', unitType: info.unitType })
+      }
+    }
+    if (dead.length > 0) {
+      setDyingUnits(prev => [...prev, ...dead])
+      const ids = new Set(dead.map(d => d.id))
+      setTimeout(() => setDyingUnits(prev => prev.filter(u => !ids.has(u.id))), 750)
+    }
+
+    const currentCityIds = new Set(gameState.cities.map(c => c.id))
+    const appeared = [...currentCityIds].filter(id => !prevCityIdsRef.current!.has(id))
+    if (appeared.length > 0) {
+      setNewCityIds(new Set(appeared))
+      setTimeout(() => setNewCityIds(new Set()), 950)
+    }
+
+    const newMap = new Map<string, { position: HexCoord; unitType: string; ownerId: string }>()
+    for (const u of gameState.units) newMap.set(u.id, { position: u.position, unitType: u.unitType, ownerId: u.ownerId })
+    prevUnitsRef.current = newMap
+    prevCityIdsRef.current = currentCityIds
+  }, [gameState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Zoom/pan: mouse wheel ---
   const onWheel = useCallback((e: React.WheelEvent) => {
@@ -250,6 +284,9 @@ export default function HexMap({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
+      <defs>
+        <TerrainPatterns />
+      </defs>
       <g transform={gTransform}>
         {map.tiles.map(tile => {
           const { coord, terrainType } = tile
@@ -260,7 +297,6 @@ export default function HexMap({
           const isExplored = godMode || exploredSet.has(key)
 
           const unit = isVisible ? unitByHex.get(key) : undefined
-          const city = isVisible ? cityByHex.get(key) : undefined
 
           const isSelectedHex = selectedUnit != null && hexKey(selectedUnit.position) === key
           const isAttackTarget =
@@ -274,12 +310,12 @@ export default function HexMap({
           if (!isExplored) {
             fill = '#0f172a'
           } else {
-            fill = TERRAIN_FILL[terrainType as string] ?? '#555'
+            fill = `url(#terrain-${terrainType as string}) ${TERRAIN_FILL[terrainType as string] ?? '#555'}`
             if (!isVisible) fillOpacity = 0.4
           }
 
-          const stroke = isSelectedHex ? '#f97316' : isAttackTarget ? '#ef4444' : (TERRAIN_STROKE[terrainType as string] ?? '#333')
-          const strokeWidth = isSelectedHex || isAttackTarget ? 2.5 : 0.8
+          const stroke      = TERRAIN_STROKE[terrainType as string] ?? '#333'
+          const strokeWidth = 0.8
           const points = hexPolygonPoints(px, py, HEX_SIZE - 1)
 
           return (
@@ -291,13 +327,19 @@ export default function HexMap({
                 stroke={stroke}
                 strokeWidth={strokeWidth}
               />
-              {/* Movement range overlay (v2 — visual preview only) */}
-              {isMoveTarget && (
-                <polygon points={points} fill="#3b82f6" fillOpacity={0.18} stroke="#3b82f6" strokeWidth={1} />
+              {/* Selection overlay — gold pulse */}
+              {isSelectedHex && (
+                <polygon points={points} fill="none" stroke="#c9a84c" strokeWidth={2}
+                         style={{ animation: 'hex-select 1.1s ease-in-out infinite' }} />
               )}
               {/* Attack target ring */}
               {isAttackTarget && (
                 <polygon points={points} fill="#ef4444" fillOpacity={0.12} stroke="#ef4444" strokeWidth={1.5} />
+              )}
+              {/* Movement range overlay — pulsing */}
+              {isMoveTarget && (
+                <polygon points={points} fill="#3b82f6" fillOpacity={0.18} stroke="#3b82f6" strokeWidth={1}
+                         style={{ animation: 'range-pulse 1.5s ease-in-out infinite' }} />
               )}
               {/* Coord label in god mode */}
               {godMode && (
@@ -305,46 +347,83 @@ export default function HexMap({
                   {coord.q},{coord.r}
                 </text>
               )}
-              {city && (
-                <CityIcon
-                  cx={px} cy={py}
-                  color={playerColorMap.get(city.ownerId) ?? '#888'}
-                  level={city.level}
-                />
-              )}
-              {unit && (
-                <UnitIcon
-                  cx={px} cy={city ? py - 14 : py}
-                  color={playerColorMap.get(unit.ownerId) ?? '#888'}
-                  unitType={unit.unitType}
-                  selected={selectedUnit?.id === unit.id}
-                />
-              )}
             </g>
           )
         })}
+
+        {/* Layer: Cities — spring-in on city founded */}
+        {cities.map(city => {
+          const key = hexKey(city.position)
+          const isVisible = godMode || visibleSet.has(key)
+          if (!isVisible) return null
+          const [px, py] = hexToPixel(city.position.q, city.position.r)
+          const color = playerColorMap.get(city.ownerId) ?? '#888'
+          return (
+            <g key={city.id}
+               className={newCityIds.has(city.id) ? 'anim-city-spring' : undefined}
+               style={{ transform: `translate(${px}px, ${py}px)`, cursor: 'pointer' }}
+               onClick={() => handleHexClick(city.position)}>
+              <CityIcon cx={0} cy={0} color={color} level={city.level} />
+            </g>
+          )
+        })}
+
+        {/* Layer: Live units — CSS transition slides unit on move */}
+        {units.map(unit => {
+          const key = hexKey(unit.position)
+          const isVisible = godMode || visibleSet.has(key)
+          if (!isVisible) return null
+          const [px, py] = hexToPixel(unit.position.q, unit.position.r)
+          const uy = cityByHex.has(key) ? py - 14 : py
+          const color = playerColorMap.get(unit.ownerId) ?? '#888'
+          return (
+            <g key={unit.id}
+               style={{ transform: `translate(${px}px, ${uy}px)`, transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)', cursor: 'pointer' }}
+               onClick={() => handleHexClick(unit.position)}>
+              <UnitIcon cx={0} cy={0} color={color} unitType={unit.unitType} selected={selectedUnit?.id === unit.id} />
+            </g>
+          )
+        })}
+
+        {/* Layer: Dying units — red flash + fade */}
+        {dyingUnits.map(ghost => (
+          <g key={`dying-${ghost.id}`}
+             className="anim-unit-die"
+             style={{ transform: `translate(${ghost.x}px, ${ghost.y}px)` }}>
+            <UnitIcon cx={0} cy={0} color={ghost.color} unitType={ghost.unitType} selected={false} />
+          </g>
+        ))}
       </g>
     </svg>
   )
 }
 
 function CityIcon({ cx, cy, color, level }: { cx: number; cy: number; color: string; level: number }) {
+  const Sprite = level >= 3 ? CapitalSprite : CitySprite
   return (
     <>
-      <rect x={cx - 8} y={cy - 8} width={16} height={16} fill={color} fillOpacity={0.9} stroke="#ffffffaa" strokeWidth={1} rx={2} />
-      <text x={cx} y={cy + 5} fontSize={10} fill="#fff" textAnchor="middle" fontWeight="bold">{level}</text>
+      <svg x={cx - 11} y={cy - 11} width={22} height={22} viewBox="0 0 40 40" overflow="hidden">
+        <Sprite color={color} />
+      </svg>
+      {/* Level badge */}
+      <circle cx={cx + 7} cy={cy + 7} r={5} fill="#0e0c09" />
+      <text x={cx + 7} y={cy + 11} fontSize={7} fill="#c9a84c" textAnchor="middle" fontWeight="bold">{level}</text>
     </>
   )
 }
 
 function UnitIcon({ cx, cy, color, unitType, selected }: { cx: number; cy: number; color: string; unitType: string; selected: boolean }) {
-  const label = UNIT_ABBREV[unitType] ?? unitType.slice(0, 2).toUpperCase()
+  const Sprite = UNIT_SPRITES[unitType] ?? UNIT_SPRITES['warrior']
   const stroke = eraStroke(unitType)
   return (
     <>
       {selected && <circle cx={cx} cy={cy} r={14} fill="none" stroke="#f97316" strokeWidth={2.5} />}
-      <circle cx={cx} cy={cy} r={11} fill={color} fillOpacity={0.92} stroke={stroke} strokeWidth={2} />
-      <text x={cx} y={cy + 4} fontSize={9} fill="#fff" textAnchor="middle" fontWeight="bold">{label}</text>
+      {/* Era ring */}
+      <circle cx={cx} cy={cy} r={12} fill="none" stroke={stroke} strokeWidth={1.5} strokeOpacity={0.7} />
+      {/* Sprite via nested SVG — viewBox 40×40 → 22px on map */}
+      <svg x={cx - 11} y={cy - 11} width={22} height={22} viewBox="0 0 40 40" overflow="hidden">
+        <Sprite color={color} />
+      </svg>
     </>
   )
 }

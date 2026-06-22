@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { GameState } from '@aetas/game-engine'
 import { rankPlayers, xpToLevel, xpProgress, TERRITORY_POINTS_PER_CITY, POPULATION_POINTS_PER_POP, DEVELOPMENT_POINTS_PER_LEVEL, CIVILIZATIONS } from '@aetas/game-engine'
 
@@ -19,6 +20,29 @@ interface Props {
   onBack: () => void
 }
 
+function GoldParticles() {
+  const particles = useMemo(() =>
+    Array.from({ length: 24 }, (_, i) => ({
+      left:  `${((i * 4.3) % 100).toFixed(1)}%`,
+      top:   `${((i * 7)   % 25).toFixed(1)}%`,
+      delay: `${(i * 0.11).toFixed(2)}s`,
+      dur:   `${(1.5 + (i % 5) * 0.22).toFixed(2)}s`,
+      size:  `${4 + (i % 4)}px`,
+    })), [])
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
+      {particles.map((p, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-aetas-gold anim-particle"
+          style={{ left: p.left, top: p.top, width: p.size, height: p.size, '--dur': p.dur, '--delay': p.delay } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  )
+}
+
 export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, onBack }: Props) {
   const ranked = rankPlayers(gameState)
   const winner = ranked[0]
@@ -28,10 +52,11 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
 
   return (
     <div className="fixed inset-0 z-50 bg-aetas-bg/95 flex flex-col items-center justify-center p-4">
+      {iWon && <GoldParticles />}
       {/* Trophy + headline */}
-      <div className="text-center mb-6">
+      <div className="text-center mb-6 relative z-10">
         <p className="text-5xl mb-3">{iWon ? '🏆' : '🎮'}</p>
-        <h1 className="font-display text-aetas-text text-2xl font-semibold">
+        <h1 className={`font-display text-aetas-text text-2xl font-semibold${iWon ? ' anim-victory-title' : ''}`}>
           {iWon ? 'Você venceu!' : 'Fim de Partida'}
         </h1>
         {winner && (
