@@ -26,18 +26,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4">
+    <div className="min-h-screen bg-aetas-bg flex flex-col items-center justify-center px-4">
       {/* Logo / branding */}
       <div className="mb-10 text-center">
-        <h1 className="text-5xl font-bold tracking-tight text-slate-100">Aetas</h1>
-        <p className="mt-2 text-slate-500 text-sm tracking-widest uppercase">
+        <h1 className="font-display text-5xl font-bold tracking-tight text-aetas-gold">Aetas</h1>
+        <p className="mt-2 text-aetas-dim text-sm tracking-widest uppercase">
           Civilizações através das eras
         </p>
       </div>
 
       {/* Auth card */}
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl shadow-black/40">
-        <p className="text-slate-400 text-sm text-center mb-6">
+      <div className="w-full max-w-sm bg-aetas-surface border border-aetas-border rounded-2xl p-8 shadow-xl shadow-black/60">
+        <p className="text-aetas-muted text-sm text-center mb-6">
           Entre para jogar
         </p>
 
@@ -54,7 +54,7 @@ export default function LoginPage() {
           {/* Apple */}
           <button
             onClick={() => signInWith('apple')}
-            className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 font-medium text-sm hover:bg-slate-700 active:bg-slate-600 transition-colors"
+            className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl bg-aetas-raised border border-aetas-border-strong text-aetas-text font-medium text-sm hover:bg-aetas-panel active:bg-aetas-panel transition-colors"
           >
             <AppleIcon />
             Continuar com Apple
@@ -62,10 +62,10 @@ export default function LoginPage() {
         </div>
 
         {/* Dev escape — magic link, visualmente discreto */}
-        <div className="mt-6 pt-5 border-t border-slate-800">
+        <div className="mt-6 pt-5 border-t border-aetas-border">
           <button
             onClick={() => setDevOpen(v => !v)}
-            className="text-xs text-slate-600 hover:text-slate-500 transition-colors w-full text-center"
+            className="text-xs text-aetas-dim hover:text-aetas-muted transition-colors w-full text-center"
           >
             {devOpen ? 'Fechar ▲' : 'Entrar por e-mail ▼'}
           </button>
@@ -84,11 +84,11 @@ export default function LoginPage() {
                     onChange={e => setDevEmail(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && void sendMagicLink()}
                     placeholder="seu@email.com"
-                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs placeholder:text-slate-600 outline-none focus:border-slate-500"
+                    className="w-full px-3 py-2 rounded-lg bg-aetas-raised border border-aetas-border-strong text-aetas-muted text-xs placeholder:text-aetas-dim outline-none focus:border-aetas-gold/60 transition-colors"
                   />
                   <button
                     onClick={() => void sendMagicLink()}
-                    className="w-full py-2 rounded-lg bg-slate-700 text-slate-300 text-xs hover:bg-slate-600 transition-colors"
+                    className="w-full py-2 rounded-lg bg-aetas-panel text-aetas-muted text-xs hover:bg-aetas-border-strong transition-colors"
                   >
                     Enviar magic link
                   </button>

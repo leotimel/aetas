@@ -1,12 +1,15 @@
-import { CombatDisputeStatus } from './types.js'
+import { CombatDisputeStatus, BuildingType } from './types.js'
 import type { GameState, Unit } from './types.js'
-import { canSubmitAction, endTurn, type TurnHooks } from './turn.js'
+import { canSubmitAction, endTurn, getPlayerById, type TurnHooks } from './turn.js'
 import {
   createCombatDispute,
   resolveDisputeByAction,
   resolveTimedOutDispute,
 } from './combat.js'
-import { hexDistance } from './map.js'
+import { hexDistance, hexKey } from './map.js'
+import { createUnitFromDef } from './units.js'
+import { unitsForCiv } from './civilizations.js'
+import { canBuildBuilding, getBuildingDef, startConstruction } from './buildings.js'
 
 // ─── Action model ─────────────────────────────────────────────────────────────
 
@@ -22,6 +25,8 @@ export type GameAction =
   | { type: 'endTurn' }
   | { type: 'respondToDispute'; disputeId: string }
   | { type: 'initiateCombat'; attackerUnitId: string; defenderUnitId: string }
+  | { type: 'trainUnit'; cityId: string; unitType: string; unitId: string }
+  | { type: 'constructBuilding'; cityId: string; buildingType: BuildingType }
 
 export type ActionValidation =
   | { valid: true }
@@ -99,6 +104,52 @@ export function validateAction(
       }
       return { valid: true }
     }
+
+    case 'trainUnit': {
+      const city = state.cities.find(c => c.id === action.cityId)
+      if (!city) return { valid: false, reason: 'city not found' }
+      if (city.ownerId !== playerId) return { valid: false, reason: 'not your city' }
+
+      const player = getPlayerById(state, playerId)!
+      const allUnits = unitsForCiv(player.civilizationId, state.era)
+      const unitDef = allUnits.find(u => u.type === action.unitType)
+      if (!unitDef) return { valid: false, reason: 'unit not available in this era' }
+
+      if (player.resources.production < unitDef.productionCost) {
+        return { valid: false, reason: 'insufficient production' }
+      }
+
+      const alreadyThere = state.units.some(
+        u => u.ownerId === playerId && hexKey(u.position) === hexKey(city.position),
+      )
+      if (alreadyThere) return { valid: false, reason: 'city hex occupied' }
+
+      return { valid: true }
+    }
+
+    case 'constructBuilding': {
+      const city = state.cities.find(c => c.id === action.cityId)
+      if (!city) return { valid: false, reason: 'city not found' }
+      if (city.ownerId !== playerId) return { valid: false, reason: 'not your city' }
+
+      const buildingDef = getBuildingDef(action.buildingType)
+      if (buildingDef.specialization !== city.specialization) {
+        return { valid: false, reason: 'wrong city specialization' }
+      }
+      if ((city.buildings ?? []).includes(action.buildingType)) {
+        return { valid: false, reason: 'building already constructed' }
+      }
+      if (city.construction != null) {
+        return { valid: false, reason: 'construction already in progress' }
+      }
+
+      const player = getPlayerById(state, playerId)!
+      if (player.resources.production < buildingDef.productionCost) {
+        return { valid: false, reason: 'insufficient production' }
+      }
+
+      return { valid: true }
+    }
   }
 }
 
@@ -145,6 +196,47 @@ export function applyAction(
           units,
           combatDisputes: [...state.combatDisputes, dispute],
         },
+      }
+    }
+
+    case 'trainUnit': {
+      const city = state.cities.find(c => c.id === action.cityId)!
+      const player = state.players.find(p => p.id === playerId)!
+      const allUnits = unitsForCiv(player.civilizationId, state.era)
+      const unitDef = allUnits.find(u => u.type === action.unitType)!
+      const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position)
+      const updatedPlayers = state.players.map(p =>
+        p.id !== playerId ? p : {
+          ...p,
+          resources: {
+            ...p.resources,
+            production: p.resources.production - unitDef.productionCost,
+          },
+        },
+      )
+      return {
+        ok: true,
+        state: { ...state, players: updatedPlayers, units: [...state.units, newUnit] },
+      }
+    }
+
+    case 'constructBuilding': {
+      const city = state.cities.find(c => c.id === action.cityId)!
+      const buildingDef = getBuildingDef(action.buildingType)
+      const updatedCity = startConstruction(city, action.buildingType)
+      const updatedCities = state.cities.map(c => c.id === city.id ? updatedCity : c)
+      const updatedPlayers = state.players.map(p =>
+        p.id !== playerId ? p : {
+          ...p,
+          resources: {
+            ...p.resources,
+            production: p.resources.production - buildingDef.productionCost,
+          },
+        },
+      )
+      return {
+        ok: true,
+        state: { ...state, cities: updatedCities, players: updatedPlayers },
       }
     }
   }

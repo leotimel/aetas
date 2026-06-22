@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase.ts'
 import {
-  CIVILIZATIONS, xpToLevel, xpProgress, xpForNextLevel, LEVEL_XP_THRESHOLDS,
+  CIVILIZATIONS, CIVILIZATION_CATALOG, SPECIAL_UNIT_CATALOG,
+  xpToLevel, xpProgress, xpForNextLevel, LEVEL_XP_THRESHOLDS,
 } from '@aetas/game-engine'
 
 interface Profile {
@@ -48,8 +49,8 @@ export default function ProfilePage({ userId, onClose }: Props) {
 
   if (!profile) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center">
-        <div className="w-6 h-6 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin" />
+      <div className="fixed inset-0 z-50 bg-aetas-bg flex items-center justify-center">
+        <div className="w-6 h-6 rounded-full border-2 border-aetas-border border-t-aetas-muted animate-spin" />
       </div>
     )
   }
@@ -61,41 +62,41 @@ export default function ProfilePage({ userId, onClose }: Props) {
   const pct = isMaxLevel ? 100 : Math.round((progressXp / rangeXp) * 100)
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col">
+    <div className="fixed inset-0 z-50 bg-aetas-bg flex flex-col">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 bg-slate-900 border-b border-slate-800">
+      <header className="flex items-center gap-3 px-4 py-3 bg-aetas-surface border-b border-aetas-border">
         <button
           onClick={onClose}
-          className="text-slate-400 hover:text-slate-200 transition-colors"
+          className="text-aetas-muted hover:text-aetas-text transition-colors"
         >
           ← Voltar
         </button>
-        <h1 className="text-slate-100 font-bold">Perfil</h1>
-        {saving && <span className="ml-auto text-slate-500 text-xs animate-pulse">Salvando…</span>}
+        <h1 className="font-display text-aetas-text font-semibold">Perfil</h1>
+        {saving && <span className="ml-auto text-aetas-dim text-xs animate-pulse">Salvando…</span>}
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full">
         {/* Level + XP */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-6">
+        <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-5 mb-6">
           <div className="flex items-center gap-4 mb-4">
-            <div className="w-14 h-14 rounded-xl bg-blue-900/60 border border-blue-800/50 flex items-center justify-center">
-              <span className="text-blue-300 font-bold text-xl">{level}</span>
+            <div className="w-14 h-14 rounded-xl bg-aetas-gold/10 border border-aetas-gold/30 flex items-center justify-center">
+              <span className="text-aetas-gold font-bold text-xl">{level}</span>
             </div>
             <div>
-              <p className="text-slate-100 font-bold">Nível {level}</p>
-              <p className="text-slate-400 text-sm">{profile.xp} XP total</p>
+              <p className="text-aetas-text font-bold">Nível {level}</p>
+              <p className="text-aetas-muted text-sm">{profile.xp} XP total</p>
             </div>
           </div>
 
           {/* XP progress bar */}
           <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex justify-between text-xs text-aetas-dim">
               <span>{isMaxLevel ? 'Nível máximo' : `${progressXp} / ${rangeXp} XP`}</span>
               {!isMaxLevel && <span>Próximo: nível {level + 1}</span>}
             </div>
-            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-2 bg-aetas-raised rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                className="h-full bg-aetas-gold rounded-full transition-all duration-500"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -111,8 +112,8 @@ export default function ProfilePage({ userId, onClose }: Props) {
         </div>
 
         {/* Level ladder */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-3">Níveis</p>
+        <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-4 mb-6">
+          <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">Níveis</p>
           <div className="flex flex-wrap gap-1.5">
             {Array.from({ length: LEVEL_XP_THRESHOLDS.length }, (_, i) => {
               const lvl = i + 1
@@ -123,14 +124,14 @@ export default function ProfilePage({ userId, onClose }: Props) {
                   key={lvl}
                   className={`flex flex-col items-center px-2.5 py-1.5 rounded-lg text-xs ${
                     lvl === level
-                      ? 'bg-blue-900/60 border border-blue-700 text-blue-300'
+                      ? 'bg-aetas-gold/10 border border-aetas-gold/40 text-aetas-gold'
                       : reached
-                        ? 'bg-slate-800 text-slate-400'
-                        : 'bg-slate-900 text-slate-700'
+                        ? 'bg-aetas-raised text-aetas-muted'
+                        : 'bg-aetas-surface text-aetas-dim border border-aetas-border'
                   }`}
                 >
                   <span className="font-bold">{lvl}</span>
-                  <span className="text-slate-600 text-xs">{xpReq}</span>
+                  <span className="text-aetas-dim text-xs">{xpReq}</span>
                 </div>
               )
             })}
@@ -138,7 +139,7 @@ export default function ProfilePage({ userId, onClose }: Props) {
         </div>
 
         {/* Civilization grid */}
-        <p className="text-xs text-slate-500 uppercase tracking-wider mb-3">Civilizações</p>
+        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">Civilizações</p>
         <div className="grid grid-cols-2 gap-3 pb-6">
           {CIVILIZATIONS.map(civ => {
             const unlocked = level >= civ.unlockLevel
@@ -151,13 +152,13 @@ export default function ProfilePage({ userId, onClose }: Props) {
                 disabled={!unlocked || saving}
                 className={`relative flex items-start gap-3 p-3.5 rounded-xl text-left border transition-all ${
                   selected
-                    ? 'border-blue-600 bg-blue-950/50 ring-1 ring-blue-600'
+                    ? 'border-aetas-gold bg-aetas-gold/10 ring-1 ring-aetas-gold/60'
                     : unlocked
-                      ? 'border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800'
-                      : 'border-slate-800 bg-slate-900/50 opacity-50 cursor-not-allowed'
+                      ? 'border-aetas-border bg-aetas-surface hover:border-aetas-border-strong hover:bg-aetas-raised'
+                      : 'border-aetas-border bg-aetas-surface/50 opacity-50 cursor-not-allowed'
                 }`}
               >
-                {/* Color dot */}
+                {/* Flag + color swatch */}
                 <span
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0 mt-0.5"
                   style={{ backgroundColor: civ.color + '30', border: `2px solid ${civ.color}66` }}
@@ -165,18 +166,33 @@ export default function ProfilePage({ userId, onClose }: Props) {
                   {civ.flag}
                 </span>
                 <div className="min-w-0">
-                  <p className={`font-semibold text-sm ${unlocked ? 'text-slate-100' : 'text-slate-600'}`}>
+                  <p className={`font-semibold text-sm ${unlocked ? 'text-aetas-text' : 'text-aetas-dim'}`}>
                     {civ.name}
                   </p>
-                  <p className="text-slate-500 text-xs mt-0.5 leading-tight">{civ.description}</p>
+                  {(() => {
+                    const catalog = CIVILIZATION_CATALOG.get(civ.id)
+                    const specialUnit = catalog ? SPECIAL_UNIT_CATALOG.get(catalog.specialUnitType) : undefined
+                    return (
+                      <>
+                        {catalog?.abilities.map(a => (
+                          <p key={a.id} className="text-aetas-muted text-xs mt-0.5 leading-tight">{a.description}</p>
+                        ))}
+                        {specialUnit && (
+                          <p className="text-aetas-gold text-xs mt-1 leading-tight">
+                            ★ {specialUnit.name}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
                   {!unlocked && (
-                    <p className="text-slate-700 text-xs mt-1">Nível {civ.unlockLevel}</p>
+                    <p className="text-aetas-dim text-xs mt-1">🔒 Nível {civ.unlockLevel}</p>
                   )}
                 </div>
                 {/* Selected checkmark */}
                 {selected && (
-                  <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center">
-                    <span className="text-white text-xs">✓</span>
+                  <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-aetas-gold flex items-center justify-center">
+                    <span className="text-aetas-bg text-xs font-bold">✓</span>
                   </span>
                 )}
                 {/* Color stripe */}
@@ -195,9 +211,9 @@ export default function ProfilePage({ userId, onClose }: Props) {
 
 function XpPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-slate-800/60 rounded-lg py-1.5 px-2">
-      <p className="text-green-400 font-bold text-sm">{value}</p>
-      <p className="text-slate-600 text-xs">{label}</p>
+    <div className="bg-aetas-raised/60 rounded-lg py-1.5 px-2">
+      <p className="text-aetas-gold font-bold text-sm">{value}</p>
+      <p className="text-aetas-dim text-xs">{label}</p>
     </div>
   )
 }

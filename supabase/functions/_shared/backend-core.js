@@ -1,4 +1,4 @@
-// src/disputes.ts
+// packages/backend-core/src/disputes.ts
 function toRow(dispute, gameId) {
   return {
     id: dispute.id,
@@ -24,7 +24,7 @@ function diffDisputes(pre, post, gameId) {
   return { inserts, statusUpdates };
 }
 
-// ../game-engine/src/types.ts
+// packages/game-engine/src/types.ts
 var TurnState = /* @__PURE__ */ ((TurnState2) => {
   TurnState2["WaitingForAction"] = "waitingForAction";
   TurnState2["Processing"] = "processing";
@@ -60,8 +60,11 @@ var TerrainType = /* @__PURE__ */ ((TerrainType2) => {
 var UnitType = /* @__PURE__ */ ((UnitType2) => {
   UnitType2["Warrior"] = "warrior";
   UnitType2["Archer"] = "archer";
-  UnitType2["Knight"] = "knight";
   UnitType2["Settler"] = "settler";
+  UnitType2["Cavalry"] = "cavalry";
+  UnitType2["Catapult"] = "catapult";
+  UnitType2["Knight"] = "knight";
+  UnitType2["Crossbowman"] = "crossbowman";
   return UnitType2;
 })(UnitType || {});
 var CombatDisputeStatus = /* @__PURE__ */ ((CombatDisputeStatus2) => {
@@ -76,8 +79,17 @@ var DiplomaticProposalStatus = /* @__PURE__ */ ((DiplomaticProposalStatus2) => {
   DiplomaticProposalStatus2["Rejected"] = "rejected";
   return DiplomaticProposalStatus2;
 })(DiplomaticProposalStatus || {});
+var BuildingType = /* @__PURE__ */ ((BuildingType3) => {
+  BuildingType3["Barracks"] = "barracks";
+  BuildingType3["Wall"] = "wall";
+  BuildingType3["Market"] = "market";
+  BuildingType3["Port"] = "port";
+  BuildingType3["Library"] = "library";
+  BuildingType3["Temple"] = "temple";
+  return BuildingType3;
+})(BuildingType || {});
 
-// ../game-engine/src/map.ts
+// packages/game-engine/src/map.ts
 function djb2(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -228,7 +240,148 @@ function updateFogOfWar(current, playerUnits, playerCities, mapRadius) {
   };
 }
 
-// ../game-engine/src/economy.ts
+// packages/game-engine/src/buildings.ts
+var CATALOG_ENTRIES = [
+  // ── Military ─────────────────────────────────────────────────────────────
+  {
+    type: "barracks" /* Barracks */,
+    name: "Quartel",
+    specialization: "military" /* Military */,
+    productionCost: 30,
+    constructionTurns: 3,
+    effect: { type: "productionMultiplier", value: 1.5 },
+    description: "Aumenta a produ\xE7\xE3o da cidade em 50%. Treina unidades mais rapidamente."
+  },
+  {
+    type: "wall" /* Wall */,
+    name: "Muralha",
+    specialization: "military" /* Military */,
+    productionCost: 40,
+    constructionTurns: 4,
+    effect: { type: "cityDefenseBonus", value: 5 },
+    description: "Concede +5 de defesa a todas as unidades dentro dos limites da cidade."
+  },
+  // ── Commercial ───────────────────────────────────────────────────────────
+  {
+    type: "market" /* Market */,
+    name: "Mercado",
+    specialization: "commercial" /* Commercial */,
+    productionCost: 25,
+    constructionTurns: 2,
+    effect: { type: "goldMultiplier", value: 1.5 },
+    description: "Aumenta a produ\xE7\xE3o de ouro em 50%."
+  },
+  {
+    type: "port" /* Port */,
+    name: "Porto",
+    specialization: "commercial" /* Commercial */,
+    productionCost: 35,
+    constructionTurns: 3,
+    effect: { type: "foodMultiplier", value: 1.3 },
+    description: "Rede de pesca costeira \u2014 aumenta a produ\xE7\xE3o de alimento em 30%."
+  },
+  // ── Scientific ───────────────────────────────────────────────────────────
+  {
+    type: "library" /* Library */,
+    name: "Biblioteca",
+    specialization: "scientific" /* Scientific */,
+    productionCost: 30,
+    constructionTurns: 3,
+    effect: { type: "eraProgressBonus", value: 1 },
+    description: "Gera 1 ponto de pesquisa por turno, acelerando a progress\xE3o de era."
+  },
+  {
+    type: "temple" /* Temple */,
+    name: "Templo",
+    specialization: "scientific" /* Scientific */,
+    productionCost: 35,
+    constructionTurns: 4,
+    effect: { type: "scoreBonus", value: 10 },
+    description: "Concede +10 pontos de pontua\xE7\xE3o cultural ao final da partida."
+  }
+];
+var BUILDING_CATALOG = new Map(
+  CATALOG_ENTRIES.map((d) => [d.type, d])
+);
+function getBuildingDef(type) {
+  const def = BUILDING_CATALOG.get(type);
+  if (!def) throw new Error(`Unknown BuildingType: ${type}`);
+  return def;
+}
+function getBuildingsBySpecialization(spec) {
+  return CATALOG_ENTRIES.filter((d) => d.specialization === spec);
+}
+function canBuildBuilding(city, type) {
+  const def = getBuildingDef(type);
+  if (def.specialization !== city.specialization) return false;
+  if ((city.buildings ?? []).includes(type)) return false;
+  if (city.construction != null) return false;
+  return true;
+}
+function startConstruction(city, type) {
+  const def = getBuildingDef(type);
+  return {
+    ...city,
+    construction: {
+      buildingType: type,
+      turnsRemaining: def.constructionTurns,
+      totalTurns: def.constructionTurns
+    }
+  };
+}
+function tickConstruction(city) {
+  if (!city.construction) return city;
+  const remaining = city.construction.turnsRemaining - 1;
+  if (remaining <= 0) {
+    return {
+      ...city,
+      buildings: [...city.buildings ?? [], city.construction.buildingType],
+      construction: null
+    };
+  }
+  return {
+    ...city,
+    construction: { ...city.construction, turnsRemaining: remaining }
+  };
+}
+function applyBuildingBonuses(buildings, resources) {
+  let { gold, food, production } = resources;
+  for (const type of buildings) {
+    const e = getBuildingDef(type).effect;
+    switch (e.type) {
+      case "goldMultiplier":
+        gold = Math.round(gold * e.value);
+        break;
+      case "foodMultiplier":
+        food = Math.round(food * e.value);
+        break;
+      case "productionMultiplier":
+        production = Math.round(production * e.value);
+        break;
+    }
+  }
+  return { gold, food, production };
+}
+function getCityDefenseBonus(buildings) {
+  return buildings.reduce((sum, type) => {
+    const e = getBuildingDef(type).effect;
+    return e.type === "cityDefenseBonus" ? sum + e.value : sum;
+  }, 0);
+}
+function getCityEraProgressBonus(buildings) {
+  return buildings.reduce((sum, type) => {
+    const e = getBuildingDef(type).effect;
+    return e.type === "eraProgressBonus" ? sum + e.value : sum;
+  }, 0);
+}
+function getCityScoreBonus(buildings) {
+  return buildings.reduce((sum, type) => {
+    const e = getBuildingDef(type).effect;
+    return e.type === "scoreBonus" ? sum + e.value : sum;
+  }, 0);
+}
+
+// packages/game-engine/src/economy.ts
 var BASE_GOLD_PER_POP = 1;
 var BASE_FOOD_PER_POP = 2;
 var BASE_PRODUCTION_PER_POP = 1;
@@ -255,11 +408,12 @@ function computeCityProduction(city) {
   if (city.population === 0) return { gold: 0, food: 0, production: 0 };
   const m = SPECIALIZATION_MULTIPLIERS[city.specialization];
   const lv = 1 + (city.level - 1) * LEVEL_BONUS_PER_LEVEL;
-  return {
+  const base = {
     gold: Math.round(city.population * BASE_GOLD_PER_POP * m.gold * lv),
     food: Math.round(city.population * BASE_FOOD_PER_POP * m.food * lv),
     production: Math.round(city.population * BASE_PRODUCTION_PER_POP * m.production * lv)
   };
+  return applyBuildingBonuses(city.buildings ?? [], base);
 }
 function growthThreshold(population) {
   return population * FOOD_PER_POPULATION_GROWTH;
@@ -286,7 +440,8 @@ function processTurnEconomy(cities, existingResources) {
     gold += produced.gold;
     food += produced.food;
     production += produced.production;
-    updatedCities.push(applyGrowth(city, produced.food));
+    const grown = applyGrowth(city, produced.food);
+    updatedCities.push(tickConstruction(grown));
   }
   return {
     updatedCities,
@@ -294,7 +449,373 @@ function processTurnEconomy(cities, existingResources) {
   };
 }
 
-// ../game-engine/src/turn.ts
+// packages/game-engine/src/units.ts
+var ERA_ORDER = {
+  ["ancient" /* Ancient */]: 0,
+  ["classical" /* Classical */]: 1,
+  ["medieval" /* Medieval */]: 2
+};
+var CATALOG_ENTRIES2 = [
+  // ── Era Ancient ──────────────────────────────────────────────────────────
+  {
+    type: "warrior" /* Warrior */,
+    name: "Guerreiro",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 20,
+    stats: { attack: 10, defense: 5, maxHp: 10, movement: 2 },
+    canFoundCity: false,
+    description: "Infantaria b\xE1sica. Corpo-a-corpo confi\xE1vel na era antiga."
+  },
+  {
+    type: "archer" /* Archer */,
+    name: "Arqueiro",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 25,
+    stats: { attack: 8, defense: 3, maxHp: 8, movement: 2, range: 2 },
+    canFoundCity: false,
+    description: "Ataque \xE0 dist\xE2ncia. Fraco em defesa pr\xF3xima."
+  },
+  {
+    type: "settler" /* Settler */,
+    name: "Colono",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 40,
+    stats: { attack: 0, defense: 1, maxHp: 6, movement: 2 },
+    canFoundCity: true,
+    description: "Funda novas cidades. In\xFAtil em combate \u2014 proteja-o."
+  },
+  // ── Era Classical ─────────────────────────────────────────────────────────
+  {
+    type: "cavalry" /* Cavalry */,
+    name: "Cavalaria",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 35,
+    stats: { attack: 12, defense: 6, maxHp: 10, movement: 4 },
+    canFoundCity: false,
+    description: "Movimento alto \u2014 ideal para explora\xE7\xE3o e flanqueamento."
+  },
+  {
+    type: "catapult" /* Catapult */,
+    name: "Catapulta",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 50,
+    stats: { attack: 15, defense: 2, maxHp: 8, movement: 1, range: 2, cityAttackBonus: 8 },
+    canFoundCity: false,
+    description: "Lenta, mas devastadora contra cidades e guarni\xE7\xF5es."
+  },
+  // ── Era Medieval ──────────────────────────────────────────────────────────
+  {
+    type: "knight" /* Knight */,
+    name: "Cavaleiro",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 60,
+    stats: { attack: 18, defense: 10, maxHp: 14, movement: 3 },
+    canFoundCity: false,
+    description: "A unidade corpo-a-corpo mais forte. Custa caro, vale cada produ\xE7\xE3o."
+  },
+  {
+    type: "crossbowman" /* Crossbowman */,
+    name: "Besteiro",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 45,
+    stats: { attack: 14, defense: 5, maxHp: 10, movement: 2, range: 2 },
+    canFoundCity: false,
+    description: "Arqueiro avan\xE7ado com mais ataque e resist\xEAncia."
+  }
+];
+var UNIT_CATALOG = new Map(
+  CATALOG_ENTRIES2.map((d) => [d.type, d])
+);
+function getUnitDef(type) {
+  const def = UNIT_CATALOG.get(type);
+  if (!def) throw new Error(`Unknown UnitType: ${type}`);
+  return def;
+}
+function canTrainUnit(unitType, currentEra) {
+  const def = getUnitDef(unitType);
+  return ERA_ORDER[currentEra] >= ERA_ORDER[def.eraRequired];
+}
+function unitsAvailableInEra(era) {
+  return CATALOG_ENTRIES2.filter((d) => canTrainUnit(d.type, era));
+}
+function createUnitInstance(id, type, ownerId, position) {
+  const def = getUnitDef(type);
+  return {
+    id,
+    unitType: type,
+    position,
+    ownerId,
+    hasMoved: false,
+    hasAttacked: false,
+    canFoundCity: def.canFoundCity || void 0,
+    stats: {
+      attack: def.stats.attack,
+      defense: def.stats.defense,
+      hp: def.stats.maxHp,
+      maxHp: def.stats.maxHp,
+      movement: def.stats.movement,
+      ...def.stats.range !== void 0 && { range: def.stats.range },
+      ...def.stats.cityAttackBonus !== void 0 && { cityAttackBonus: def.stats.cityAttackBonus }
+    }
+  };
+}
+function createUnitFromDef(id, def, ownerId, position) {
+  return {
+    id,
+    unitType: def.type,
+    position,
+    ownerId,
+    hasMoved: false,
+    hasAttacked: false,
+    canFoundCity: def.canFoundCity || void 0,
+    stats: {
+      attack: def.stats.attack,
+      defense: def.stats.defense,
+      hp: def.stats.maxHp,
+      maxHp: def.stats.maxHp,
+      movement: def.stats.movement,
+      ...def.stats.range !== void 0 && { range: def.stats.range },
+      ...def.stats.cityAttackBonus !== void 0 && { cityAttackBonus: def.stats.cityAttackBonus }
+    }
+  };
+}
+
+// packages/game-engine/src/civilizations.ts
+var SPECIAL_UNITS = [
+  // Roma — Warrior replacement: stronger defense and HP, slightly more attack
+  {
+    type: "roman_legionary",
+    name: "Legion\xE1rio",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 30,
+    replacesType: "warrior" /* Warrior */,
+    stats: { attack: 12, defense: 9, maxHp: 12, movement: 2 },
+    canFoundCity: false,
+    description: "Infantaria romana de elite. Discipline defensiva superior ao Guerreiro."
+  },
+  // Mongóis — Cavalry replacement: extra movement, slightly better stats
+  {
+    type: "mongol_cavalry",
+    name: "Cavaleiro Mongol",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 45,
+    replacesType: "cavalry" /* Cavalry */,
+    stats: { attack: 14, defense: 7, maxHp: 12, movement: 5 },
+    canFoundCity: false,
+    description: "Cavalaria das estepes. Movimenta-se mais r\xE1pido que qualquer unidade da era."
+  },
+  // Egito — Cavalry replacement: higher attack, lower defense
+  {
+    type: "egypt_war_chariot",
+    name: "Carro de Guerra",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 40,
+    replacesType: "cavalry" /* Cavalry */,
+    stats: { attack: 14, defense: 5, maxHp: 10, movement: 4 },
+    canFoundCity: false,
+    description: "Ve\xEDculo de combate veloz. Maior poder de ataque, menor resist\xEAncia."
+  },
+  // Grécia — Warrior replacement: muito mais defesa, ataque ligeiramente menor
+  {
+    type: "greek_hoplite",
+    name: "Hoplita",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 30,
+    replacesType: "warrior" /* Warrior */,
+    stats: { attack: 9, defense: 12, maxHp: 14, movement: 2 },
+    canFoundCity: false,
+    description: "Infantaria de forma\xE7\xE3o cerrada. Defesa excepcional, ataque contido."
+  },
+  // Vikings — Knight replacement: ataque devastador, defesa reduzida
+  {
+    type: "viking_berserker",
+    name: "Berserker",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 70,
+    replacesType: "knight" /* Knight */,
+    stats: { attack: 24, defense: 8, maxHp: 14, movement: 3 },
+    canFoundCity: false,
+    description: "Guerreiro em transe de batalha. Ataque excepcional; sem escudo."
+  },
+  // China — Crossbowman replacement: mais movimento, range mantido
+  {
+    type: "china_horse_archer",
+    name: "Arqueiro de Cavalo",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 55,
+    replacesType: "crossbowman" /* Crossbowman */,
+    stats: { attack: 15, defense: 6, maxHp: 12, movement: 3, range: 2 },
+    canFoundCity: false,
+    description: "Arqueiro montado. Combina mobilidade de cavalaria com alcance de besteiro."
+  }
+];
+var SPECIAL_UNIT_CATALOG = new Map(
+  SPECIAL_UNITS.map((u) => [u.type, u])
+);
+var CATALOG_ENTRIES3 = [
+  {
+    id: "romans",
+    name: "Romanos",
+    description: "Mestres da engenharia e infraestrutura. Cidades produzem mais em menos tempo.",
+    abilities: [
+      {
+        id: "roman_infrastructure",
+        name: "Infraestrutura Imperial",
+        description: "+25% de produ\xE7\xE3o em todas as cidades.",
+        effect: { type: "productionBonus", multiplier: 1.25 }
+      }
+    ],
+    specialUnitType: "roman_legionary"
+  },
+  {
+    id: "mongols",
+    name: "Mong\xF3is",
+    description: "Conquistadores das estepes. Combate feroz e vis\xE3o ampla do terreno.",
+    abilities: [
+      {
+        id: "mongol_fury",
+        name: "F\xFAria das Estepes",
+        description: "+20% de dano em combate.",
+        effect: { type: "combatBonus", multiplier: 1.2 }
+      },
+      {
+        id: "mongol_scouting",
+        name: "Explora\xE7\xE3o N\xF4made",
+        description: "+1 hex de vis\xE3o para todas as unidades.",
+        effect: { type: "visionBonus", extraRadius: 1 }
+      }
+    ],
+    specialUnitType: "mongol_cavalry"
+  },
+  {
+    id: "egyptians",
+    name: "Eg\xEDpcios",
+    description: "Civiliza\xE7\xE3o do Nilo. Abund\xE2ncia agr\xEDcola alimenta grandes popula\xE7\xF5es.",
+    abilities: [
+      {
+        id: "egypt_nile_bounty",
+        name: "Fartura do Nilo",
+        description: "+30% de produ\xE7\xE3o de comida em todas as cidades.",
+        effect: { type: "foodBonus", multiplier: 1.3 }
+      }
+    ],
+    specialUnitType: "egypt_war_chariot"
+  },
+  {
+    id: "greeks",
+    name: "Gregos",
+    description: "Fil\xF3sofos e estrategistas. Vis\xE3o agu\xE7ada e t\xE1ticas defensivas superiores.",
+    abilities: [
+      {
+        id: "greek_philosophy",
+        name: "Filosofia Militar",
+        description: "+10% de dano em combate (t\xE1ticas superiores).",
+        effect: { type: "combatBonus", multiplier: 1.1 }
+      },
+      {
+        id: "greek_culture",
+        name: "Cultura Hel\xEAnica",
+        description: "+1 hex de vis\xE3o (conhecimento geogr\xE1fico amplo).",
+        effect: { type: "visionBonus", extraRadius: 1 }
+      }
+    ],
+    specialUnitType: "greek_hoplite"
+  },
+  {
+    id: "vikings",
+    name: "Vikings",
+    description: "Guerreiros do norte. Brutais em combate e tem\xEDveis exploradores.",
+    abilities: [
+      {
+        id: "viking_raid",
+        name: "Incurs\xE3o N\xF3rdica",
+        description: "+15% de dano em combate.",
+        effect: { type: "combatBonus", multiplier: 1.15 }
+      },
+      {
+        id: "viking_exploration",
+        name: "Esp\xEDrito Explorador",
+        description: "+2 hexes de vis\xE3o para todas as unidades.",
+        effect: { type: "visionBonus", extraRadius: 2 }
+      }
+    ],
+    specialUnitType: "viking_berserker"
+  },
+  {
+    id: "china",
+    name: "China",
+    description: "Pot\xEAncia comercial e tecnol\xF3gica. Ouro flui abundantemente.",
+    abilities: [
+      {
+        id: "china_silk_road",
+        name: "Rota da Seda",
+        description: "+25% de produ\xE7\xE3o de ouro em todas as cidades.",
+        effect: { type: "goldBonus", multiplier: 1.25 }
+      }
+    ],
+    specialUnitType: "china_horse_archer"
+  }
+];
+var CIVILIZATION_CATALOG = new Map(
+  CATALOG_ENTRIES3.map((c) => [c.id, c])
+);
+function getCivilization(id) {
+  const civ = CIVILIZATION_CATALOG.get(id);
+  if (!civ) throw new Error(`Unknown civilization: ${id}`);
+  return civ;
+}
+function getSpecialUnit(civId) {
+  const civ = getCivilization(civId);
+  const unit = SPECIAL_UNIT_CATALOG.get(civ.specialUnitType);
+  if (!unit) throw new Error(`Missing special unit definition: ${civ.specialUnitType}`);
+  return unit;
+}
+function unitsForCiv(civId, era) {
+  const special = getSpecialUnit(civId);
+  const baseAvailable = unitsAvailableInEra(era);
+  const replacedIsAvailable = baseAvailable.some((u) => u.type === special.replacesType);
+  const filtered = baseAvailable.filter((u) => u.type !== special.replacesType);
+  return replacedIsAvailable ? [...filtered, special] : filtered;
+}
+function getCivEconomyMultipliers(civId) {
+  try {
+    const civ = getCivilization(civId);
+    let gold = 1, food = 1, production = 1;
+    for (const ability of civ.abilities) {
+      const e = ability.effect;
+      if (e.type === "goldBonus") gold *= e.multiplier;
+      if (e.type === "foodBonus") food *= e.multiplier;
+      if (e.type === "productionBonus") production *= e.multiplier;
+    }
+    return { gold, food, production };
+  } catch {
+    return { gold: 1, food: 1, production: 1 };
+  }
+}
+function getCivCombatMultiplier(civId) {
+  try {
+    const civ = getCivilization(civId);
+    return civ.abilities.filter((a) => a.effect.type === "combatBonus").reduce((acc, a) => {
+      const e = a.effect;
+      return acc * e.multiplier;
+    }, 1);
+  } catch {
+    return 1;
+  }
+}
+function getCivVisionBonus(civId) {
+  try {
+    const civ = getCivilization(civId);
+    return civ.abilities.reduce((sum, a) => {
+      const e = a.effect;
+      return e.type === "visionBonus" ? sum + e.extraRadius : sum;
+    }, 0);
+  } catch {
+    return 0;
+  }
+}
+
+// packages/game-engine/src/turn.ts
 function getPlayerById(state, id) {
   return state.players.find((p) => p.id === id);
 }
@@ -340,10 +861,16 @@ function endTurn(state, playerId, now, hooks = {}) {
   const actor = players.find((p) => p.id === actorId);
   if (actor) {
     const actorCities = cities.filter((c) => c.ownerId === actorId);
+    const preResources = { ...actor.resources };
     const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources);
     const updatedById = new Map(updatedCities.map((c) => [c.id, c]));
     cities = cities.map((c) => updatedById.get(c.id) ?? c);
-    actor.resources = updatedResources;
+    const m = getCivEconomyMultipliers(actor.civilizationId);
+    actor.resources = {
+      gold: Math.round(preResources.gold + (updatedResources.gold - preResources.gold) * m.gold),
+      food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production)
+    };
   }
   combatDisputes.sort((a, b) => a.id.localeCompare(b.id));
   let working = { ...state, players, cities, combatDisputes };
@@ -396,7 +923,7 @@ function endTurn(state, playerId, now, hooks = {}) {
   };
 }
 
-// ../game-engine/src/combat.ts
+// packages/game-engine/src/combat.ts
 var COMBAT_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var MIN_DAMAGE = 1;
 var ACTIVE_DEFENSE_BONUS = 2;
@@ -428,7 +955,8 @@ function resolveCombat(attacker, defender, opts) {
     };
   }
   const defenderDefense = defender.stats.defense + terrainDefenseBonus(opts.defenderTerrain) + (activeDefense ? ACTIVE_DEFENSE_BONUS : 0);
-  const damageToDefender = Math.max(MIN_DAMAGE, attacker.stats.attack - defenderDefense);
+  const attackMult = opts.attackerCivMultiplier ?? 1;
+  const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense);
   const defenderHp = defender.stats.hp - damageToDefender;
   if (defenderHp <= 0) {
     return {
@@ -442,7 +970,8 @@ function resolveCombat(attacker, defender, opts) {
     };
   }
   const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain);
-  const damageToAttacker = Math.max(MIN_DAMAGE, defender.stats.attack - attackerDefense);
+  const defMult = opts.defenderCivMultiplier ?? 1;
+  const damageToAttacker = Math.max(MIN_DAMAGE, Math.floor(defender.stats.attack * defMult) - attackerDefense);
   const attackerHp = attacker.stats.hp - damageToAttacker;
   const attackerDestroyed = attackerHp <= 0;
   return {
@@ -517,10 +1046,14 @@ function resolveDisputeByAction(state, disputeId, actingPlayerId, _now) {
       result: null
     };
   }
+  const atkPlayer = state.players.find((p) => p.id === dispute.attackerPlayerId);
+  const defPlayer = state.players.find((p) => p.id === dispute.defenderPlayerId);
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
-    defenderActiveDefense: actingPlayerId === dispute.defenderPlayerId
+    defenderActiveDefense: actingPlayerId === dispute.defenderPlayerId,
+    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
   });
   const applied = applyCombatResult(state, result);
   return {
@@ -533,15 +1066,19 @@ function resolveTimedOutDispute(dispute, state) {
   const attacker = findUnit(state, dispute.attackerUnitId);
   const defender = findUnit(state, dispute.defenderUnitId);
   if (!attacker || !defender) return state;
+  const atkPlayer = state.players.find((p) => p.id === dispute.attackerPlayerId);
+  const defPlayer = state.players.find((p) => p.id === dispute.defenderPlayerId);
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
-    defenderActiveDefense: false
+    defenderActiveDefense: false,
+    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
   });
   return applyCombatResult(state, result);
 }
 
-// ../game-engine/src/actions.ts
+// packages/game-engine/src/actions.ts
 var DEFAULT_HOOKS = { resolveTimedOutDispute };
 function findUnit2(state, id) {
   return state.units.find((u) => u.id === id);
@@ -590,6 +1127,43 @@ function validateAction(state, playerId, action, _now) {
       }
       return { valid: true };
     }
+    case "trainUnit": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      if (!city) return { valid: false, reason: "city not found" };
+      if (city.ownerId !== playerId) return { valid: false, reason: "not your city" };
+      const player = getPlayerById(state, playerId);
+      const allUnits = unitsForCiv(player.civilizationId, state.era);
+      const unitDef = allUnits.find((u) => u.type === action.unitType);
+      if (!unitDef) return { valid: false, reason: "unit not available in this era" };
+      if (player.resources.production < unitDef.productionCost) {
+        return { valid: false, reason: "insufficient production" };
+      }
+      const alreadyThere = state.units.some(
+        (u) => u.ownerId === playerId && hexKey(u.position) === hexKey(city.position)
+      );
+      if (alreadyThere) return { valid: false, reason: "city hex occupied" };
+      return { valid: true };
+    }
+    case "constructBuilding": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      if (!city) return { valid: false, reason: "city not found" };
+      if (city.ownerId !== playerId) return { valid: false, reason: "not your city" };
+      const buildingDef = getBuildingDef(action.buildingType);
+      if (buildingDef.specialization !== city.specialization) {
+        return { valid: false, reason: "wrong city specialization" };
+      }
+      if ((city.buildings ?? []).includes(action.buildingType)) {
+        return { valid: false, reason: "building already constructed" };
+      }
+      if (city.construction != null) {
+        return { valid: false, reason: "construction already in progress" };
+      }
+      const player = getPlayerById(state, playerId);
+      if (player.resources.production < buildingDef.productionCost) {
+        return { valid: false, reason: "insufficient production" };
+      }
+      return { valid: true };
+    }
   }
 }
 function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
@@ -618,10 +1192,49 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
         }
       };
     }
+    case "trainUnit": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      const player = state.players.find((p) => p.id === playerId);
+      const allUnits = unitsForCiv(player.civilizationId, state.era);
+      const unitDef = allUnits.find((u) => u.type === action.unitType);
+      const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position);
+      const updatedPlayers = state.players.map(
+        (p) => p.id !== playerId ? p : {
+          ...p,
+          resources: {
+            ...p.resources,
+            production: p.resources.production - unitDef.productionCost
+          }
+        }
+      );
+      return {
+        ok: true,
+        state: { ...state, players: updatedPlayers, units: [...state.units, newUnit] }
+      };
+    }
+    case "constructBuilding": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      const buildingDef = getBuildingDef(action.buildingType);
+      const updatedCity = startConstruction(city, action.buildingType);
+      const updatedCities = state.cities.map((c) => c.id === city.id ? updatedCity : c);
+      const updatedPlayers = state.players.map(
+        (p) => p.id !== playerId ? p : {
+          ...p,
+          resources: {
+            ...p.resources,
+            production: p.resources.production - buildingDef.productionCost
+          }
+        }
+      );
+      return {
+        ok: true,
+        state: { ...state, cities: updatedCities, players: updatedPlayers }
+      };
+    }
   }
 }
 
-// ../game-engine/src/ai.ts
+// packages/game-engine/src/ai.ts
 function isFavorableAttack(state, attacker, defender) {
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
@@ -680,7 +1293,7 @@ function decideOpponentTurn(state, playerId, now) {
   return [...actions, END_TURN];
 }
 
-// ../game-engine/src/diplomacy.ts
+// packages/game-engine/src/diplomacy.ts
 function haveMadeContact(state, playerAId, playerBId) {
   const fogA = state.fogOfWar.find((f) => f.playerId === playerAId);
   const fogB = state.fogOfWar.find((f) => f.playerId === playerBId);
@@ -860,7 +1473,7 @@ function respondToResourceTrade(state, responderId, proposalId, accept) {
   };
 }
 
-// ../game-engine/src/scoring.ts
+// packages/game-engine/src/scoring.ts
 var TERRITORY_POINTS_PER_CITY = 10;
 var POPULATION_POINTS_PER_POP = 3;
 var DEVELOPMENT_POINTS_PER_LEVEL = 5;
@@ -896,7 +1509,44 @@ function eliminatePlayersWithNoCities(state) {
   };
 }
 
-// src/orchestration.ts
+// packages/game-engine/src/civs.ts
+var CIVILIZATIONS = [
+  { id: "romans", name: "Romanos", flag: "\u{1F3DB}\uFE0F", color: "#ef4444", unlockLevel: 1, description: "Mestres da engenharia e da lei." },
+  { id: "greeks", name: "Gregos", flag: "\u26A1", color: "#3b82f6", unlockLevel: 1, description: "Fil\xF3sofos e estrategistas." },
+  { id: "vikings", name: "Vikings", flag: "\u2694\uFE0F", color: "#6b7280", unlockLevel: 3, description: "Guerreiros do norte inclemente." },
+  { id: "egyptians", name: "Eg\xEDpcios", flag: "\u2600\uFE0F", color: "#f59e0b", unlockLevel: 4, description: "Construtores de civiliza\xE7\xF5es eternas." },
+  { id: "mongols", name: "Mong\xF3is", flag: "\u{1F3F9}", color: "#22c55e", unlockLevel: 6, description: "Conquistadores das estepes sem fim." },
+  { id: "china", name: "China", flag: "\u{1F409}", color: "#c0392b", unlockLevel: 8, description: "Com\xE9rcio e tecnologia avan\xE7ada." }
+];
+var LEVEL_XP_THRESHOLDS = [0, 50, 150, 300, 500, 750, 1050, 1400, 1800];
+var XP_FOR_PLAYING = 10;
+var XP_WIN_BONUS = 25;
+var XP_DAILY_BASE = 15;
+var XP_DAILY_WIN = 35;
+function xpToLevel(xp) {
+  for (let i = LEVEL_XP_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (xp >= LEVEL_XP_THRESHOLDS[i]) return i + 1;
+  }
+  return 1;
+}
+function xpForNextLevel(currentLevel) {
+  return LEVEL_XP_THRESHOLDS[currentLevel] ?? Infinity;
+}
+function xpProgress(xp) {
+  const level = xpToLevel(xp);
+  const thisFloor = LEVEL_XP_THRESHOLDS[level - 1] ?? 0;
+  const nextCeil = LEVEL_XP_THRESHOLDS[level] ?? xp;
+  return [xp - thisFloor, nextCeil - thisFloor];
+}
+function unlockedCivs(xp) {
+  const level = xpToLevel(xp);
+  return CIVILIZATIONS.filter((c) => c.unlockLevel <= level);
+}
+function getCiv(id) {
+  return CIVILIZATIONS.find((c) => c.id === id) ?? CIVILIZATIONS[0];
+}
+
+// packages/backend-core/src/orchestration.ts
 var TURN_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var FULL_HOOKS = { resolveTimedOutDispute, determineWinner };
 var NOT_FOUND = (reason) => ({ ok: false, kind: "not_found", reason });
@@ -1029,7 +1679,11 @@ export {
   BASE_FOOD_PER_POP,
   BASE_GOLD_PER_POP,
   BASE_PRODUCTION_PER_POP,
+  BUILDING_CATALOG,
+  BuildingType,
   CITY_VISION_RADIUS,
+  CIVILIZATIONS,
+  CIVILIZATION_CATALOG,
   COMBAT_TIMEOUT_MS,
   CitySpecialization,
   CombatDisputeStatus,
@@ -1038,23 +1692,35 @@ export {
   Era,
   FOOD_PER_POPULATION_GROWTH,
   LEVEL_BONUS_PER_LEVEL,
+  LEVEL_XP_THRESHOLDS,
   MIN_DAMAGE,
   POPULATION_POINTS_PER_POP,
   ResourceType,
+  SPECIAL_UNIT_CATALOG,
   TERRITORY_POINTS_PER_CITY,
   TURN_TIMEOUT_MS,
   TerrainType,
   TurnState,
+  UNIT_CATALOG,
   UNIT_VISION_RADIUS,
   UnitType,
+  XP_DAILY_BASE,
+  XP_DAILY_WIN,
+  XP_FOR_PLAYING,
+  XP_WIN_BONUS,
   activePlayers,
   applyAction,
+  applyBuildingBonuses,
   applyGrowth,
+  canBuildBuilding,
   canSubmitAction,
+  canTrainUnit,
   computeCityProduction,
   computePlayerScore,
   computeVisibleHexes,
   createCombatDispute,
+  createUnitFromDef,
+  createUnitInstance,
   decideOpponentTurn,
   decideSubstituteTurn,
   determineWinner,
@@ -1062,8 +1728,20 @@ export {
   eliminatePlayersWithNoCities,
   endTurn,
   generateMap,
+  getBuildingDef,
+  getBuildingsBySpecialization,
+  getCityDefenseBonus,
+  getCityEraProgressBonus,
+  getCityScoreBonus,
+  getCiv,
+  getCivCombatMultiplier,
+  getCivEconomyMultipliers,
+  getCivVisionBonus,
+  getCivilization,
   getCurrentPlayer,
   getPlayerById,
+  getSpecialUnit,
+  getUnitDef,
   growthThreshold,
   haveMadeContact,
   hexDistance,
@@ -1082,10 +1760,18 @@ export {
   resolveTimedOutDispute,
   respondToNonAggressionPact,
   respondToResourceTrade,
+  startConstruction,
   submitAction,
   sweepTimeouts,
   terrainAt,
   terrainDefenseBonus,
+  tickConstruction,
+  unitsAvailableInEra,
+  unitsForCiv,
+  unlockedCivs,
   updateFogOfWar,
-  validateAction
+  validateAction,
+  xpForNextLevel,
+  xpProgress,
+  xpToLevel
 };

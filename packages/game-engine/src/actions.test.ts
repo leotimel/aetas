@@ -4,11 +4,14 @@ import { createCombatDispute } from './combat.js'
 import {
   TurnState,
   CombatDisputeStatus,
+  CitySpecialization,
+  BuildingType,
   Era,
 } from './types.js'
 import type {
   Unit,
   UnitStats,
+  City,
   GameState,
   GameMap,
   HexCoord,
@@ -48,10 +51,24 @@ function makePlayer(id: string): Player {
 
 const MAP: GameMap = { tiles: [], radius: 5, seed: 's', startPositions: [] }
 
+function makeCity(id: string, ownerId: string, position: HexCoord): City {
+  return {
+    id,
+    name: `City ${id}`,
+    ownerId,
+    position,
+    population: 2,
+    specialization: CitySpecialization.Military,
+    level: 1,
+    foodStored: 0,
+  }
+}
+
 function makeState(opts: {
   units?: Unit[]
   disputes?: CombatDispute[]
   players?: Player[]
+  cities?: City[]
   currentPlayerId?: string
   turnState?: TurnState
   isFinished?: boolean
@@ -61,7 +78,7 @@ function makeState(opts: {
     players: opts.players ?? [makePlayer('p0'), makePlayer('p1')],
     map: MAP,
     units: opts.units ?? [],
-    cities: [],
+    cities: opts.cities ?? [],
     turnNumber: 1,
     currentPlayerId: opts.currentPlayerId ?? 'p0',
     turnState: opts.turnState ?? TurnState.WaitingForAction,
@@ -249,5 +266,212 @@ describe('purity', () => {
     expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
     expect(state.units.find(u => u.id === 'a')!.hasAttacked).toBe(false) // unchanged
     expect(state.combatDisputes).toHaveLength(0)
+  })
+})
+
+// ─── trainUnit ────────────────────────────────────────────────────────────────
+
+function romanPlayer(id: string, production: number): Player {
+  return { ...makePlayer(id), civilizationId: 'romans', resources: { gold: 0, food: 0, production } }
+}
+
+describe('validateAction — trainUnit', () => {
+  it('rejects when city is not found', () => {
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'ghost', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'city not found' })
+  })
+
+  it('rejects when city belongs to another player', () => {
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'not your city' })
+  })
+
+  it('rejects when unit type is not available in current era (Cavalry in Ancient)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'cavalry', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'unit not available in this era' })
+  })
+
+  it('rejects when production is insufficient', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    // Archer costs 25; player has only 10
+    const state = makeState({ players: [romanPlayer('p0', 10), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient production' })
+  })
+
+  it('rejects when the city hex is already occupied by own unit', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const occupier = makeUnit('ux', 'p0', { q: 0, r: 0 })
+    const state = makeState({
+      players: [romanPlayer('p0', 100), makePlayer('p1')],
+      cities: [city],
+      units: [occupier],
+    })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'city hex occupied' })
+  })
+
+  it('accepts a valid trainUnit action', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: true })
+  })
+})
+
+describe('applyAction — trainUnit', () => {
+  it('places the new unit at the city position', () => {
+    const city = makeCity('c1', 'p0', { q: 3, r: -1 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'new-archer' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const unit = res.state.units.find(u => u.id === 'new-archer')
+    expect(unit).toBeDefined()
+    expect(unit!.position).toEqual({ q: 3, r: -1 })
+    expect(unit!.unitType).toBe('archer')
+    expect(unit!.ownerId).toBe('p0')
+  })
+
+  it('deducts the unit production cost from the acting player', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    // Archer costs 25; start with 100 → should have 75 after
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u2' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const p0 = res.state.players.find(p => p.id === 'p0')!
+    expect(p0.resources.production).toBe(75)
+  })
+
+  it('works for a civilization special unit (roman_legionary)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    // roman_legionary costs 30
+    const state = makeState({ players: [romanPlayer('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'roman_legionary', unitId: 'lg1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const unit = res.state.units.find(u => u.id === 'lg1')
+    expect(unit!.unitType).toBe('roman_legionary')
+    const p0 = res.state.players.find(p => p.id === 'p0')!
+    expect(p0.resources.production).toBe(20) // 50 - 30
+  })
+
+  it('does not mutate a frozen input state', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = deepFreeze(makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] }))
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u3' }
+    expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
+    expect(state.units).toHaveLength(0)
+    const p0 = state.players.find(p => p.id === 'p0')!
+    expect(p0.resources.production).toBe(100)
+  })
+})
+
+// ─── constructBuilding ────────────────────────────────────────────────────────
+
+function playerWithProd(id: string, production: number): Player {
+  return { ...makePlayer(id), resources: { gold: 0, food: 0, production } }
+}
+
+describe('validateAction — constructBuilding', () => {
+  it('rejects when city is not found', () => {
+    const state = makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'ghost', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'city not found' })
+  })
+
+  it('rejects when city belongs to another player', () => {
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'not your city' })
+  })
+
+  it('rejects when building specialization does not match city', () => {
+    // Military city; Market is Commercial
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military
+    const state = makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Market }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'wrong city specialization' })
+  })
+
+  it('rejects when building is already constructed', () => {
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), buildings: [BuildingType.Barracks] }
+    const state = makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'building already constructed' })
+  })
+
+  it('rejects when construction is already in progress', () => {
+    const city: City = {
+      ...makeCity('c1', 'p0', { q: 0, r: 0 }),
+      construction: { buildingType: BuildingType.Barracks, turnsRemaining: 2, totalTurns: 3 },
+    }
+    const state = makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Wall }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'construction already in progress' })
+  })
+
+  it('rejects when production is insufficient', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military
+    // Barracks costs 30; player has only 10
+    const state = makeState({ players: [playerWithProd('p0', 10), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient production' })
+  })
+
+  it('accepts a valid constructBuilding action', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military
+    const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: true })
+  })
+})
+
+describe('applyAction — constructBuilding', () => {
+  it('sets city.construction with correct turnsRemaining', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military — Barracks costs 30, takes 3 turns
+    const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const updatedCity = res.state.cities.find(c => c.id === 'c1')!
+    expect(updatedCity.construction?.buildingType).toBe(BuildingType.Barracks)
+    expect(updatedCity.construction?.turnsRemaining).toBe(3)
+    expect(updatedCity.construction?.totalTurns).toBe(3)
+  })
+
+  it('deducts the building production cost from the player', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Barracks costs 30
+    const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const p0 = res.state.players.find(p => p.id === 'p0')!
+    expect(p0.resources.production).toBe(20) // 50 - 30
+  })
+
+  it('does not mutate a frozen input state', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = deepFreeze(makeState({ players: [playerWithProd('p0', 100), makePlayer('p1')], cities: [city] }))
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
+    expect(state.cities.find(c => c.id === 'c1')!.construction).toBeUndefined()
   })
 })

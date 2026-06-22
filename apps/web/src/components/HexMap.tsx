@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GameState, HexCoord } from '@aetas/game-engine'
-import { hexKey, hexDistance } from '@aetas/game-engine'
+import { hexKey, hexDistance, UnitType, Era, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, CIVILIZATIONS } from '@aetas/game-engine'
 
 const HEX_SIZE = 36
 
@@ -9,20 +9,49 @@ const PLAYER_COLORS = [
   '#a855f7', '#06b6d4', '#f97316', '#ec4899',
 ]
 
+function civColor(civilizationId: string, fallback: string): string {
+  return CIVILIZATIONS.find(c => c.id === civilizationId)?.color ?? fallback
+}
+
 const TERRAIN_FILL: Record<string, string> = {
-  plains:   '#5a8a5c',
-  forest:   '#2d5a27',
-  mountain: '#7a7a8a',
-  hills:    '#8b6e4a',
-  water:    '#2a5f8a',
+  plains:   '#6b8c3e',
+  forest:   '#234a1f',
+  mountain: '#5a5668',
+  hills:    '#8c6e3a',
+  water:    '#1a5270',
 }
 
 const TERRAIN_STROKE: Record<string, string> = {
-  plains:   '#4a7a4c',
-  forest:   '#1d4a17',
-  mountain: '#5a5a6a',
-  hills:    '#7b5e3a',
-  water:    '#1a4f7a',
+  plains:   '#4e6b28',
+  forest:   '#162f12',
+  mountain: '#46425a',
+  hills:    '#6e5228',
+  water:    '#0e3a52',
+}
+
+const UNIT_ABBREV: Record<string, string> = {
+  warrior:            'Gu',
+  archer:             'Ar',
+  settler:            'Co',
+  cavalry:            'Cv',
+  catapult:           'Ka',
+  knight:             'Cn',
+  crossbowman:        'Be',
+  roman_legionary:    'Lg',
+  mongol_cavalry:     'Mc',
+  egypt_war_chariot:  'Cc',
+  greek_hoplite:      'Ho',
+  viking_berserker:   'Bk',
+  china_horse_archer: 'Ac',
+}
+
+function eraStroke(unitType: string): string {
+  const def = UNIT_CATALOG.get(unitType as UnitType) ?? SPECIAL_UNIT_CATALOG.get(unitType)
+  switch (def?.eraRequired) {
+    case Era.Classical: return '#3b82f6'
+    case Era.Medieval:  return '#f59e0b'
+    default:            return '#6b7280'
+  }
 }
 
 function hexToPixel(q: number, r: number): [number, number] {
@@ -148,7 +177,7 @@ export default function HexMap({
   const { map, units, cities, players, fogOfWar } = gameState
 
   const playerColorMap = new Map<string, string>()
-  players.forEach((p, i) => playerColorMap.set(p.id, PLAYER_COLORS[i % PLAYER_COLORS.length]))
+  players.forEach((p, i) => playerColorMap.set(p.id, civColor(p.civilizationId, PLAYER_COLORS[i % PLAYER_COLORS.length])))
 
   const myFow = fogOfWar.find(f => f.playerId === myEnginePlayerId)
   const visibleSet = new Set((myFow?.visibleHexes ?? []).map(hexKey))
@@ -287,7 +316,7 @@ export default function HexMap({
                 <UnitIcon
                   cx={px} cy={city ? py - 14 : py}
                   color={playerColorMap.get(unit.ownerId) ?? '#888'}
-                  letter={unit.unitType.charAt(0).toUpperCase()}
+                  unitType={unit.unitType}
                   selected={selectedUnit?.id === unit.id}
                 />
               )}
@@ -308,12 +337,14 @@ function CityIcon({ cx, cy, color, level }: { cx: number; cy: number; color: str
   )
 }
 
-function UnitIcon({ cx, cy, color, letter, selected }: { cx: number; cy: number; color: string; letter: string; selected: boolean }) {
+function UnitIcon({ cx, cy, color, unitType, selected }: { cx: number; cy: number; color: string; unitType: string; selected: boolean }) {
+  const label = UNIT_ABBREV[unitType] ?? unitType.slice(0, 2).toUpperCase()
+  const stroke = eraStroke(unitType)
   return (
     <>
       {selected && <circle cx={cx} cy={cy} r={14} fill="none" stroke="#f97316" strokeWidth={2.5} />}
-      <circle cx={cx} cy={cy} r={11} fill={color} fillOpacity={0.92} stroke="#ffffffaa" strokeWidth={1} />
-      <text x={cx} y={cy + 4} fontSize={10} fill="#fff" textAnchor="middle" fontWeight="bold">{letter}</text>
+      <circle cx={cx} cy={cy} r={11} fill={color} fillOpacity={0.92} stroke={stroke} strokeWidth={2} />
+      <text x={cx} y={cy + 4} fontSize={9} fill="#fff" textAnchor="middle" fontWeight="bold">{label}</text>
     </>
   )
 }

@@ -109,9 +109,9 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   // Loading
   if (daily === 'none') {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-4 animate-pulse">
-        <div className="h-4 bg-slate-800 rounded w-1/3 mb-2" />
-        <div className="h-3 bg-slate-800 rounded w-1/2" />
+      <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-4 mb-4 animate-pulse">
+        <div className="h-4 bg-aetas-raised rounded w-1/3 mb-2" />
+        <div className="h-3 bg-aetas-raised rounded w-1/2" />
       </div>
     )
   }
@@ -121,21 +121,21 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
   return (
     <div className={`border rounded-2xl p-4 mb-4 ${
-      !daily ? 'bg-slate-900 border-slate-700'
+      !daily ? 'bg-aetas-surface border-aetas-border-strong'
       : daily.isFinished
-        ? isWon ? 'bg-amber-950/40 border-amber-800/60' : 'bg-slate-900 border-slate-700'
-        : 'bg-blue-950/30 border-blue-800/40'
+        ? isWon ? 'bg-amber-950/40 border-amber-800/60' : 'bg-aetas-surface border-aetas-border-strong'
+        : 'bg-aetas-gold/5 border-aetas-gold/30'
     }`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg">{daily && daily !== 'none' && daily.isFinished ? (isWon ? '🏆' : '🎮') : '🗓️'}</span>
-            <h2 className="text-slate-100 font-semibold text-sm">Desafio Diário</h2>
-            <span className="text-slate-600 text-xs font-mono">{formatDateLabel(today)}</span>
+            <h2 className="text-aetas-text font-semibold text-sm">Desafio Diário</h2>
+            <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today)}</span>
           </div>
-          <p className="text-slate-500 text-xs mt-0.5">
-            Mesmo mapa para todos · Reinicia em <span className="text-slate-400 font-mono">{countdown}</span>
+          <p className="text-aetas-dim text-xs mt-0.5">
+            Mesmo mapa para todos · Reinicia em <span className="text-aetas-muted font-mono">{countdown}</span>
           </p>
         </div>
 
@@ -143,8 +143,8 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
         {daily && daily !== 'none' && (
           <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 font-medium ${
             daily.isFinished
-              ? isWon ? 'bg-amber-900/60 text-amber-300' : 'bg-slate-800 text-slate-400'
-              : 'bg-blue-900/60 text-blue-300'
+              ? isWon ? 'bg-amber-900/60 text-amber-300' : 'bg-aetas-raised text-aetas-muted'
+              : 'bg-aetas-gold/20 text-aetas-gold'
           }`}>
             {daily.isFinished ? (isWon ? 'Vitória' : isLost ? 'Derrota' : 'Empate') : `Turno ${daily.turnNumber}/${daily.maxTurns}`}
           </span>
@@ -153,13 +153,13 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
       {/* Score (when finished) */}
       {daily && daily !== 'none' && daily.isFinished && finalScore && (
-        <div className="mt-3 flex items-center gap-4 bg-slate-800/60 rounded-xl px-3 py-2">
+        <div className="mt-3 flex items-center gap-4 bg-aetas-raised/60 rounded-xl px-3 py-2">
           <ScorePill icon="🏙️" label="Terr." value={finalScore.territory} />
           <ScorePill icon="👥" label="Pop." value={finalScore.population} />
           <ScorePill icon="🔬" label="Dev." value={finalScore.development} />
           <div className="ml-auto text-right">
-            <p className="text-yellow-400 font-bold text-base">{finalScore.total}</p>
-            <p className="text-slate-600 text-xs">pts</p>
+            <p className="text-aetas-gold font-bold text-base">{finalScore.total}</p>
+            <p className="text-aetas-dim text-xs">pts</p>
           </div>
         </div>
       )}
@@ -170,11 +170,11 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
           <button
             onClick={() => void handleStart()}
             disabled={starting}
-            className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 disabled:opacity-60 transition-colors"
+            className="flex-1 py-2.5 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light disabled:opacity-60 transition-colors"
           >
             {starting ? (
               <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />
+                <span className="w-4 h-4 border-2 border-aetas-bg/60 border-t-aetas-bg rounded-full animate-spin" />
                 Criando…
               </span>
             ) : 'Jogar Desafio →'}
@@ -184,7 +184,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {!daily.isFinished && (
               <button
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light transition-colors"
               >
                 Continuar →
               </button>
@@ -192,7 +192,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {daily.isFinished && (
               <button
                 onClick={handleShare}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-sm font-semibold hover:bg-slate-700 transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm font-semibold hover:bg-aetas-panel transition-colors"
               >
                 {copied ? '✓ Copiado!' : '📋 Compartilhar'}
               </button>
@@ -200,7 +200,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {daily.isFinished && (
               <button
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-400 text-sm hover:bg-slate-700 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm hover:bg-aetas-panel transition-colors"
               >
                 Ver →
               </button>
@@ -217,8 +217,8 @@ function ScorePill({ icon, label, value }: { icon: string; label: string; value:
     <div className="flex items-center gap-1.5">
       <span className="text-sm">{icon}</span>
       <div>
-        <p className="text-slate-200 text-xs font-semibold">{value}</p>
-        <p className="text-slate-600 text-xs">{label}</p>
+        <p className="text-aetas-text text-xs font-semibold">{value}</p>
+        <p className="text-aetas-dim text-xs">{label}</p>
       </div>
     </div>
   )

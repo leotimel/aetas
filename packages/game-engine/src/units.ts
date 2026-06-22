@@ -159,3 +159,34 @@ export function createUnitInstance(
     },
   }
 }
+
+/**
+ * Like createUnitInstance but accepts any unit blueprint (standard or special).
+ * Callers that have already resolved a UnitDefinition or SpecialUnitDefinition
+ * should prefer this over re-deriving the type through the enum catalog.
+ */
+export function createUnitFromDef(
+  id:       string,
+  def:      { type: string; stats: Omit<UnitStats, 'hp'>; canFoundCity: boolean },
+  ownerId:  string,
+  position: HexCoord,
+): Unit {
+  return {
+    id,
+    unitType:     def.type,
+    position,
+    ownerId,
+    hasMoved:     false,
+    hasAttacked:  false,
+    canFoundCity: def.canFoundCity || undefined,
+    stats: {
+      attack:          def.stats.attack,
+      defense:         def.stats.defense,
+      hp:              def.stats.maxHp,
+      maxHp:           def.stats.maxHp,
+      movement:        def.stats.movement,
+      ...(def.stats.range           !== undefined && { range: def.stats.range }),
+      ...(def.stats.cityAttackBonus !== undefined && { cityAttackBonus: def.stats.cityAttackBonus }),
+    },
+  }
+}

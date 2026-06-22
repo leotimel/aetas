@@ -1,7 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-aetas-gold: #c9a84c;
-  --color-aetas-gold-light: #e8c97a;
+  /* Display font — Cinzel para headings temáticos */
+  --font-family-display: 'Cinzel', Georgia, serif;
   --font-family-sans: 'Inter', system-ui, sans-serif;
+
+  /* Gold accent */
+  --color-aetas-gold:       #c9a84c;
+  --color-aetas-gold-light: #e8c97a;
+  --color-aetas-gold-dark:  #8f6b20;
+
+  /* Warm dark backgrounds */
+  --color-aetas-bg:      #0e0c09;
+  --color-aetas-surface: #17140f;
+  --color-aetas-raised:  #211d16;
+  --color-aetas-panel:   #2b261e;
+
+  /* Borders */
+  --color-aetas-border:        #38301f;
+  --color-aetas-border-strong: #4d4230;
+
+  /* Text hierarchy — warm cream */
+  --color-aetas-text:  #e8dcc8;
+  --color-aetas-muted: #9d8c75;
+  --color-aetas-dim:   #6b5d48;
 }
