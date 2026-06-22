@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { GameState, Unit } from '@aetas/game-engine'
-import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance } from '@aetas/game-engine'
+import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance, hexKey } from '@aetas/game-engine'
 
 interface Props {
   gameState: GameState
@@ -11,6 +11,7 @@ interface Props {
   onEndTurn: () => void
   onResolveDispute: (disputeId: string) => void
   onInitiateCombat?: (attackerUnitId: string, defenderUnitId: string) => void
+  onFoundCity?: (unitId: string) => void
 }
 
 function civName(players: GameState['players'], playerId: string): string {
@@ -19,12 +20,21 @@ function civName(players: GameState['players'], playerId: string): string {
 }
 
 export default function ActionSheet({
-  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log, onEndTurn, onResolveDispute, onInitiateCombat,
+  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log,
+  onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
 
   const { combatDisputes, units, players } = gameState
   const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : undefined
+
+  const isFoundCityValid = !!selectedUnit?.canFoundCity &&
+    selectedUnit.ownerId === myEnginePlayerId &&
+    (() => {
+      const tile = gameState.map.tiles.find(t => hexKey(t.coord) === hexKey(selectedUnit.position))
+      if (!tile || tile.terrainType === 'water') return false
+      return !gameState.cities.some(c => hexDistance(c.position, selectedUnit.position) <= 1)
+    })()
   const myPendingDisputes = combatDisputes.filter(
     d => d.status === CombatDisputeStatus.Pending &&
       (d.attackerPlayerId === myEnginePlayerId || d.defenderPlayerId === myEnginePlayerId),
@@ -87,6 +97,8 @@ export default function ActionSheet({
                 log={log}
                 onResolveDispute={onResolveDispute}
                 onInitiateCombat={onInitiateCombat}
+                isFoundCityValid={isFoundCityValid}
+                onFoundCity={onFoundCity}
               />
             </div>
           )}
@@ -127,7 +139,7 @@ export default function ActionSheet({
 
 function ExpandedContent({
   selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, units, log,
-  onResolveDispute, onInitiateCombat,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
@@ -138,6 +150,8 @@ function ExpandedContent({
   log: string[]
   onResolveDispute: (id: string) => void
   onInitiateCombat?: (atk: string, def: string) => void
+  isFoundCityValid?: boolean
+  onFoundCity?: (unitId: string) => void
 }) {
   return (
     <>
@@ -195,6 +209,22 @@ function ExpandedContent({
               </div>
             )
           })()}
+
+          {/* Fundar Cidade (apenas Colonos) */}
+          {selectedUnit.canFoundCity && isMyTurn && selectedUnit.ownerId === myEnginePlayerId && (
+            <button
+              onClick={() => isFoundCityValid && onFoundCity?.(selectedUnit.id)}
+              disabled={!isFoundCityValid}
+              title={!isFoundCityValid ? 'Muito perto de outra cidade ou terreno inválido' : undefined}
+              className={`w-full mt-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${
+                isFoundCityValid
+                  ? 'bg-emerald-800/70 text-emerald-300 hover:bg-emerald-700'
+                  : 'bg-aetas-bg text-aetas-dim cursor-not-allowed'
+              }`}
+            >
+              🏛 Fundar Cidade{!isFoundCityValid ? ' (inválido)' : ''}
+            </button>
+          )}
         </div>
       ) : isMyTurn ? (
         <p className="text-aetas-dim text-xs py-1">Selecione uma unidade no mapa para agir.</p>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { GameState, HexCoord } from '@aetas/game-engine'
+import type { GameState, HexCoord, CitySpecialization } from '@aetas/game-engine'
 import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp } from '../api.ts'
@@ -7,6 +7,7 @@ import HexMap from '../components/HexMap.tsx'
 import ActionSheet from '../components/ActionSheet.tsx'
 import PlayerBar from '../components/PlayerBar.tsx'
 import CityModal from '../components/CityModal.tsx'
+import FoundCityModal from '../components/FoundCityModal.tsx'
 import GameOverScreen from '../components/GameOverScreen.tsx'
 
 interface Props {
@@ -50,6 +51,9 @@ function errorLabel(err?: string | null): string {
     'unit not available in this era': 'unidade não disponível nesta era',
     'building already constructed': 'edifício já construído',
     'construction already in progress': 'construção em andamento',
+    'unit cannot found a city': 'unidade não pode fundar cidade',
+    'cannot found a city on water': 'não é possível fundar em água',
+    'too close to an existing city': 'muito perto de outra cidade',
   }
   return known[err] ?? err
 }
@@ -65,6 +69,8 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [log, setLog] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [foundingUnitId, setFoundingUnitId] = useState<string | null>(null)
+  const [foundCityLoading, setFoundCityLoading] = useState(false)
 
   const gameStateRef = useRef<GameState | null>(null)
   useEffect(() => { gameStateRef.current = gameState }, [gameState])
@@ -166,6 +172,29 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const res = await submitAction(gameId, { type: 'moveUnit', unitId, targetCoord })
     addLog(res.ok ? 'Unidade movida' : `✗ ${errorLabel(res.error)}`)
     if (res.ok) { setSelectedUnitId(null); void fetchGame() }
+  }
+
+  const CITY_NAMES = [
+    'Roma', 'Atenas', 'Cartago', 'Alexandria', 'Babilônia', 'Nínive', 'Tiro',
+    'Esparta', 'Corinto', 'Tebas', 'Mênfis', 'Luxor', 'Petra', 'Samarkanda',
+    'Persépolis', 'Susa', 'Jericó', 'Damasco', 'Sidão', 'Ur',
+  ]
+
+  const handleFoundCity = async (specialization: CitySpecialization) => {
+    if (!foundingUnitId || !gameState) return
+    setFoundCityLoading(true)
+    const cityId = crypto.randomUUID()
+    const usedNames = new Set(gameState.cities.map(c => c.name))
+    const cityName = CITY_NAMES.find(n => !usedNames.has(n)) ?? `Cidade ${gameState.cities.length + 1}`
+    const res = await submitAction(gameId, { type: 'foundCity', unitId: foundingUnitId, cityId, cityName, specialization })
+    setFoundCityLoading(false)
+    addLog(res.ok ? `${cityName} fundada!` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) {
+      setFoundingUnitId(null)
+      setSelectedUnitId(null)
+      await fetchGame()
+      setSelectedCityId(cityId)
+    }
   }
 
   const handleTrainUnit = async (cityId: string, unitType: string) => {
@@ -277,6 +306,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           onEndTurn={() => { void handleEndTurn() }}
           onResolveDispute={(id) => { void handleResolveDispute(id) }}
           onInitiateCombat={(atk, def) => { void handleInitiateCombat(atk, def) }}
+          onFoundCity={setFoundingUnitId}
         />
       </div>
 
@@ -294,6 +324,15 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           />
         ) : null
       })()}
+
+      {/* ── Found city modal ── */}
+      {foundingUnitId && (
+        <FoundCityModal
+          onConfirm={(spec) => { void handleFoundCity(spec) }}
+          onCancel={() => setFoundingUnitId(null)}
+          isLoading={foundCityLoading}
+        />
+      )}
 
       {/* ── Game over screen ── */}
       {showGameOver && (

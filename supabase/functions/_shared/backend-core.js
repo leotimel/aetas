@@ -31,11 +31,11 @@ var TurnState = /* @__PURE__ */ ((TurnState2) => {
   TurnState2["Completed"] = "completed";
   return TurnState2;
 })(TurnState || {});
-var CitySpecialization = /* @__PURE__ */ ((CitySpecialization2) => {
-  CitySpecialization2["Military"] = "military";
-  CitySpecialization2["Commercial"] = "commercial";
-  CitySpecialization2["Scientific"] = "scientific";
-  return CitySpecialization2;
+var CitySpecialization = /* @__PURE__ */ ((CitySpecialization3) => {
+  CitySpecialization3["Military"] = "military";
+  CitySpecialization3["Commercial"] = "commercial";
+  CitySpecialization3["Scientific"] = "scientific";
+  return CitySpecialization3;
 })(CitySpecialization || {});
 var ResourceType = /* @__PURE__ */ ((ResourceType2) => {
   ResourceType2["Gold"] = "gold";
@@ -1183,6 +1183,19 @@ function validateAction(state, playerId, action, _now) {
       if (occupied) return { valid: false, reason: "target hex is occupied" };
       return { valid: true };
     }
+    case "foundCity": {
+      const unit = findUnit2(state, action.unitId);
+      if (!unit) return { valid: false, reason: "unit not found" };
+      if (unit.ownerId !== playerId) return { valid: false, reason: "unit is not yours" };
+      if (!unit.canFoundCity) return { valid: false, reason: "unit cannot found a city" };
+      const tile = state.map.tiles.find((t) => hexKey(t.coord) === hexKey(unit.position));
+      if (!tile || tile.terrainType === "water" /* Water */) {
+        return { valid: false, reason: "cannot found a city on water" };
+      }
+      const tooClose = state.cities.some((c) => hexDistance(c.position, unit.position) <= 1);
+      if (tooClose) return { valid: false, reason: "too close to an existing city" };
+      return { valid: true };
+    }
   }
 }
 function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
@@ -1256,6 +1269,23 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
         (u) => u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u
       );
       return { ok: true, state: { ...state, units } };
+    }
+    case "foundCity": {
+      const unit = findUnit2(state, action.unitId);
+      const newCity = {
+        id: action.cityId,
+        name: action.cityName,
+        position: { ...unit.position },
+        ownerId: playerId,
+        population: 1,
+        specialization: action.specialization,
+        level: 1,
+        foodStored: 0,
+        buildings: [],
+        construction: null
+      };
+      const units = state.units.filter((u) => u.id !== action.unitId);
+      return { ok: true, state: { ...state, units, cities: [...state.cities, newCity] } };
     }
   }
 }
