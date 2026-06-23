@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { GameState, HexCoord, CitySpecialization, Unit } from '@aetas/game-engine'
-import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus } from '@aetas/game-engine'
+import type { GameState, HexCoord, CitySpecialization, Unit, Era, Resources } from '@aetas/game-engine'
+import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -9,7 +9,11 @@ import PlayerBar from '../components/PlayerBar.tsx'
 import CityModal from '../components/CityModal.tsx'
 import FoundCityModal from '../components/FoundCityModal.tsx'
 import CombatPreviewModal from '../components/CombatPreviewModal.tsx'
+import TradeModal from '../components/TradeModal.tsx'
+import DeclareWarModal from '../components/DeclareWarModal.tsx'
 import GameOverScreen from '../components/GameOverScreen.tsx'
+import ScoreModal from '../components/ScoreModal.tsx'
+import EraModal, { ERA_ICONS, ERA_NAMES_PT } from '../components/EraModal.tsx'
 
 interface Props {
   gameId: string
@@ -61,6 +65,62 @@ function formatCityAttackLog(pre: GameState, post: GameState | null, unitId: str
   return `🏰 Seu ${name} atacou ${city.name} (−${dmg} HP, restante: ${postCity?.hp ?? '?'}/${city.maxHp ?? 10})`
 }
 
+function pairKey(a: string, b: string): string {
+  return [a, b].sort().join('|')
+}
+
+/** Narrative lines for diplomacy changes between two snapshots — shown to every player. */
+function diffDiplomacyForLog(pre: GameState, post: GameState): string[] {
+  const logs: string[] = []
+  const name = (id: string) => civName(post.players, id)
+
+  const preWars  = new Set((pre.wars ?? []).map(w => pairKey(w.declarerId, w.targetId)))
+  const postWars = new Set((post.wars ?? []).map(w => pairKey(w.declarerId, w.targetId)))
+  const prePacts  = new Set(pre.nonAggressionPacts.map(p => pairKey(p.proposerId, p.acceptorId)))
+  const postPacts = new Set(post.nonAggressionPacts.map(p => pairKey(p.proposerId, p.acceptorId)))
+
+  for (const w of post.wars ?? []) {
+    if (!preWars.has(pairKey(w.declarerId, w.targetId))) {
+      logs.push(`⚔️ ${name(w.declarerId)} declarou guerra a ${name(w.targetId)}!`)
+    }
+  }
+  for (const k of preWars) {
+    if (!postWars.has(k)) {
+      const [a, b] = k.split('|')
+      logs.push(`🕊️ ${name(a)} e ${name(b)} firmaram a paz.`)
+    }
+  }
+  for (const p of post.nonAggressionPacts) {
+    if (!prePacts.has(pairKey(p.proposerId, p.acceptorId))) {
+      logs.push(`🤝 ${name(p.proposerId)} e ${name(p.acceptorId)} firmaram um pacto.`)
+    }
+  }
+  for (const k of prePacts) {
+    if (!postPacts.has(k) && !postWars.has(k)) {
+      const [a, b] = k.split('|')
+      logs.push(`💔 O pacto entre ${name(a)} e ${name(b)} foi rompido.`)
+    }
+  }
+  const preResolved = new Set(pre.diplomaticProposals.filter(p => p.status !== 'pending').map(p => p.id))
+  for (const p of post.diplomaticProposals) {
+    if (preResolved.has(p.id) || p.status === 'pending') continue
+    const kind = p.kind ?? (p.terms ? 'trade' : 'pact')
+    const label = kind === 'trade' ? 'troca' : kind === 'peace' ? 'paz' : 'pacto'
+    if (p.status === 'accepted') {
+      if (kind === 'trade') logs.push(`📦 Troca aceita entre ${name(p.proposerId)} e ${name(p.targetId)}.`)
+    } else if (p.status === 'rejected') {
+      logs.push(`❌ ${name(p.targetId)} recusou a ${label} de ${name(p.proposerId)}.`)
+    }
+  }
+  for (const p of post.players) {
+    const prev = pre.players.find(pl => pl.id === p.id)
+    if (!prev?.isEliminated && p.isEliminated) {
+      logs.push(`🚫 ${name(p.id)} foi eliminado da partida.`)
+    }
+  }
+  return logs
+}
+
 function errorLabel(err?: string | null): string {
   if (!err) return 'ação inválida'
   const known: Record<string, string> = {
@@ -86,6 +146,21 @@ function errorLabel(err?: string | null): string {
     'too close to an existing city': 'muito perto de outra cidade',
     'cannot attack your own city': 'não é possível atacar sua própria cidade',
     'city is not adjacent': 'cidade não é adjacente',
+    'non-aggression pact prevents this attack': 'um pacto de não-agressão impede este ataque',
+    'no contact established between players': 'sem contato com esta civilização',
+    'non-aggression pact already exists': 'já existe um pacto com esta civilização',
+    'a pending non-aggression pact proposal already exists': 'já há uma proposta de pacto pendente',
+    'proposer lacks resources for this offer': 'você não tem recursos para esta oferta',
+    'proposer no longer has enough resources': 'recursos insuficientes para concluir a troca',
+    'target lacks resources for this trade': 'o alvo não tem recursos para esta troca',
+    'trade must include at least one resource': 'a troca precisa incluir ao menos um recurso',
+    'players are not at war': 'vocês não estão em guerra',
+    'already at war': 'vocês já estão em guerra',
+    'no non-aggression pact to break': 'não há pacto para romper',
+    'a pending peace proposal already exists': 'já há uma proposta de paz pendente',
+    'proposal not found': 'proposta não encontrada',
+    'only the proposal target can respond': 'apenas o alvo da proposta pode responder',
+    'proposal already resolved': 'proposta já resolvida',
   }
   return known[err] ?? err
 }
@@ -105,9 +180,26 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [foundCityLoading, setFoundCityLoading] = useState(false)
   const [combatPreview, setCombatPreview] = useState<{ attackerId: string; defenderId: string } | null>(null)
   const [combatLoading, setCombatLoading] = useState(false)
+  const [eraModal, setEraModal] = useState<{ era: Era; prevEra: Era } | null>(null)
+  const [tradeTarget, setTradeTarget] = useState<string | null>(null)
+  const [warTarget, setWarTarget] = useState<string | null>(null)
+  const [diplomacyLoading, setDiplomacyLoading] = useState(false)
+  const [diplomacyOpenSignal, setDiplomacyOpenSignal] = useState(0)
+  const [showScoreModal, setShowScoreModal] = useState(false)
 
   const gameStateRef = useRef<GameState | null>(null)
+  const prevEraRef   = useRef<Era | null>(null)
   useEffect(() => { gameStateRef.current = gameState }, [gameState])
+
+  // Detect era advancement to show the celebration modal
+  useEffect(() => {
+    if (!gameState) return
+    const cur = gameState.era
+    if (prevEraRef.current !== null && prevEraRef.current !== cur) {
+      setEraModal({ era: cur, prevEra: prevEraRef.current })
+    }
+    prevEraRef.current = cur
+  }, [gameState?.era])
 
   const addLog = (msg: string) => {
     const ts = new Date().toISOString().slice(11, 19)
@@ -147,11 +239,15 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       .channel(`game:${gameId}`, { config: { private: true } })
       .on('broadcast', { event: 'turn_changed' }, (msg) => {
         const p = msg.payload as { currentPlayerId: string; turnNumber: number }
-        const players = gameStateRef.current?.players
+        const preState = gameStateRef.current
         const isMe = p.currentPlayerId === enginePlayerId
-        const name = civName(players, p.currentPlayerId)
+        const name = civName(preState?.players, p.currentPlayerId)
         addLog(isMe ? `Turno ${p.turnNumber} — sua vez!` : `Turno ${p.turnNumber} — vez de ${name}`)
-        void fetchGame()
+        void fetchGame().then(postState => {
+          if (preState && postState) {
+            for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
+          }
+        })
       })
       .on('broadcast', { event: 'dispute_resolved' }, () => {
         const preState = gameStateRef.current
@@ -254,6 +350,55 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) { setSelectedUnitId(null); void fetchGame() }
   }
 
+  // ─── Diplomacy ──────────────────────────────────────────────────────────────
+
+  const civOf = (id: string) => civName(gameState?.players, id)
+
+  const handleProposePact = async (targetId: string) => {
+    const res = await submitAction(gameId, { type: 'proposePact', targetId })
+    addLog(res.ok ? `🤝 Pacto proposto aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) void fetchGame()
+  }
+
+  const handleBreakPact = async (targetId: string) => {
+    const res = await submitAction(gameId, { type: 'breakPact', targetId })
+    addLog(res.ok ? `💔 Pacto com os ${civOf(targetId)} rompido` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) void fetchGame()
+  }
+
+  const handleProposePeace = async (targetId: string) => {
+    const res = await submitAction(gameId, { type: 'proposePeace', targetId })
+    addLog(res.ok ? `🕊️ Paz proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) void fetchGame()
+  }
+
+  const handleDeclareWar = async (targetId: string) => {
+    setDiplomacyLoading(true)
+    const res = await submitAction(gameId, { type: 'declareWar', targetId })
+    setDiplomacyLoading(false)
+    addLog(res.ok ? `⚔️ Você declarou guerra aos ${civOf(targetId)}!` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) { setWarTarget(null); void fetchGame() }
+  }
+
+  const handleProposeTrade = async (targetId: string, offer: Resources, request: Resources) => {
+    setDiplomacyLoading(true)
+    const res = await submitAction(gameId, { type: 'proposeTrade', targetId, offer, request })
+    setDiplomacyLoading(false)
+    addLog(res.ok ? `📦 Troca proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) { setTradeTarget(null); void fetchGame() }
+  }
+
+  const handleRespondDiplomacy = async (proposalId: string, accept: boolean) => {
+    const preState = gameState!
+    const res = await submitAction(gameId, { type: 'respondToDiplomacy', proposalId, accept })
+    if (res.ok) {
+      const postState = await fetchGame()
+      if (postState) for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
+    } else {
+      addLog(`✗ ${errorLabel(res.error)}`)
+    }
+  }
+
   const CITY_NAMES = [
     'Roma', 'Atenas', 'Cartago', 'Alexandria', 'Babilônia', 'Nínive', 'Tiro',
     'Esparta', 'Corinto', 'Tebas', 'Mênfis', 'Luxor', 'Petra', 'Samarkanda',
@@ -309,6 +454,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   }
 
   const isFinished = gameState.isFinished
+  const incomingProposals = gameState.diplomaticProposals.filter(
+    p => p.status === 'pending' && p.targetId === enginePlayerId,
+  ).length
 
   return (
     <div className="flex flex-col h-screen bg-aetas-bg text-aetas-text overflow-hidden">
@@ -325,6 +473,10 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
         <span className="text-aetas-dim text-xs">Turno {gameState.turnNumber}/{gameState.maxTurns}</span>
 
+        <span className="hidden sm:inline-flex items-center gap-1 text-xs text-aetas-muted border border-aetas-border rounded-full px-2 py-0.5">
+          {ERA_ICONS[gameState.era]} {ERA_NAMES_PT[gameState.era]}
+        </span>
+
         <span className={`text-xs font-semibold ml-1 ${isMyTurn ? 'text-aetas-gold' : 'text-aetas-dim'}`}>
           {isFinished
             ? `★ ${gameState.winner ? `${civName(gameState.players, gameState.winner)} venceu` : 'Empate'}`
@@ -334,6 +486,18 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         </span>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setDiplomacyOpenSignal(s => s + 1)}
+            className="relative w-7 h-7 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
+            title="Diplomacia"
+          >
+            ⚖️
+            {incomingProposals > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold">
+                {incomingProposals}
+              </span>
+            )}
+          </button>
           {import.meta.env.DEV && (
             <label className="flex items-center gap-1.5 text-aetas-dim text-xs cursor-pointer select-none">
               <input
@@ -355,9 +519,21 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         </div>
       </header>
 
+      {/* ── Turn progress bar ── */}
+      <div className="h-0.5 bg-aetas-raised flex-shrink-0">
+        <div
+          className="h-full bg-aetas-gold transition-all duration-500"
+          style={{ width: `${Math.min(100, (gameState.turnNumber / gameState.maxTurns) * 100)}%` }}
+        />
+      </div>
+
       {/* ── Player bar ── */}
       <div className="flex-shrink-0 border-b border-aetas-border">
-        <PlayerBar gameState={gameState} myEnginePlayerId={enginePlayerId} />
+        <PlayerBar
+          gameState={gameState}
+          myEnginePlayerId={enginePlayerId}
+          onScoreClick={() => setShowScoreModal(true)}
+        />
       </div>
 
       {/* ── Main area ── */}
@@ -383,11 +559,18 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           isMyTurn={isMyTurn}
           selectedUnitId={selectedUnitId}
           log={log}
+          expandSignal={diplomacyOpenSignal}
           onEndTurn={() => { void handleEndTurn() }}
           onResolveDispute={(id) => { void handleResolveDispute(id) }}
           onInitiateCombat={handleInitiateCombat}
           onFoundCity={setFoundingUnitId}
           onAttackCity={(uid, cid) => { void handleAttackCity(uid, cid) }}
+          onProposePact={(t) => { void handleProposePact(t) }}
+          onDeclareWar={(t) => setWarTarget(t)}
+          onBreakPact={(t) => { void handleBreakPact(t) }}
+          onProposePeace={(t) => { void handleProposePeace(t) }}
+          onProposeTrade={(t) => setTradeTarget(t)}
+          onRespondDiplomacy={(id, accept) => { void handleRespondDiplomacy(id, accept) }}
         />
       </div>
 
@@ -432,6 +615,52 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           />
         ) : null
       })()}
+
+      {/* ── Era advancement modal ── */}
+      {eraModal && (
+        <EraModal
+          era={eraModal.era}
+          prevEra={eraModal.prevEra}
+          myCivId={gameState.players.find(p => p.id === enginePlayerId)?.civilizationId ?? ''}
+          onClose={() => setEraModal(null)}
+        />
+      )}
+
+      {/* ── Declare war confirmation ── */}
+      {warTarget && (
+        <DeclareWarModal
+          targetCivName={civName(gameState.players, warTarget)}
+          hasPact={relationBetween(gameState, enginePlayerId, warTarget) === 'pact'}
+          onConfirm={() => { void handleDeclareWar(warTarget) }}
+          onCancel={() => setWarTarget(null)}
+          isLoading={diplomacyLoading}
+        />
+      )}
+
+      {/* ── Resource trade modal ── */}
+      {tradeTarget && (() => {
+        const me = gameState.players.find(p => p.id === enginePlayerId)
+        const target = gameState.players.find(p => p.id === tradeTarget)
+        return me && target ? (
+          <TradeModal
+            proposerResources={me.resources}
+            targetResources={target.resources}
+            targetCivName={civName(gameState.players, tradeTarget)}
+            onConfirm={(offer, request) => { void handleProposeTrade(tradeTarget, offer, request) }}
+            onCancel={() => setTradeTarget(null)}
+            isLoading={diplomacyLoading}
+          />
+        ) : null
+      })()}
+
+      {/* ── Score modal ── */}
+      {showScoreModal && (
+        <ScoreModal
+          gameState={gameState}
+          myEnginePlayerId={enginePlayerId}
+          onClose={() => setShowScoreModal(false)}
+        />
+      )}
 
       {/* ── Game over screen ── */}
       {showGameOver && (

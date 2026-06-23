@@ -3,6 +3,7 @@ import type {
   GameState,
   DiplomaticProposal,
   NonAggressionPact,
+  War,
   Resources,
   ResourceTradeTerms,
 } from './types.js'
@@ -63,6 +64,32 @@ function hasExistingPact(state: GameState, aId: string, bId: string): boolean {
   )
 }
 
+function hasWar(state: GameState, aId: string, bId: string): boolean {
+  return (state.wars ?? []).some(
+    w =>
+      (w.declarerId === aId && w.targetId === bId) ||
+      (w.declarerId === bId && w.targetId === aId),
+  )
+}
+
+function isPair(proposerId: string, targetId: string, aId: string, bId: string): boolean {
+  return (proposerId === aId && targetId === bId) || (proposerId === bId && targetId === aId)
+}
+
+/**
+ * The current relation between two players. Mutually exclusive by construction:
+ * declaring war removes any pact, and a pact can only be proposed from neutral.
+ */
+export function relationBetween(
+  state: GameState,
+  aId: string,
+  bId: string,
+): 'neutral' | 'pact' | 'war' {
+  if (hasExistingPact(state, aId, bId)) return 'pact'
+  if (hasWar(state, aId, bId)) return 'war'
+  return 'neutral'
+}
+
 function hasPendingNap(state: GameState, aId: string, bId: string): boolean {
   return state.diplomaticProposals.some(
     p =>
@@ -102,6 +129,7 @@ export function proposeNonAggressionPact(
     targetId,
     status: DiplomaticProposalStatus.Pending,
     createdAtTurn: state.turnNumber,
+    kind: 'pact',
   }
 
   return {
@@ -206,6 +234,7 @@ export function proposeResourceTrade(
     targetId,
     status: DiplomaticProposalStatus.Pending,
     createdAtTurn: state.turnNumber,
+    kind: 'trade',
     terms,
   }
 
@@ -269,5 +298,177 @@ export function respondToResourceTrade(
       players: updatedPlayers,
       diplomaticProposals: updatedProposals,
     },
+  }
+}
+
+// ─── War & peace ──────────────────────────────────────────────────────────────
+
+/** Marks every pending proposal between two players as rejected (cancelled). */
+function cancelProposalsBetween(state: GameState, aId: string, bId: string): DiplomaticProposal[] {
+  return state.diplomaticProposals.map(p =>
+    p.status === DiplomaticProposalStatus.Pending && isPair(p.proposerId, p.targetId, aId, bId)
+      ? { ...p, status: DiplomaticProposalStatus.Rejected }
+      : p,
+  )
+}
+
+/**
+ * Declare war on another player. Removes any non-aggression pact between them and
+ * cancels pending proposals, then records an active War. Combat between the two is
+ * then permitted again (a pact would otherwise block it).
+ */
+export function declareWar(
+  state: GameState,
+  declarerId: string,
+  targetId: string,
+): DiplomacyResult {
+  if (!isActive(state, declarerId)) {
+    return { ok: false, reason: 'declarer is not an active player', state }
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: 'target is not an active player', state }
+  }
+  if (declarerId === targetId) {
+    return { ok: false, reason: 'cannot declare war on yourself', state }
+  }
+  if (!haveMadeContact(state, declarerId, targetId)) {
+    return { ok: false, reason: 'no contact established between players', state }
+  }
+  if (hasWar(state, declarerId, targetId)) {
+    return { ok: false, reason: 'already at war', state }
+  }
+
+  const war: War = {
+    id: `war:${declarerId}:${targetId}:${state.turnNumber}`,
+    declarerId,
+    targetId,
+    declaredAtTurn: state.turnNumber,
+  }
+  const remainingPacts = state.nonAggressionPacts.filter(
+    p => !isPair(p.proposerId, p.acceptorId, declarerId, targetId),
+  )
+
+  return {
+    ok: true,
+    state: {
+      ...state,
+      nonAggressionPacts: remainingPacts,
+      wars: [...(state.wars ?? []), war],
+      diplomaticProposals: cancelProposalsBetween(state, declarerId, targetId),
+    },
+  }
+}
+
+/** Unilaterally break an active non-aggression pact, returning the relation to neutral. */
+export function breakNonAggressionPact(
+  state: GameState,
+  breakerId: string,
+  targetId: string,
+): DiplomacyResult {
+  if (!hasExistingPact(state, breakerId, targetId)) {
+    return { ok: false, reason: 'no non-aggression pact to break', state }
+  }
+  const remainingPacts = state.nonAggressionPacts.filter(
+    p => !isPair(p.proposerId, p.acceptorId, breakerId, targetId),
+  )
+  return { ok: true, state: { ...state, nonAggressionPacts: remainingPacts } }
+}
+
+function hasPendingPeace(state: GameState, aId: string, bId: string): boolean {
+  return state.diplomaticProposals.some(
+    p =>
+      p.status === DiplomaticProposalStatus.Pending &&
+      p.kind === 'peace' &&
+      isPair(p.proposerId, p.targetId, aId, bId),
+  )
+}
+
+/** Propose peace to a player you are at war with. If accepted, the war ends → neutral. */
+export function proposePeace(
+  state: GameState,
+  proposerId: string,
+  targetId: string,
+): DiplomacyResult {
+  if (!isActive(state, proposerId)) {
+    return { ok: false, reason: 'proposer is not an active player', state }
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: 'target is not an active player', state }
+  }
+  if (!hasWar(state, proposerId, targetId)) {
+    return { ok: false, reason: 'players are not at war', state }
+  }
+  if (hasPendingPeace(state, proposerId, targetId)) {
+    return { ok: false, reason: 'a pending peace proposal already exists', state }
+  }
+
+  const proposal: DiplomaticProposal = {
+    id: `peace:${proposerId}:${targetId}:${state.turnNumber}`,
+    proposerId,
+    targetId,
+    status: DiplomaticProposalStatus.Pending,
+    createdAtTurn: state.turnNumber,
+    kind: 'peace',
+  }
+
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] },
+  }
+}
+
+function respondToPeace(
+  state: GameState,
+  responderId: string,
+  proposalId: string,
+  accept: boolean,
+): DiplomacyResult {
+  const proposal = state.diplomaticProposals.find(p => p.id === proposalId)
+  if (!proposal) return { ok: false, reason: 'proposal not found', state }
+  if (proposal.kind !== 'peace') return { ok: false, reason: 'proposal is not a peace offer', state }
+  if (proposal.status !== DiplomaticProposalStatus.Pending) {
+    return { ok: false, reason: 'proposal already resolved', state }
+  }
+  if (proposal.targetId !== responderId) {
+    return { ok: false, reason: 'only the proposal target can respond', state }
+  }
+
+  const updatedProposals = state.diplomaticProposals.map(p =>
+    p.id === proposalId
+      ? { ...p, status: accept ? DiplomaticProposalStatus.Accepted : DiplomaticProposalStatus.Rejected }
+      : p,
+  )
+
+  if (!accept) {
+    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } }
+  }
+
+  const remainingWars = (state.wars ?? []).filter(
+    w => !isPair(w.declarerId, w.targetId, proposal.proposerId, responderId),
+  )
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: updatedProposals, wars: remainingWars },
+  }
+}
+
+/**
+ * Unified responder for the single `respondToDiplomacy` action. Dispatches by the
+ * proposal's kind (inferring from `terms` on legacy rows that predate `kind`).
+ */
+export function respondToProposal(
+  state: GameState,
+  responderId: string,
+  proposalId: string,
+  accept: boolean,
+): DiplomacyResult {
+  const proposal = state.diplomaticProposals.find(p => p.id === proposalId)
+  if (!proposal) return { ok: false, reason: 'proposal not found', state }
+  const kind = proposal.kind ?? (proposal.terms ? 'trade' : 'pact')
+  switch (kind) {
+    case 'trade': return respondToResourceTrade(state, responderId, proposalId, accept)
+    case 'peace': return respondToPeace(state, responderId, proposalId, accept)
+    case 'pact':
+    default:      return respondToNonAggressionPact(state, responderId, proposalId, accept)
   }
 }

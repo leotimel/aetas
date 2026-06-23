@@ -1,13 +1,24 @@
 import { useState, useEffect } from 'react'
 import type { GameState, Unit } from '@aetas/game-engine'
 import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance, hexKey } from '@aetas/game-engine'
+import DiplomacyPanel from './DiplomacyPanel.tsx'
 
-interface Props {
+interface DiplomacyHandlers {
+  onProposePact:      (targetId: string) => void
+  onDeclareWar:       (targetId: string) => void
+  onBreakPact:        (targetId: string) => void
+  onProposePeace:     (targetId: string) => void
+  onProposeTrade:     (targetId: string) => void
+  onRespondDiplomacy: (proposalId: string, accept: boolean) => void
+}
+
+interface Props extends DiplomacyHandlers {
   gameState: GameState
   myEnginePlayerId: string
   isMyTurn: boolean
   selectedUnitId: string | null
   log: string[]
+  expandSignal?: number
   onEndTurn: () => void
   onResolveDispute: (disputeId: string) => void
   onInitiateCombat?: (attackerUnitId: string, defenderUnitId: string) => void
@@ -21,10 +32,20 @@ function civName(players: GameState['players'], playerId: string): string {
 }
 
 export default function ActionSheet({
-  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log,
+  gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log, expandSignal,
   onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity, onAttackCity,
+  onProposePact, onDeclareWar, onBreakPact, onProposePeace, onProposeTrade, onRespondDiplomacy,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
+
+  // The header diplomacy badge bumps expandSignal to open the mobile sheet.
+  useEffect(() => {
+    if (expandSignal) setExpanded(true)
+  }, [expandSignal])
+
+  const diplomacyHandlers: DiplomacyHandlers = {
+    onProposePact, onDeclareWar, onBreakPact, onProposePeace, onProposeTrade, onRespondDiplomacy,
+  }
 
   const { combatDisputes, units, players } = gameState
   const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : undefined
@@ -93,6 +114,7 @@ export default function ActionSheet({
                 isMyTurn={isMyTurn}
                 myPendingDisputes={myPendingDisputes}
                 myEnginePlayerId={myEnginePlayerId}
+                gameState={gameState}
                 players={players}
                 units={units}
                 cities={gameState.cities}
@@ -102,6 +124,7 @@ export default function ActionSheet({
                 isFoundCityValid={isFoundCityValid}
                 onFoundCity={onFoundCity}
                 onAttackCity={onAttackCity}
+                diplomacyHandlers={diplomacyHandlers}
               />
             </div>
           )}
@@ -128,6 +151,7 @@ export default function ActionSheet({
             isMyTurn={isMyTurn}
             myPendingDisputes={myPendingDisputes}
             myEnginePlayerId={myEnginePlayerId}
+            gameState={gameState}
             players={players}
             units={units}
             cities={gameState.cities}
@@ -135,6 +159,7 @@ export default function ActionSheet({
             onResolveDispute={onResolveDispute}
             onInitiateCombat={onInitiateCombat}
             onAttackCity={onAttackCity}
+            diplomacyHandlers={diplomacyHandlers}
           />
         </div>
       </div>
@@ -150,13 +175,14 @@ function formatCountdown(expiresAt: number, now: number): string {
 }
 
 function ExpandedContent({
-  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, players, units, cities, log,
-  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity,
+  selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, gameState, players, units, cities, log,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity, diplomacyHandlers,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
   myPendingDisputes: ReturnType<typeof Array.prototype.filter>
   myEnginePlayerId: string
+  gameState: GameState
   players: GameState['players']
   units: GameState['units']
   cities: GameState['cities']
@@ -166,6 +192,7 @@ function ExpandedContent({
   isFoundCityValid?: boolean
   onFoundCity?: (unitId: string) => void
   onAttackCity?: (unitId: string, cityId: string) => void
+  diplomacyHandlers: DiplomacyHandlers
 }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -263,16 +290,13 @@ function ExpandedContent({
         <p className="text-aetas-dim text-xs py-1">Selecione uma unidade no mapa para agir.</p>
       ) : null}
 
-      {/* Diplomacy — coming soon */}
-      <div className="flex items-center gap-2 py-1">
-        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider">Diplomacia</p>
-        <span
-          className="text-xs text-aetas-dim bg-aetas-raised px-1.5 py-0.5 rounded-full border border-aetas-border"
-          title="Pactos, trocas e declarações de guerra — disponível em breve"
-        >
-          em breve
-        </span>
-      </div>
+      {/* Diplomacy */}
+      <DiplomacyPanel
+        gameState={gameState}
+        myEnginePlayerId={myEnginePlayerId}
+        isMyTurn={isMyTurn}
+        {...diplomacyHandlers}
+      />
 
       {/* Pending disputes */}
       {myPendingDisputes.length > 0 && (

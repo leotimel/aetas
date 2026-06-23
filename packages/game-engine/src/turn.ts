@@ -1,7 +1,14 @@
-import { TurnState, CombatDisputeStatus } from './types.js'
+import { TurnState, CombatDisputeStatus, Era } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
+import { determineWinner as computeWinner } from './scoring.js'
 import { processTurnEconomy } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
+import { getCityEraProgressBonus } from './buildings.js'
+
+const ERA_ORDER = [Era.Ancient, Era.Classical, Era.Medieval] as const
+const ERA_SCIENCE_THRESHOLDS = [5, 5] as const // Ancient→Classical: 5, Classical→Medieval: 5
+export const ERA_ORDER_ARRAY: readonly Era[] = ERA_ORDER
+export const ERA_SCIENCE_THRESHOLDS_ARRAY: readonly number[] = ERA_SCIENCE_THRESHOLDS
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -176,7 +183,7 @@ export function endTurn(
 
   // Step 5(b) — game ends after maxTurns complete rounds.
   if (wrap && state.turnNumber === state.maxTurns) {
-    const winner = hooks.determineWinner ? hooks.determineWinner(working) : null
+    const winner = hooks.determineWinner ? hooks.determineWinner(working) : computeWinner(working)
     return {
       ok: true,
       state: {
@@ -199,12 +206,32 @@ export function endTurn(
       ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 }
       : c,
   )
+
+  // Step 6.5 — accumulate science from the actor's cities; advance era when threshold reached.
+  const eraIdx = ERA_ORDER.indexOf(working.era as Era)
+  let nextEra: Era = working.era as Era
+  let nextEraProgress = working.eraProgress ?? 0
+  if (eraIdx >= 0 && eraIdx < ERA_ORDER.length - 1) {
+    const threshold = ERA_SCIENCE_THRESHOLDS[eraIdx]
+    const actorCities = working.cities.filter(c => c.ownerId === actorId)
+    const science = 1 + actorCities.reduce(
+      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []), 0,
+    )
+    nextEraProgress += science
+    if (nextEraProgress >= threshold) {
+      nextEra = ERA_ORDER[eraIdx + 1] as Era
+      nextEraProgress -= threshold
+    }
+  }
+
   return {
     ok: true,
     state: {
       ...working,
       units,
       cities: nextCities,
+      era: nextEra,
+      eraProgress: nextEraProgress,
       currentPlayerId: nextId ?? actorId,
       turnNumber: state.turnNumber + (wrap ? 1 : 0),
       turnState: TurnState.WaitingForAction,

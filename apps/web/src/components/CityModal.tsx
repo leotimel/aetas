@@ -1,5 +1,6 @@
 import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
-import { CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS } from '@aetas/game-engine'
+import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS } from '@aetas/game-engine'
+import { ERA_ICONS, ERA_NAMES_PT, ERA_ORDER_UI } from './EraModal.tsx'
 
 const PLAYER_COLORS = [
   '#ef4444', '#3b82f6', '#22c55e', '#f59e0b',
@@ -50,6 +51,15 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
   const available = isMyCity && myPlayer
     ? unitsForCiv(myPlayer.civilizationId, gameState.era)
     : []
+
+  // Units locked in the next era
+  const eraIdx = ERA_ORDER_UI.indexOf(gameState.era)
+  const nextEra = ERA_ORDER_UI[eraIdx + 1] as Era | undefined
+  const currentTypes = new Set(available.map(u => u.type))
+  const lockedUnits = isMyCity && myPlayer && nextEra
+    ? unitsForCiv(myPlayer.civilizationId, nextEra).filter(u => !currentTypes.has(u.type))
+    : []
+
   const hexOccupied = isMyCity && gameState.units.some(
     u => u.ownerId === myEnginePlayerId &&
          u.position.q === city.position.q && u.position.r === city.position.r,
@@ -222,6 +232,30 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                     )
                   })
               }
+
+              {/* Locked units from next era */}
+              {lockedUnits.length > 0 && nextEra && (
+                <div className="mt-3 pt-2 border-t border-aetas-border">
+                  <p className="text-[9px] text-aetas-dim uppercase tracking-wider mb-1.5">
+                    {ERA_ICONS[nextEra]} {ERA_NAMES_PT[nextEra]} — bloqueado
+                  </p>
+                  {lockedUnits.map(def => (
+                    <div
+                      key={def.type}
+                      className="flex items-center gap-2 py-1.5 border-b border-aetas-border/30 last:border-0 opacity-50"
+                    >
+                      <span className="text-xs">🔒</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-aetas-dim text-sm font-medium">{def.name}</span>
+                        <span className="text-aetas-dim text-xs ml-2">
+                          ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-aetas-dim whitespace-nowrap">Disponível na {ERA_NAMES_PT[nextEra]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,11 +1,21 @@
 import { CombatDisputeStatus, BuildingType, TerrainType, CitySpecialization } from './types.js'
-import type { GameState, Unit, HexCoord, City } from './types.js'
+import type { GameState, Unit, HexCoord, City, Resources } from './types.js'
 import { canSubmitAction, endTurn, getPlayerById, type TurnHooks } from './turn.js'
 import {
   createCombatDispute,
   resolveDisputeByAction,
   resolveTimedOutDispute,
 } from './combat.js'
+import {
+  relationBetween,
+  proposeNonAggressionPact,
+  proposeResourceTrade,
+  declareWar,
+  proposePeace,
+  breakNonAggressionPact,
+  respondToProposal,
+  type DiplomacyResult,
+} from './diplomacy.js'
 import { hexDistance, hexKey } from './map.js'
 import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
@@ -27,6 +37,12 @@ export type GameAction =
   | { type: 'moveUnit'; unitId: string; targetCoord: HexCoord }
   | { type: 'foundCity'; unitId: string; cityId: string; cityName: string; specialization: CitySpecialization }
   | { type: 'attackCity'; unitId: string; cityId: string }
+  | { type: 'proposePact'; targetId: string }
+  | { type: 'proposeTrade'; targetId: string; offer: Resources; request: Resources }
+  | { type: 'declareWar'; targetId: string }
+  | { type: 'proposePeace'; targetId: string }
+  | { type: 'breakPact'; targetId: string }
+  | { type: 'respondToDiplomacy'; proposalId: string; accept: boolean }
 
 export type ActionValidation =
   | { valid: true }
@@ -95,6 +111,9 @@ export function validateAction(
       }
       if (attacker.hasAttacked) {
         return { valid: false, reason: 'unit has already attacked this turn' }
+      }
+      if (relationBetween(state, playerId, defender.ownerId) === 'pact') {
+        return { valid: false, reason: 'non-aggression pact prevents this attack' }
       }
       const alreadyDisputing = state.combatDisputes.some(
         d => d.status === CombatDisputeStatus.Pending && d.attackerUnitId === attacker.id,
@@ -197,6 +216,35 @@ export function validateAction(
       if (!city) return { valid: false, reason: 'city not found' }
       if (city.ownerId === playerId) return { valid: false, reason: 'cannot attack your own city' }
       if (hexDistance(unit.position, city.position) !== 1) return { valid: false, reason: 'city is not adjacent' }
+      if (relationBetween(state, playerId, city.ownerId) === 'pact') {
+        return { valid: false, reason: 'non-aggression pact prevents this attack' }
+      }
+      return { valid: true }
+    }
+
+    case 'proposePact':
+    case 'declareWar':
+    case 'proposePeace':
+    case 'breakPact': {
+      if (action.targetId === playerId) return { valid: false, reason: 'cannot target yourself' }
+      if (!state.players.some(p => p.id === action.targetId)) {
+        return { valid: false, reason: 'target player not found' }
+      }
+      return { valid: true }
+    }
+
+    case 'proposeTrade': {
+      if (action.targetId === playerId) return { valid: false, reason: 'cannot target yourself' }
+      if (!state.players.some(p => p.id === action.targetId)) {
+        return { valid: false, reason: 'target player not found' }
+      }
+      return { valid: true }
+    }
+
+    case 'respondToDiplomacy': {
+      const proposal = state.diplomaticProposals.find(p => p.id === action.proposalId)
+      if (!proposal) return { valid: false, reason: 'proposal not found' }
+      if (proposal.targetId !== playerId) return { valid: false, reason: 'only the proposal target can respond' }
       return { valid: true }
     }
   }
@@ -338,5 +386,32 @@ export function applyAction(
         },
       }
     }
+
+    case 'proposePact':
+      return fromDiplomacy(proposeNonAggressionPact(state, playerId, action.targetId))
+
+    case 'proposeTrade':
+      return fromDiplomacy(
+        proposeResourceTrade(state, playerId, action.targetId, { offer: action.offer, request: action.request }),
+      )
+
+    case 'declareWar':
+      return fromDiplomacy(declareWar(state, playerId, action.targetId))
+
+    case 'proposePeace':
+      return fromDiplomacy(proposePeace(state, playerId, action.targetId))
+
+    case 'breakPact':
+      return fromDiplomacy(breakNonAggressionPact(state, playerId, action.targetId))
+
+    case 'respondToDiplomacy':
+      return fromDiplomacy(respondToProposal(state, playerId, action.proposalId, action.accept))
   }
+}
+
+/** Maps a DiplomacyResult onto an ApplyActionResult (same shape, different field name). */
+function fromDiplomacy(res: DiplomacyResult): ApplyActionResult {
+  return res.ok
+    ? { ok: true, state: res.state }
+    : { ok: false, reason: res.reason, state: res.state }
 }

@@ -59,7 +59,12 @@ export class SupabaseGameRepo implements GameRepo {
       p_dispute_status_updates: args.disputeStatusUpdates,
       p_eliminations: args.playerEliminations.map(e => e.enginePlayerId),
     })
-    if (error) throw error
+    if (error) {
+      if (error.code === '40001' || String(error.message).includes('aetas_version_conflict')) {
+        return false
+      }
+      throw error
+    }
     return data === true
   }
 

@@ -235,6 +235,17 @@ export interface NonAggressionPact {
   readonly agreedAtTurn: number
 }
 
+/** An active state of war between two players. Symmetric; either party may have declared it. */
+export interface War {
+  readonly id:             string
+  readonly declarerId:     string
+  readonly targetId:       string
+  readonly declaredAtTurn: number
+}
+
+/** Kind of diplomatic proposal. When absent on legacy rows: terms present → 'trade', else 'pact'. */
+export type DiplomaticProposalKind = 'pact' | 'trade' | 'peace'
+
 /** What the proposer offers and what they request in return. Both sides must be satisfied at accept time. */
 export interface ResourceTradeTerms {
   offer:   Resources
@@ -247,7 +258,9 @@ export interface DiplomaticProposal {
   readonly targetId:      string
   status:                 DiplomaticProposalStatus
   readonly createdAtTurn: number
-  /** Present for resource trade proposals; absent for non-aggression pact proposals. */
+  /** Discriminator. Optional for backward compat with rows written before it existed. */
+  readonly kind?:         DiplomaticProposalKind
+  /** Present for resource trade proposals; absent for non-aggression pact / peace proposals. */
   readonly terms?:        ResourceTradeTerms
 }
 
@@ -291,10 +304,12 @@ export interface GameState {
   currentPlayerId:            string
   turnState:                  TurnState
   era:                        Era
+  eraProgress?:               number   // science points accumulated toward next era; absent = 0
   /** Partida termina quando turnNumber > maxTurns. */
   readonly maxTurns:          number
   combatDisputes:             CombatDispute[]
   nonAggressionPacts:         NonAggressionPact[]
+  wars?:                      War[]   // active wars; absent = none (backward compat)
   diplomaticProposals:        DiplomaticProposal[]
   fogOfWar:                   PlayerFogOfWar[]
   /** Set when the game ends; null while in progress. */

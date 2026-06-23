@@ -449,6 +449,37 @@ function processTurnEconomy(cities, existingResources) {
   };
 }
 
+// ../game-engine/src/scoring.ts
+function scorePlayer(state, playerId) {
+  const owned = state.cities.filter((c) => c.ownerId === playerId);
+  const territory = owned.length * 3;
+  const population = owned.reduce((s, c) => s + c.population, 0);
+  const development = owned.reduce((s, c) => s + c.level + (c.buildings?.length ?? 0), 0);
+  return { territory, population, development, total: territory + population + development };
+}
+function scoreAll(state) {
+  return Object.fromEntries(
+    state.players.map((p) => [p.id, scorePlayer(state, p.id)])
+  );
+}
+function determineWinner(state) {
+  const active = state.players.filter((p) => !p.isEliminated);
+  let best = null;
+  let bestTotal = -Infinity;
+  let tie = false;
+  for (const p of active) {
+    const t = scorePlayer(state, p.id).total;
+    if (t > bestTotal) {
+      best = p.id;
+      bestTotal = t;
+      tie = false;
+    } else if (t === bestTotal) {
+      tie = true;
+    }
+  }
+  return tie ? null : best;
+}
+
 // ../game-engine/src/units.ts
 var ERA_ORDER = {
   ["ancient" /* Ancient */]: 0,
@@ -816,6 +847,10 @@ function getCivVisionBonus(civId) {
 }
 
 // ../game-engine/src/turn.ts
+var ERA_ORDER2 = ["ancient" /* Ancient */, "classical" /* Classical */, "medieval" /* Medieval */];
+var ERA_SCIENCE_THRESHOLDS = [5, 5];
+var ERA_ORDER_ARRAY = ERA_ORDER2;
+var ERA_SCIENCE_THRESHOLDS_ARRAY = ERA_SCIENCE_THRESHOLDS;
 function getPlayerById(state, id) {
   return state.players.find((p) => p.id === id);
 }
@@ -899,7 +934,7 @@ function endTurn(state, playerId, now, hooks = {}) {
     };
   }
   if (wrap && state.turnNumber === state.maxTurns) {
-    const winner = hooks.determineWinner ? hooks.determineWinner(working) : null;
+    const winner = hooks.determineWinner ? hooks.determineWinner(working) : determineWinner(working);
     return {
       ok: true,
       state: {
@@ -918,12 +953,30 @@ function endTurn(state, playerId, now, hooks = {}) {
   const nextCities = working.cities.map(
     (c) => c.ownerId === nextId ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 } : c
   );
+  const eraIdx = ERA_ORDER2.indexOf(working.era);
+  let nextEra = working.era;
+  let nextEraProgress = working.eraProgress ?? 0;
+  if (eraIdx >= 0 && eraIdx < ERA_ORDER2.length - 1) {
+    const threshold = ERA_SCIENCE_THRESHOLDS[eraIdx];
+    const actorCities = working.cities.filter((c) => c.ownerId === actorId);
+    const science = 1 + actorCities.reduce(
+      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []),
+      0
+    );
+    nextEraProgress += science;
+    if (nextEraProgress >= threshold) {
+      nextEra = ERA_ORDER2[eraIdx + 1];
+      nextEraProgress -= threshold;
+    }
+  }
   return {
     ok: true,
     state: {
       ...working,
       units,
       cities: nextCities,
+      era: nextEra,
+      eraProgress: nextEraProgress,
       currentPlayerId: nextId ?? actorId,
       turnNumber: state.turnNumber + (wrap ? 1 : 0),
       turnState: "waitingForAction" /* WaitingForAction */
@@ -1086,6 +1139,319 @@ function resolveTimedOutDispute(dispute, state) {
   return applyCombatResult(state, result);
 }
 
+// ../game-engine/src/diplomacy.ts
+function haveMadeContact(state, playerAId, playerBId) {
+  const fogA = state.fogOfWar.find((f) => f.playerId === playerAId);
+  const fogB = state.fogOfWar.find((f) => f.playerId === playerBId);
+  const exploredA = fogA ? new Set(fogA.exploredHexes.map(hexKey)) : null;
+  const exploredB = fogB ? new Set(fogB.exploredHexes.map(hexKey)) : null;
+  if (!exploredA && !exploredB) return false;
+  for (const unit of state.units) {
+    const key = hexKey(unit.position);
+    if (unit.ownerId === playerBId && exploredA?.has(key)) return true;
+    if (unit.ownerId === playerAId && exploredB?.has(key)) return true;
+  }
+  for (const city of state.cities) {
+    const key = hexKey(city.position);
+    if (city.ownerId === playerBId && exploredA?.has(key)) return true;
+    if (city.ownerId === playerAId && exploredB?.has(key)) return true;
+  }
+  return false;
+}
+function isActive(state, playerId) {
+  const p = state.players.find((pl) => pl.id === playerId);
+  return !!p && !p.isEliminated;
+}
+function hasExistingPact(state, aId, bId) {
+  return state.nonAggressionPacts.some(
+    (p) => p.proposerId === aId && p.acceptorId === bId || p.proposerId === bId && p.acceptorId === aId
+  );
+}
+function hasWar(state, aId, bId) {
+  return (state.wars ?? []).some(
+    (w) => w.declarerId === aId && w.targetId === bId || w.declarerId === bId && w.targetId === aId
+  );
+}
+function isPair(proposerId, targetId, aId, bId) {
+  return proposerId === aId && targetId === bId || proposerId === bId && targetId === aId;
+}
+function relationBetween(state, aId, bId) {
+  if (hasExistingPact(state, aId, bId)) return "pact";
+  if (hasWar(state, aId, bId)) return "war";
+  return "neutral";
+}
+function hasPendingNap(state, aId, bId) {
+  return state.diplomaticProposals.some(
+    (p) => p.status === "pending" /* Pending */ && p.terms === void 0 && (p.proposerId === aId && p.targetId === bId || p.proposerId === bId && p.targetId === aId)
+  );
+}
+function proposeNonAggressionPact(state, proposerId, targetId) {
+  if (!isActive(state, proposerId)) {
+    return { ok: false, reason: "proposer is not an active player", state };
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: "target is not an active player", state };
+  }
+  if (!haveMadeContact(state, proposerId, targetId)) {
+    return { ok: false, reason: "no contact established between players", state };
+  }
+  if (hasExistingPact(state, proposerId, targetId)) {
+    return { ok: false, reason: "non-aggression pact already exists", state };
+  }
+  if (hasPendingNap(state, proposerId, targetId)) {
+    return { ok: false, reason: "a pending non-aggression pact proposal already exists", state };
+  }
+  const proposal = {
+    id: `nap:${proposerId}:${targetId}:${state.turnNumber}`,
+    proposerId,
+    targetId,
+    status: "pending" /* Pending */,
+    createdAtTurn: state.turnNumber,
+    kind: "pact"
+  };
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] }
+  };
+}
+function respondToNonAggressionPact(state, responderId, proposalId, accept) {
+  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
+  if (!proposal) return { ok: false, reason: "proposal not found", state };
+  if (proposal.terms !== void 0) {
+    return { ok: false, reason: "proposal is not a non-aggression pact", state };
+  }
+  if (proposal.status !== "pending" /* Pending */) {
+    return { ok: false, reason: "proposal already resolved", state };
+  }
+  if (proposal.targetId !== responderId) {
+    return { ok: false, reason: "only the proposal target can respond", state };
+  }
+  const updatedProposals = state.diplomaticProposals.map(
+    (p) => p.id === proposalId ? { ...p, status: accept ? "accepted" /* Accepted */ : "rejected" /* Rejected */ } : p
+  );
+  if (!accept) {
+    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } };
+  }
+  const pact = {
+    id: `pact:${proposal.proposerId}:${responderId}:${state.turnNumber}`,
+    proposerId: proposal.proposerId,
+    acceptorId: responderId,
+    agreedAtTurn: state.turnNumber
+  };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      diplomaticProposals: updatedProposals,
+      nonAggressionPacts: [...state.nonAggressionPacts, pact]
+    }
+  };
+}
+function sufficient(have, need) {
+  return have.gold >= need.gold && have.food >= need.food && have.production >= need.production;
+}
+function subtract(a, b) {
+  return { gold: a.gold - b.gold, food: a.food - b.food, production: a.production - b.production };
+}
+function add(a, b) {
+  return { gold: a.gold + b.gold, food: a.food + b.food, production: a.production + b.production };
+}
+function isNonTrivialTrade(terms) {
+  return terms.offer.gold > 0 || terms.offer.food > 0 || terms.offer.production > 0 || terms.request.gold > 0 || terms.request.food > 0 || terms.request.production > 0;
+}
+function proposeResourceTrade(state, proposerId, targetId, terms) {
+  if (!isActive(state, proposerId)) {
+    return { ok: false, reason: "proposer is not an active player", state };
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: "target is not an active player", state };
+  }
+  if (!haveMadeContact(state, proposerId, targetId)) {
+    return { ok: false, reason: "no contact established between players", state };
+  }
+  if (!isNonTrivialTrade(terms)) {
+    return { ok: false, reason: "trade must include at least one resource", state };
+  }
+  const proposer = state.players.find((p) => p.id === proposerId);
+  if (!sufficient(proposer.resources, terms.offer)) {
+    return { ok: false, reason: "proposer lacks resources for this offer", state };
+  }
+  const proposal = {
+    id: `trade:${proposerId}:${targetId}:${state.turnNumber}`,
+    proposerId,
+    targetId,
+    status: "pending" /* Pending */,
+    createdAtTurn: state.turnNumber,
+    kind: "trade",
+    terms
+  };
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] }
+  };
+}
+function respondToResourceTrade(state, responderId, proposalId, accept) {
+  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
+  if (!proposal) return { ok: false, reason: "proposal not found", state };
+  if (!proposal.terms) return { ok: false, reason: "proposal is not a resource trade", state };
+  if (proposal.status !== "pending" /* Pending */) {
+    return { ok: false, reason: "proposal already resolved", state };
+  }
+  if (proposal.targetId !== responderId) {
+    return { ok: false, reason: "only the proposal target can respond", state };
+  }
+  const updatedProposals = state.diplomaticProposals.map(
+    (p) => p.id === proposalId ? { ...p, status: accept ? "accepted" /* Accepted */ : "rejected" /* Rejected */ } : p
+  );
+  if (!accept) {
+    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } };
+  }
+  const proposer = state.players.find((p) => p.id === proposal.proposerId);
+  const target = state.players.find((p) => p.id === responderId);
+  if (!sufficient(proposer.resources, proposal.terms.offer)) {
+    return { ok: false, reason: "proposer no longer has enough resources", state };
+  }
+  if (!sufficient(target.resources, proposal.terms.request)) {
+    return { ok: false, reason: "target lacks resources for this trade", state };
+  }
+  const terms = proposal.terms;
+  const updatedPlayers = state.players.map((p) => {
+    if (p.id === proposal.proposerId) {
+      return { ...p, resources: add(subtract(p.resources, terms.offer), terms.request) };
+    }
+    if (p.id === responderId) {
+      return { ...p, resources: add(subtract(p.resources, terms.request), terms.offer) };
+    }
+    return p;
+  });
+  return {
+    ok: true,
+    state: {
+      ...state,
+      players: updatedPlayers,
+      diplomaticProposals: updatedProposals
+    }
+  };
+}
+function cancelProposalsBetween(state, aId, bId) {
+  return state.diplomaticProposals.map(
+    (p) => p.status === "pending" /* Pending */ && isPair(p.proposerId, p.targetId, aId, bId) ? { ...p, status: "rejected" /* Rejected */ } : p
+  );
+}
+function declareWar(state, declarerId, targetId) {
+  if (!isActive(state, declarerId)) {
+    return { ok: false, reason: "declarer is not an active player", state };
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: "target is not an active player", state };
+  }
+  if (declarerId === targetId) {
+    return { ok: false, reason: "cannot declare war on yourself", state };
+  }
+  if (!haveMadeContact(state, declarerId, targetId)) {
+    return { ok: false, reason: "no contact established between players", state };
+  }
+  if (hasWar(state, declarerId, targetId)) {
+    return { ok: false, reason: "already at war", state };
+  }
+  const war = {
+    id: `war:${declarerId}:${targetId}:${state.turnNumber}`,
+    declarerId,
+    targetId,
+    declaredAtTurn: state.turnNumber
+  };
+  const remainingPacts = state.nonAggressionPacts.filter(
+    (p) => !isPair(p.proposerId, p.acceptorId, declarerId, targetId)
+  );
+  return {
+    ok: true,
+    state: {
+      ...state,
+      nonAggressionPacts: remainingPacts,
+      wars: [...state.wars ?? [], war],
+      diplomaticProposals: cancelProposalsBetween(state, declarerId, targetId)
+    }
+  };
+}
+function breakNonAggressionPact(state, breakerId, targetId) {
+  if (!hasExistingPact(state, breakerId, targetId)) {
+    return { ok: false, reason: "no non-aggression pact to break", state };
+  }
+  const remainingPacts = state.nonAggressionPacts.filter(
+    (p) => !isPair(p.proposerId, p.acceptorId, breakerId, targetId)
+  );
+  return { ok: true, state: { ...state, nonAggressionPacts: remainingPacts } };
+}
+function hasPendingPeace(state, aId, bId) {
+  return state.diplomaticProposals.some(
+    (p) => p.status === "pending" /* Pending */ && p.kind === "peace" && isPair(p.proposerId, p.targetId, aId, bId)
+  );
+}
+function proposePeace(state, proposerId, targetId) {
+  if (!isActive(state, proposerId)) {
+    return { ok: false, reason: "proposer is not an active player", state };
+  }
+  if (!isActive(state, targetId)) {
+    return { ok: false, reason: "target is not an active player", state };
+  }
+  if (!hasWar(state, proposerId, targetId)) {
+    return { ok: false, reason: "players are not at war", state };
+  }
+  if (hasPendingPeace(state, proposerId, targetId)) {
+    return { ok: false, reason: "a pending peace proposal already exists", state };
+  }
+  const proposal = {
+    id: `peace:${proposerId}:${targetId}:${state.turnNumber}`,
+    proposerId,
+    targetId,
+    status: "pending" /* Pending */,
+    createdAtTurn: state.turnNumber,
+    kind: "peace"
+  };
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] }
+  };
+}
+function respondToPeace(state, responderId, proposalId, accept) {
+  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
+  if (!proposal) return { ok: false, reason: "proposal not found", state };
+  if (proposal.kind !== "peace") return { ok: false, reason: "proposal is not a peace offer", state };
+  if (proposal.status !== "pending" /* Pending */) {
+    return { ok: false, reason: "proposal already resolved", state };
+  }
+  if (proposal.targetId !== responderId) {
+    return { ok: false, reason: "only the proposal target can respond", state };
+  }
+  const updatedProposals = state.diplomaticProposals.map(
+    (p) => p.id === proposalId ? { ...p, status: accept ? "accepted" /* Accepted */ : "rejected" /* Rejected */ } : p
+  );
+  if (!accept) {
+    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } };
+  }
+  const remainingWars = (state.wars ?? []).filter(
+    (w) => !isPair(w.declarerId, w.targetId, proposal.proposerId, responderId)
+  );
+  return {
+    ok: true,
+    state: { ...state, diplomaticProposals: updatedProposals, wars: remainingWars }
+  };
+}
+function respondToProposal(state, responderId, proposalId, accept) {
+  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
+  if (!proposal) return { ok: false, reason: "proposal not found", state };
+  const kind = proposal.kind ?? (proposal.terms ? "trade" : "pact");
+  switch (kind) {
+    case "trade":
+      return respondToResourceTrade(state, responderId, proposalId, accept);
+    case "peace":
+      return respondToPeace(state, responderId, proposalId, accept);
+    case "pact":
+    default:
+      return respondToNonAggressionPact(state, responderId, proposalId, accept);
+  }
+}
+
 // ../game-engine/src/actions.ts
 var DEFAULT_HOOKS = { resolveTimedOutDispute };
 function findUnit2(state, id) {
@@ -1126,6 +1492,9 @@ function validateAction(state, playerId, action, _now) {
       }
       if (attacker.hasAttacked) {
         return { valid: false, reason: "unit has already attacked this turn" };
+      }
+      if (relationBetween(state, playerId, defender.ownerId) === "pact") {
+        return { valid: false, reason: "non-aggression pact prevents this attack" };
       }
       const alreadyDisputing = state.combatDisputes.some(
         (d) => d.status === "pending" /* Pending */ && d.attackerUnitId === attacker.id
@@ -1209,6 +1578,32 @@ function validateAction(state, playerId, action, _now) {
       if (!city) return { valid: false, reason: "city not found" };
       if (city.ownerId === playerId) return { valid: false, reason: "cannot attack your own city" };
       if (hexDistance(unit.position, city.position) !== 1) return { valid: false, reason: "city is not adjacent" };
+      if (relationBetween(state, playerId, city.ownerId) === "pact") {
+        return { valid: false, reason: "non-aggression pact prevents this attack" };
+      }
+      return { valid: true };
+    }
+    case "proposePact":
+    case "declareWar":
+    case "proposePeace":
+    case "breakPact": {
+      if (action.targetId === playerId) return { valid: false, reason: "cannot target yourself" };
+      if (!state.players.some((p) => p.id === action.targetId)) {
+        return { valid: false, reason: "target player not found" };
+      }
+      return { valid: true };
+    }
+    case "proposeTrade": {
+      if (action.targetId === playerId) return { valid: false, reason: "cannot target yourself" };
+      if (!state.players.some((p) => p.id === action.targetId)) {
+        return { valid: false, reason: "target player not found" };
+      }
+      return { valid: true };
+    }
+    case "respondToDiplomacy": {
+      const proposal = state.diplomaticProposals.find((p) => p.id === action.proposalId);
+      if (!proposal) return { valid: false, reason: "proposal not found" };
+      if (proposal.targetId !== playerId) return { valid: false, reason: "only the proposal target can respond" };
       return { valid: true };
     }
   }
@@ -1323,7 +1718,24 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
         }
       };
     }
+    case "proposePact":
+      return fromDiplomacy(proposeNonAggressionPact(state, playerId, action.targetId));
+    case "proposeTrade":
+      return fromDiplomacy(
+        proposeResourceTrade(state, playerId, action.targetId, { offer: action.offer, request: action.request })
+      );
+    case "declareWar":
+      return fromDiplomacy(declareWar(state, playerId, action.targetId));
+    case "proposePeace":
+      return fromDiplomacy(proposePeace(state, playerId, action.targetId));
+    case "breakPact":
+      return fromDiplomacy(breakNonAggressionPact(state, playerId, action.targetId));
+    case "respondToDiplomacy":
+      return fromDiplomacy(respondToProposal(state, playerId, action.proposalId, action.accept));
   }
+}
+function fromDiplomacy(res) {
+  return res.ok ? { ok: true, state: res.state } : { ok: false, reason: res.reason, state: res.state };
 }
 
 // ../game-engine/src/ai.ts
@@ -1353,10 +1765,77 @@ function planDefensiveResponses(state, playerId, now) {
   return { state: s, actions };
 }
 var END_TURN = { type: "endTurn" };
+var resourceTotal = (r) => r.gold + r.food + r.production;
+function planDiplomaticResponses(state, playerId, now) {
+  let s = state;
+  const actions = [];
+  const pending = s.diplomaticProposals.filter((p) => p.status === "pending" && p.targetId === playerId).slice().sort(byId);
+  for (const proposal of pending) {
+    const kind = proposal.kind ?? (proposal.terms ? "trade" : "pact");
+    const accept = kind === "trade" ? !!proposal.terms && resourceTotal(proposal.terms.offer) >= resourceTotal(proposal.terms.request) : true;
+    const action = { type: "respondToDiplomacy", proposalId: proposal.id, accept };
+    if (validateAction(s, playerId, action, now).valid) {
+      actions.push(action);
+      const applied = applyAction(s, playerId, action, now);
+      if (applied.ok) s = applied.state;
+    }
+  }
+  return { state: s, actions };
+}
+var isPair2 = (a1, b1, a2, b2) => a1 === a2 && b1 === b2 || a1 === b2 && b1 === a2;
+function aiFavorableTrade(me) {
+  const entries = [
+    ["gold", me.resources.gold],
+    ["food", me.resources.food],
+    ["production", me.resources.production]
+  ].sort((a, b) => b[1] - a[1]);
+  const [giveKey, giveHave] = entries[0];
+  const askKey = entries[2][0];
+  const giveAmt = Math.min(5, giveHave);
+  if (giveAmt <= 0 || askKey === giveKey) return null;
+  const offer = { gold: 0, food: 0, production: 0 };
+  const request = { gold: 0, food: 0, production: 0 };
+  offer[giveKey] = giveAmt;
+  request[askKey] = 3;
+  return { offer, request };
+}
+function planDiplomaticInitiatives(state, playerId, now) {
+  const me = state.players.find((p) => p.id === playerId);
+  if (!me) return { state, actions: [] };
+  const contacts = state.players.filter((p) => p.id !== playerId && !p.isEliminated && haveMadeContact(state, playerId, p.id)).slice().sort(byId);
+  for (const other of contacts) {
+    const pendingBetween = state.diplomaticProposals.some(
+      (p) => p.status === "pending" && isPair2(p.proposerId, p.targetId, playerId, other.id)
+    );
+    if (pendingBetween) continue;
+    const relation = relationBetween(state, playerId, other.id);
+    let candidate = null;
+    if (relation === "neutral") {
+      const alreadyOfferedPact = state.diplomaticProposals.some(
+        (p) => (p.kind ?? (p.terms ? "trade" : "pact")) === "pact" && p.proposerId === playerId && p.targetId === other.id
+      );
+      if (!alreadyOfferedPact) candidate = { type: "proposePact", targetId: other.id };
+    } else if (relation === "pact") {
+      const tradeTurns = state.diplomaticProposals.filter((p) => (p.kind ?? (p.terms ? "trade" : "pact")) === "trade" && p.proposerId === playerId && p.targetId === other.id).map((p) => p.createdAtTurn);
+      const lastTradeTurn = tradeTurns.length ? Math.max(...tradeTurns) : -Infinity;
+      if (state.turnNumber - lastTradeTurn >= 3) {
+        const terms = aiFavorableTrade(me);
+        if (terms) candidate = { type: "proposeTrade", targetId: other.id, offer: terms.offer, request: terms.request };
+      }
+    }
+    if (candidate && validateAction(state, playerId, candidate, now).valid) {
+      const applied = applyAction(state, playerId, candidate, now);
+      if (applied.ok) return { state: applied.state, actions: [candidate] };
+    }
+  }
+  return { state, actions: [] };
+}
 function decideSubstituteTurn(state, playerId, now) {
   if (!canSubmitAction(state, playerId).valid) return [];
-  const { actions } = planDefensiveResponses(state, playerId, now);
-  return [...actions, END_TURN];
+  const defensive = planDefensiveResponses(state, playerId, now);
+  const diplomatic = planDiplomaticResponses(defensive.state, playerId, now);
+  const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now);
+  return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN];
 }
 function decideOpponentTurn(state, playerId, now) {
   if (!canSubmitAction(state, playerId).valid) return [];
@@ -1383,222 +1862,6 @@ function decideOpponentTurn(state, playerId, now) {
     }
   }
   return [...actions, END_TURN];
-}
-
-// ../game-engine/src/diplomacy.ts
-function haveMadeContact(state, playerAId, playerBId) {
-  const fogA = state.fogOfWar.find((f) => f.playerId === playerAId);
-  const fogB = state.fogOfWar.find((f) => f.playerId === playerBId);
-  const exploredA = fogA ? new Set(fogA.exploredHexes.map(hexKey)) : null;
-  const exploredB = fogB ? new Set(fogB.exploredHexes.map(hexKey)) : null;
-  if (!exploredA && !exploredB) return false;
-  for (const unit of state.units) {
-    const key = hexKey(unit.position);
-    if (unit.ownerId === playerBId && exploredA?.has(key)) return true;
-    if (unit.ownerId === playerAId && exploredB?.has(key)) return true;
-  }
-  for (const city of state.cities) {
-    const key = hexKey(city.position);
-    if (city.ownerId === playerBId && exploredA?.has(key)) return true;
-    if (city.ownerId === playerAId && exploredB?.has(key)) return true;
-  }
-  return false;
-}
-function isActive(state, playerId) {
-  const p = state.players.find((pl) => pl.id === playerId);
-  return !!p && !p.isEliminated;
-}
-function hasExistingPact(state, aId, bId) {
-  return state.nonAggressionPacts.some(
-    (p) => p.proposerId === aId && p.acceptorId === bId || p.proposerId === bId && p.acceptorId === aId
-  );
-}
-function hasPendingNap(state, aId, bId) {
-  return state.diplomaticProposals.some(
-    (p) => p.status === "pending" /* Pending */ && p.terms === void 0 && (p.proposerId === aId && p.targetId === bId || p.proposerId === bId && p.targetId === aId)
-  );
-}
-function proposeNonAggressionPact(state, proposerId, targetId) {
-  if (!isActive(state, proposerId)) {
-    return { ok: false, reason: "proposer is not an active player", state };
-  }
-  if (!isActive(state, targetId)) {
-    return { ok: false, reason: "target is not an active player", state };
-  }
-  if (!haveMadeContact(state, proposerId, targetId)) {
-    return { ok: false, reason: "no contact established between players", state };
-  }
-  if (hasExistingPact(state, proposerId, targetId)) {
-    return { ok: false, reason: "non-aggression pact already exists", state };
-  }
-  if (hasPendingNap(state, proposerId, targetId)) {
-    return { ok: false, reason: "a pending non-aggression pact proposal already exists", state };
-  }
-  const proposal = {
-    id: `nap:${proposerId}:${targetId}:${state.turnNumber}`,
-    proposerId,
-    targetId,
-    status: "pending" /* Pending */,
-    createdAtTurn: state.turnNumber
-  };
-  return {
-    ok: true,
-    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] }
-  };
-}
-function respondToNonAggressionPact(state, responderId, proposalId, accept) {
-  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
-  if (!proposal) return { ok: false, reason: "proposal not found", state };
-  if (proposal.terms !== void 0) {
-    return { ok: false, reason: "proposal is not a non-aggression pact", state };
-  }
-  if (proposal.status !== "pending" /* Pending */) {
-    return { ok: false, reason: "proposal already resolved", state };
-  }
-  if (proposal.targetId !== responderId) {
-    return { ok: false, reason: "only the proposal target can respond", state };
-  }
-  const updatedProposals = state.diplomaticProposals.map(
-    (p) => p.id === proposalId ? { ...p, status: accept ? "accepted" /* Accepted */ : "rejected" /* Rejected */ } : p
-  );
-  if (!accept) {
-    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } };
-  }
-  const pact = {
-    id: `pact:${proposal.proposerId}:${responderId}:${state.turnNumber}`,
-    proposerId: proposal.proposerId,
-    acceptorId: responderId,
-    agreedAtTurn: state.turnNumber
-  };
-  return {
-    ok: true,
-    state: {
-      ...state,
-      diplomaticProposals: updatedProposals,
-      nonAggressionPacts: [...state.nonAggressionPacts, pact]
-    }
-  };
-}
-function sufficient(have, need) {
-  return have.gold >= need.gold && have.food >= need.food && have.production >= need.production;
-}
-function subtract(a, b) {
-  return { gold: a.gold - b.gold, food: a.food - b.food, production: a.production - b.production };
-}
-function add(a, b) {
-  return { gold: a.gold + b.gold, food: a.food + b.food, production: a.production + b.production };
-}
-function isNonTrivialTrade(terms) {
-  return terms.offer.gold > 0 || terms.offer.food > 0 || terms.offer.production > 0 || terms.request.gold > 0 || terms.request.food > 0 || terms.request.production > 0;
-}
-function proposeResourceTrade(state, proposerId, targetId, terms) {
-  if (!isActive(state, proposerId)) {
-    return { ok: false, reason: "proposer is not an active player", state };
-  }
-  if (!isActive(state, targetId)) {
-    return { ok: false, reason: "target is not an active player", state };
-  }
-  if (!haveMadeContact(state, proposerId, targetId)) {
-    return { ok: false, reason: "no contact established between players", state };
-  }
-  if (!isNonTrivialTrade(terms)) {
-    return { ok: false, reason: "trade must include at least one resource", state };
-  }
-  const proposer = state.players.find((p) => p.id === proposerId);
-  if (!sufficient(proposer.resources, terms.offer)) {
-    return { ok: false, reason: "proposer lacks resources for this offer", state };
-  }
-  const proposal = {
-    id: `trade:${proposerId}:${targetId}:${state.turnNumber}`,
-    proposerId,
-    targetId,
-    status: "pending" /* Pending */,
-    createdAtTurn: state.turnNumber,
-    terms
-  };
-  return {
-    ok: true,
-    state: { ...state, diplomaticProposals: [...state.diplomaticProposals, proposal] }
-  };
-}
-function respondToResourceTrade(state, responderId, proposalId, accept) {
-  const proposal = state.diplomaticProposals.find((p) => p.id === proposalId);
-  if (!proposal) return { ok: false, reason: "proposal not found", state };
-  if (!proposal.terms) return { ok: false, reason: "proposal is not a resource trade", state };
-  if (proposal.status !== "pending" /* Pending */) {
-    return { ok: false, reason: "proposal already resolved", state };
-  }
-  if (proposal.targetId !== responderId) {
-    return { ok: false, reason: "only the proposal target can respond", state };
-  }
-  const updatedProposals = state.diplomaticProposals.map(
-    (p) => p.id === proposalId ? { ...p, status: accept ? "accepted" /* Accepted */ : "rejected" /* Rejected */ } : p
-  );
-  if (!accept) {
-    return { ok: true, state: { ...state, diplomaticProposals: updatedProposals } };
-  }
-  const proposer = state.players.find((p) => p.id === proposal.proposerId);
-  const target = state.players.find((p) => p.id === responderId);
-  if (!sufficient(proposer.resources, proposal.terms.offer)) {
-    return { ok: false, reason: "proposer no longer has enough resources", state };
-  }
-  if (!sufficient(target.resources, proposal.terms.request)) {
-    return { ok: false, reason: "target lacks resources for this trade", state };
-  }
-  const terms = proposal.terms;
-  const updatedPlayers = state.players.map((p) => {
-    if (p.id === proposal.proposerId) {
-      return { ...p, resources: add(subtract(p.resources, terms.offer), terms.request) };
-    }
-    if (p.id === responderId) {
-      return { ...p, resources: add(subtract(p.resources, terms.request), terms.offer) };
-    }
-    return p;
-  });
-  return {
-    ok: true,
-    state: {
-      ...state,
-      players: updatedPlayers,
-      diplomaticProposals: updatedProposals
-    }
-  };
-}
-
-// ../game-engine/src/scoring.ts
-var TERRITORY_POINTS_PER_CITY = 10;
-var POPULATION_POINTS_PER_POP = 3;
-var DEVELOPMENT_POINTS_PER_LEVEL = 5;
-function computePlayerScore(playerId, cities) {
-  const owned = cities.filter((c) => c.ownerId === playerId);
-  const territory = owned.length * TERRITORY_POINTS_PER_CITY;
-  const population = owned.reduce((s, c) => s + c.population, 0) * POPULATION_POINTS_PER_POP;
-  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL;
-  return { playerId, territory, population, development, total: territory + population + development };
-}
-function rankPlayers(state) {
-  return state.players.filter((p) => !p.isEliminated).map((p) => computePlayerScore(p.id, state.cities)).sort((a, b) => b.total - a.total || a.playerId.localeCompare(b.playerId));
-}
-function determineWinner(state) {
-  const ranked = rankPlayers(state);
-  if (ranked.length === 0) return null;
-  if (ranked.length === 1) return ranked[0].playerId;
-  if (ranked[0].total === ranked[1].total) return null;
-  return ranked[0].playerId;
-}
-function eliminatePlayersWithNoCities(state) {
-  const ownerSet = new Set(state.cities.map((c) => c.ownerId));
-  const toEliminate = new Set(
-    state.players.filter((p) => !p.isEliminated && !ownerSet.has(p.id)).map((p) => p.id)
-  );
-  if (toEliminate.size === 0) return state;
-  return {
-    ...state,
-    players: state.players.map(
-      (p) => toEliminate.has(p.id) ? { ...p, isEliminated: true } : p
-    ),
-    units: state.units.filter((u) => !toEliminate.has(u.ownerId))
-  };
 }
 
 // ../game-engine/src/civs.ts
@@ -1779,17 +2042,16 @@ export {
   COMBAT_TIMEOUT_MS,
   CitySpecialization,
   CombatDisputeStatus,
-  DEVELOPMENT_POINTS_PER_LEVEL,
   DiplomaticProposalStatus,
+  ERA_ORDER_ARRAY,
+  ERA_SCIENCE_THRESHOLDS_ARRAY,
   Era,
   FOOD_PER_POPULATION_GROWTH,
   LEVEL_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,
   MIN_DAMAGE,
-  POPULATION_POINTS_PER_POP,
   ResourceType,
   SPECIAL_UNIT_CATALOG,
-  TERRITORY_POINTS_PER_CITY,
   TURN_TIMEOUT_MS,
   TerrainType,
   TurnState,
@@ -1804,20 +2066,20 @@ export {
   applyAction,
   applyBuildingBonuses,
   applyGrowth,
+  breakNonAggressionPact,
   canBuildBuilding,
   canSubmitAction,
   canTrainUnit,
   computeCityProduction,
-  computePlayerScore,
   computeVisibleHexes,
   createCombatDispute,
   createUnitFromDef,
   createUnitInstance,
   decideOpponentTurn,
   decideSubstituteTurn,
+  declareWar,
   determineWinner,
   diffDisputes,
-  eliminatePlayersWithNoCities,
   endTurn,
   generateMap,
   getBuildingDef,
@@ -1844,14 +2106,18 @@ export {
   nextActivePlayerId,
   processTurnEconomy,
   proposeNonAggressionPact,
+  proposePeace,
   proposeResourceTrade,
-  rankPlayers,
+  relationBetween,
   resolveCombat,
   resolveDispute,
   resolveDisputeByAction,
   resolveTimedOutDispute,
   respondToNonAggressionPact,
+  respondToProposal,
   respondToResourceTrade,
+  scoreAll,
+  scorePlayer,
   startConstruction,
   submitAction,
   sweepTimeouts,

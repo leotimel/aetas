@@ -1,189 +1,190 @@
-import { useMemo } from 'react'
+﻿import { useMemo } from 'react'
 import type { GameState } from '@aetas/game-engine'
-import { rankPlayers, xpToLevel, xpProgress, TERRITORY_POINTS_PER_CITY, POPULATION_POINTS_PER_POP, DEVELOPMENT_POINTS_PER_LEVEL, CIVILIZATIONS } from '@aetas/game-engine'
-
-const PLAYER_COLORS = [
-  '#ef4444', '#3b82f6', '#22c55e', '#f59e0b',
-  '#a855f7', '#06b6d4', '#f97316', '#ec4899',
-]
-
-const MEDALS = ['🥇', '🥈', '🥉']
-
-function civColor(civilizationId: string | undefined, fallback: string): string {
-  return (civilizationId ? CIVILIZATIONS.find(c => c.id === civilizationId)?.color : undefined) ?? fallback
-}
+import { CIVILIZATIONS, scoreAll, type PlayerScore } from '@aetas/game-engine'
 
 interface Props {
-  gameState: GameState
+  gameState:        GameState
   myEnginePlayerId: string
-  xpGain: { gained: number; newXp: number } | null
-  onBack: () => void
+  xpGain:           { gained: number; newXp: number } | null
+  onBack:           () => void
 }
 
-function GoldParticles() {
-  const particles = useMemo(() =>
-    Array.from({ length: 24 }, (_, i) => ({
-      left:  `${((i * 4.3) % 100).toFixed(1)}%`,
-      top:   `${((i * 7)   % 25).toFixed(1)}%`,
-      delay: `${(i * 0.11).toFixed(2)}s`,
-      dur:   `${(1.5 + (i % 5) * 0.22).toFixed(2)}s`,
-      size:  `${4 + (i % 4)}px`,
-    })), [])
+function civName(players: GameState['players'], playerId: string): string {
+  const player = players.find(p => p.id === playerId)
+  return CIVILIZATIONS.find(c => c.id === player?.civilizationId)?.name ?? playerId.slice(0, 6)
+}
+
+function civFlag(players: GameState['players'], playerId: string): string {
+  const player = players.find(p => p.id === playerId)
+  return CIVILIZATIONS.find(c => c.id === player?.civilizationId)?.flag ?? '🏛️'
+}
+
+function buildShareText(
+  gameState: GameState,
+  scores: Record<string, PlayerScore>,
+): string {
+  const ranked = [...gameState.players]
+    .sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0))
+
+  const lines = [`🏛️ Aetas • Turno ${gameState.maxTurns}`]
+  ranked.forEach((p, i) => {
+    const medal = i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`
+    const name  = civName(gameState.players, p.id)
+    const total = scores[p.id]?.total ?? 0
+    lines.push(`${medal} ${name}: ${total}pts`)
+  })
+  return lines.join('\n')
+}
+
+function Particles() {
+  const particles = useMemo(() => {
+    return Array.from({ length: 32 }, (_, i) => ({
+      id:    i,
+      left:  `${Math.round(Math.random() * 96)}%`,
+      delay: `${(Math.random() * 2.2).toFixed(2)}s`,
+      dur:   `${(2.2 + Math.random() * 1.6).toFixed(2)}s`,
+      size:  `${6 + Math.floor(Math.random() * 6)}px`,
+      color: i % 3 === 0 ? '#fbbf24' : i % 3 === 1 ? '#facc15' : '#fde68a',
+    }))
+  }, [])
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden z-0">
-      {particles.map((p, i) => (
+    <>
+      {particles.map(p => (
         <div
-          key={i}
-          className="absolute rounded-full bg-aetas-gold anim-particle"
-          style={{ left: p.left, top: p.top, width: p.size, height: p.size, '--dur': p.dur, '--delay': p.delay } as React.CSSProperties}
+          key={p.id}
+          className="anim-particle pointer-events-none fixed rounded-sm"
+          style={{
+            top: '-5%',
+            left: p.left,
+            width: p.size,
+            height: p.size,
+            backgroundColor: p.color,
+            '--delay': p.delay,
+            '--dur': p.dur,
+          } as React.CSSProperties}
         />
       ))}
-    </div>
+    </>
   )
 }
+
+const RANK_LABEL = ['🥇', '🥈', '🥉']
+const RANK_ORD   = ['1º', '2º', '3º', '4º', '5º', '6º', '7º', '8º']
 
 export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, onBack }: Props) {
-  const ranked = rankPlayers(gameState)
-  const winner = ranked[0]
-  const iWon = winner?.playerId === myEnginePlayerId
+  const scores = useMemo(() => scoreAll(gameState), [gameState])
 
-  const playerIndexMap = new Map(gameState.players.map((p, i) => [p.id, i]))
+  const ranked = useMemo(() => {
+    const active     = gameState.players.filter(p => !p.isEliminated)
+    const eliminated = gameState.players.filter(p => p.isEliminated)
+    const sortFn = (a: (typeof gameState.players)[0], b: (typeof gameState.players)[0]) =>
+      (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
+    return [...active.sort(sortFn), ...eliminated]
+  }, [gameState.players, scores])
+
+  const winner    = gameState.winner
+  const winnerCiv = winner ? civName(gameState.players, winner) : null
+  const iWon      = winner === myEnginePlayerId
+
+  const handleShare = () => {
+    const text = buildShareText(gameState, scores)
+    navigator.clipboard.writeText(text).catch(() => {/* silent */})
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-aetas-bg/95 flex flex-col items-center justify-center p-4">
-      {iWon && <GoldParticles />}
-      {/* Trophy + headline */}
-      <div className="text-center mb-6 relative z-10">
-        <p className="text-5xl mb-3">{iWon ? '🏆' : '🎮'}</p>
-        <h1 className={`font-display text-aetas-text text-2xl font-semibold${iWon ? ' anim-victory-title' : ''}`}>
-          {iWon ? 'Você venceu!' : 'Fim de Partida'}
-        </h1>
-        {winner && (
-          <p className="text-aetas-muted text-sm mt-1">
-            {iWon
-              ? 'Parabéns pela vitória!'
-              : (() => {
-                  const wp = gameState.players.find(p => p.id === winner.playerId)
-                  const wName = CIVILIZATIONS.find(c => c.id === wp?.civilizationId)?.name ?? winner.playerId.slice(0, 8)
-                  return `${wName} venceram`
-                })()
-            }
-          </p>
-        )}
-        {!winner && <p className="text-aetas-muted text-sm mt-1">Empate!</p>}
-      </div>
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-start overflow-y-auto">
+      {iWon && <Particles />}
 
-      {/* Score table */}
-      <div className="w-full max-w-sm bg-aetas-surface border border-aetas-border-strong rounded-2xl overflow-hidden">
-        {/* Header */}
-        <div className="grid grid-cols-5 gap-0 px-4 py-2 bg-aetas-raised/60 border-b border-aetas-border-strong">
-          <div className="col-span-2 text-xs text-aetas-muted uppercase tracking-wider">Jogador</div>
-          <div className="text-xs text-aetas-muted text-center" title={`${TERRITORY_POINTS_PER_CITY}pts/cidade`}>Terr.</div>
-          <div className="text-xs text-aetas-muted text-center" title={`${POPULATION_POINTS_PER_POP}pts/pop`}>Pop.</div>
-          <div className="text-xs text-aetas-muted text-right" title={`${DEVELOPMENT_POINTS_PER_LEVEL}pts/nível`}>Total</div>
+      <div className="w-full max-w-lg px-4 py-8 flex flex-col gap-5 relative">
+        {/* Victory / Tie banner */}
+        <div className="text-center anim-fanfare">
+          {winnerCiv ? (
+            <>
+              <div className="text-5xl mb-2">🏆</div>
+              <h1 className="text-2xl font-bold text-aetas-gold">{winnerCiv} venceu!</h1>
+              {iWon && <p className="text-aetas-muted text-sm mt-1">Parabéns, você é o vencedor!</p>}
+            </>
+          ) : (
+            <>
+              <div className="text-5xl mb-2">🤝</div>
+              <h1 className="text-2xl font-bold text-aetas-text">Empate!</h1>
+            </>
+          )}
+          {xpGain && (
+            <span className="inline-block mt-2 px-3 py-1 rounded-full bg-emerald-900/60 border border-emerald-700/50 text-emerald-300 text-sm font-medium">
+              +{xpGain.gained} XP · Total: {xpGain.newXp} XP
+            </span>
+          )}
         </div>
 
-        {/* Rows */}
-        {ranked.map((score, i) => {
-          const playerIndex = playerIndexMap.get(score.playerId) ?? 0
-          const player = gameState.players.find(p => p.id === score.playerId)
-          const color = civColor(player?.civilizationId, PLAYER_COLORS[playerIndex % PLAYER_COLORS.length])
-          const isMe = score.playerId === myEnginePlayerId
-          const medal = MEDALS[i] ?? `#${i + 1}`
-
-          return (
-            <div
-              key={score.playerId}
-              className={`grid grid-cols-5 gap-0 px-4 py-3 border-b border-aetas-border last:border-0 ${
-                i === 0 ? 'bg-aetas-raised/40' : ''
-              } ${isMe ? 'ring-1 ring-inset ring-aetas-gold/40' : ''}`}
-            >
-              {/* Player column */}
-              <div className="col-span-2 flex items-center gap-2">
-                <span className="text-sm">{medal}</span>
-                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                <div className="min-w-0">
-                  <p className="text-aetas-muted text-xs truncate">
-                    {CIVILIZATIONS.find(c => c.id === player?.civilizationId)?.name ?? score.playerId.slice(0, 8)}
-                  </p>
-                  <p className="text-aetas-dim text-xs">
-                    {isMe && 'você '}
-                    {player?.isAIControlled && '🤖'}
-                    {player?.isEliminated && 'elim.'}
-                  </p>
+        {/* Ranking */}
+        <div className="flex flex-col gap-2">
+          {ranked.map((player, i) => {
+            const isElim   = player.isEliminated
+            const isWinner = player.id === winner
+            const isMe     = player.id === myEnginePlayerId
+            const s        = scores[player.id] ?? { territory: 0, population: 0, development: 0, total: 0 }
+            const rankLabel = i < 3 ? RANK_LABEL[i] : RANK_ORD[i] ?? `${i + 1}º`
+            return (
+              <div
+                key={player.id}
+                className={`rounded-xl p-3 border ${
+                  isElim
+                    ? 'opacity-50 bg-aetas-raised border-aetas-border'
+                    : isWinner
+                      ? 'bg-aetas-raised border-aetas-gold/50'
+                      : 'bg-aetas-raised border-aetas-border'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xl w-8 text-center flex-shrink-0">{rankLabel}</span>
+                  <span className="text-lg">{civFlag(gameState.players, player.id)}</span>
+                  <span className={`font-medium text-sm ${isElim ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
+                    {civName(gameState.players, player.id)}
+                    {isMe && <span className="text-aetas-dim font-normal"> (você)</span>}
+                    {isElim && <span className="ml-1">🚫</span>}
+                  </span>
+                  <span className={`ml-auto text-sm font-bold ${isWinner ? 'text-aetas-gold' : 'text-aetas-muted'}`}>
+                    {s.total}pts
+                  </span>
                 </div>
+                {!isElim && (
+                  <div className="flex gap-3 mt-1.5 ml-10 text-[11px] text-aetas-dim">
+                    <span>Terr. {s.territory}</span>
+                    <span>Pop. {s.population}</span>
+                    <span>Dev. {s.development}</span>
+                  </div>
+                )}
               </div>
-
-              {/* Score columns */}
-              <ScoreCell value={score.territory} />
-              <ScoreCell value={score.population} />
-              <div className="text-right">
-                <span className={`text-sm font-bold ${i === 0 ? 'text-aetas-gold' : 'text-aetas-text'}`}>
-                  {score.total}
-                </span>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Score legend */}
-      <div className="flex gap-4 mt-3 mb-4">
-        <LegendItem label="Território" pts={TERRITORY_POINTS_PER_CITY} unit="cidade" />
-        <LegendItem label="População" pts={POPULATION_POINTS_PER_POP} unit="pop" />
-        <LegendItem label="Desenvolvimento" pts={DEVELOPMENT_POINTS_PER_LEVEL} unit="nível" />
-      </div>
-
-      {/* XP gain */}
-      {xpGain && <XpGainBanner gained={xpGain.gained} newXp={xpGain.newXp} />}
-
-      <button
-        onClick={onBack}
-        className="mt-4 px-8 py-3 rounded-2xl bg-aetas-gold text-aetas-bg font-bold hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
-      >
-        Voltar à lista
-      </button>
-    </div>
-  )
-}
-
-function ScoreCell({ value }: { value: number }) {
-  return (
-    <div className="text-center">
-      <span className="text-aetas-muted text-xs">{value}</span>
-    </div>
-  )
-}
-
-function LegendItem({ label, pts, unit }: { label: string; pts: number; unit: string }) {
-  return (
-    <div className="text-center">
-      <p className="text-aetas-dim text-xs">{label}</p>
-      <p className="text-aetas-dim text-xs">{pts}pts/{unit}</p>
-    </div>
-  )
-}
-
-function XpGainBanner({ gained, newXp }: { gained: number; newXp: number }) {
-  const level = xpToLevel(newXp)
-  const [progress, range] = xpProgress(newXp)
-  const pct = Math.round((progress / (range || 1)) * 100)
-
-  return (
-    <div className="w-full max-w-sm bg-aetas-gold/10 border border-aetas-gold/30 rounded-2xl px-4 py-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-aetas-gold font-bold text-sm">+{gained} XP</span>
-          <span className="text-aetas-dim text-xs">→ nível {level}</span>
+            )
+          })}
         </div>
-        <span className="text-aetas-dim text-xs">{progress}/{range}</span>
-      </div>
-      <div className="h-1.5 bg-aetas-raised rounded-full overflow-hidden">
-        <div
-          className="h-full bg-aetas-gold rounded-full transition-all duration-700"
-          style={{ width: `${pct}%` }}
-        />
+
+        {/* Action buttons */}
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onBack}
+            className="w-full py-3 rounded-xl bg-aetas-gold text-aetas-bg font-bold text-sm hover:bg-aetas-gold-light transition-colors"
+          >
+            Voltar ao Lobby
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleShare}
+              className="flex-1 py-2.5 rounded-xl bg-aetas-raised border border-aetas-border text-aetas-muted text-sm font-medium hover:bg-aetas-panel transition-colors"
+            >
+              Compartilhar 📋
+            </button>
+            <button
+              disabled
+              title="Em breve"
+              className="flex-1 py-2.5 rounded-xl bg-aetas-raised border border-aetas-border text-aetas-border-strong text-sm font-medium cursor-not-allowed"
+            >
+              Ver Histórico
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
