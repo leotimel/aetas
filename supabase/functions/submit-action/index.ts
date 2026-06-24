@@ -24,10 +24,24 @@ Deno.serve(async (req) => {
     }
     if (!body.gameId || !body.action) return json({ error: 'gameId and action are required' }, 400)
 
-    const repo = new SupabaseGameRepo(serviceClient())
+    const sc = serviceClient()
+
+    // Map auth userId → engine_player_id (for multiplayer games with seat UUIDs).
+    // For solo games engine_player_id == userId, so this is always safe.
+    const { data: playerRow } = await sc
+      .from('game_players')
+      .select('engine_player_id')
+      .eq('game_id', body.gameId)
+      .eq('user_id', userId)
+      .eq('is_ai', false)
+      .maybeSingle()
+
+    const enginePlayerId = playerRow?.engine_player_id ?? userId
+
+    const repo = new SupabaseGameRepo(sc)
     const result = await submitAction(repo, {
       gameId: body.gameId,
-      userId,
+      userId: enginePlayerId,
       action: body.action,
       now: Date.now(),
     })
@@ -36,7 +50,6 @@ Deno.serve(async (req) => {
 
     // Broadcast game_over so all clients can show the results screen immediately.
     if (result.state.isFinished) {
-      const sc = serviceClient()
       await sc.channel(`game:${body.gameId}`).send({
         type: 'broadcast',
         event: 'game_over',
@@ -50,7 +63,7 @@ Deno.serve(async (req) => {
     const nextPlayer = result.state.players.find(p => p.id === result.state.currentPlayerId)
     if (!result.state.isFinished && nextPlayer?.isAIControlled) {
       const farFuture = Date.now() + 30 * 24 * 60 * 60 * 1000
-      await sweepTimeouts(new SupabaseGameRepo(serviceClient()), { now: farFuture })
+      await sweepTimeouts(new SupabaseGameRepo(sc), { now: farFuture })
     }
 
     return json({ ok: true, state: result.state }, 200)

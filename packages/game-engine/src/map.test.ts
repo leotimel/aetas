@@ -9,6 +9,7 @@ import {
   CITY_VISION_RADIUS,
   computeVisibleHexes,
   updateFogOfWar,
+  MAP_SIZES,
 } from './map.js'
 import { TerrainType, CitySpecialization } from './types.js'
 import type { HexCoord, Unit, City, PlayerFogOfWar } from './types.js'
@@ -185,6 +186,45 @@ describe('generateMap', () => {
     const a = generateMap(4, '2026-06-20', 2)
     const b = generateMap(4, '2026-06-20', 2)
     expect(JSON.stringify(a.tiles)).toBe(JSON.stringify(b.tiles))
+  })
+})
+
+// ─── Suite 2b: MAP_SIZES ─────────────────────────────────────────────────────
+
+describe('MAP_SIZES', () => {
+  it('small radius = 4 → 61 tiles (3·16+3·4+1)', () => {
+    const map = generateMap(MAP_SIZES.small, 'test', 2)
+    expect(map.tiles).toHaveLength(3 * 16 + 3 * 4 + 1)
+  })
+
+  it('medium radius = 5 → 91 tiles (3·25+3·5+1)', () => {
+    const map = generateMap(MAP_SIZES.medium, 'test', 2)
+    expect(map.tiles).toHaveLength(3 * 25 + 3 * 5 + 1)
+  })
+
+  it('large radius = 7 → 169 tiles (3·49+3·7+1)', () => {
+    const map = generateMap(MAP_SIZES.large, 'test', 2)
+    expect(map.tiles).toHaveLength(3 * 49 + 3 * 7 + 1)
+  })
+
+  it('small < medium < large in tile count', () => {
+    const s = generateMap(MAP_SIZES.small, 'x', 2).tiles.length
+    const m = generateMap(MAP_SIZES.medium, 'x', 2).tiles.length
+    const l = generateMap(MAP_SIZES.large, 'x', 2).tiles.length
+    expect(s).toBeLessThan(m)
+    expect(m).toBeLessThan(l)
+  })
+
+  it('same seed + same size = identical map regardless of MapSize preset', () => {
+    const a = generateMap(MAP_SIZES.medium, 'abc123', 2)
+    const b = generateMap(MAP_SIZES.medium, 'abc123', 2)
+    expect(JSON.stringify(a.tiles)).toBe(JSON.stringify(b.tiles))
+  })
+
+  it('different seeds with same size produce different maps', () => {
+    const a = generateMap(MAP_SIZES.medium, 'seedA', 2)
+    const b = generateMap(MAP_SIZES.medium, 'seedB', 2)
+    expect(JSON.stringify(a.tiles)).not.toBe(JSON.stringify(b.tiles))
   })
 })
 

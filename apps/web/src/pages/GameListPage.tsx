@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../supabase.ts'
 import DailyCard from '../components/DailyCard.tsx'
-import { xpToLevel, xpProgress } from '@aetas/game-engine'
+import MapPreviewMini from '../components/MapPreviewMini.tsx'
+import {
+  CIVILIZATIONS,
+  MAP_SIZES,
+  generateMap,
+  xpToLevel,
+  xpProgress,
+  type MapSize,
+} from '@aetas/game-engine'
 
 interface GameRow {
   game_id: string
@@ -13,34 +21,44 @@ interface GameRow {
     winner_id: string | null
     max_turns: number
     updated_at: string
+    seed: string | null
+    map_size: string | null
   }
 }
-
-type Tab = 'myTurn' | 'active' | 'finished'
 
 interface Props {
   userId: string
   onEnterGame: (gameId: string) => void
   onOpenProfile: () => void
+  onNewGame: () => void
 }
 
-export default function GameListPage({ userId, onEnterGame, onOpenProfile }: Props) {
-  const [rows, setRows] = useState<GameRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('myTurn')
-  const [creating, setCreating] = useState(false)
-  const [xp, setXp] = useState<number>(0)
+export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNewGame }: Props) {
+  const [rows,         setRows]         = useState<GameRow[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [xp,           setXp]           = useState<number>(0)
+  const [selectedCiv,  setSelectedCiv]  = useState<string>('romans')
+  const [showFinished, setShowFinished] = useState(false)
 
   useEffect(() => {
-    void supabase.from('profiles').select('xp').eq('user_id', userId).single().then(({ data }) => {
-      if (data) setXp((data as { xp: number }).xp)
-    })
+    void supabase
+      .from('profiles')
+      .select('xp, selected_civ')
+      .eq('user_id', userId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          const d = data as { xp: number; selected_civ: string }
+          setXp(d.xp)
+          setSelectedCiv(d.selected_civ ?? 'romans')
+        }
+      })
   }, [userId])
 
   const fetchGames = async () => {
     const { data } = await supabase
       .from('game_players')
-      .select('game_id, engine_player_id, games(turn_number, current_player_id, is_finished, winner_id, max_turns, updated_at)')
+      .select('game_id, engine_player_id, games(turn_number, current_player_id, is_finished, winner_id, max_turns, updated_at, seed, map_size)')
       .eq('user_id', userId)
       .eq('is_ai', false)
     setRows((data as GameRow[] | null) ?? [])
@@ -49,214 +67,247 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile }: Pro
 
   useEffect(() => { void fetchGames() }, [userId])
 
-  const myTurnGames  = rows.filter(r => !r.games.is_finished && r.games.current_player_id === r.engine_player_id)
-  const activeGames  = rows.filter(r => !r.games.is_finished && r.games.current_player_id !== r.engine_player_id)
+  const myTurnGames   = rows.filter(r => !r.games.is_finished && r.games.current_player_id === r.engine_player_id)
+  const activeGames   = rows.filter(r => !r.games.is_finished && r.games.current_player_id !== r.engine_player_id)
   const finishedGames = rows.filter(r => r.games.is_finished)
-
-  const currentList = tab === 'myTurn' ? myTurnGames : tab === 'active' ? activeGames : finishedGames
-
-  const createTestGame = async () => {
-    setCreating(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-game`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session!.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      },
-    )
-    setCreating(false)
-    if (res.ok) await fetchGames()
-  }
 
   const signOut = () => void supabase.auth.signOut()
 
   return (
     <div className="min-h-screen bg-aetas-bg text-aetas-text">
-      {/* Top bar */}
-      <header className="border-b border-aetas-border px-4 pt-3 pb-2 max-w-2xl mx-auto w-full">
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-xl font-semibold text-aetas-gold">Aetas</h1>
+      {/* Header */}
+      <header className="border-b border-aetas-border px-4 pt-3 pb-2 max-w-2xl mx-auto w-full bg-gradient-to-r from-aetas-gold/5 to-transparent">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CivAvatar civId={selectedCiv} onClick={onOpenProfile} />
+            <h1 className="font-display text-xl font-semibold text-aetas-gold">Aetas</h1>
+          </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={onOpenProfile}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-aetas-raised text-aetas-muted hover:bg-aetas-panel transition-colors text-sm"
-              title="Perfil"
-            >
-              <LevelBadge xp={xp} />
-            </button>
+              disabled
+              className="opacity-40 cursor-not-allowed text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5"
+              title="Em breve — Bloco C1"
+            >EN | PT</button>
+            <LevelBadge xp={xp} />
             <button
               onClick={() => void fetchGames()}
               className="p-2 rounded-lg text-aetas-dim hover:text-aetas-muted hover:bg-aetas-raised transition-colors"
               title="Atualizar"
-            >
-              ↺
-            </button>
+            >↺</button>
             <button
               onClick={signOut}
               className="text-sm text-aetas-dim hover:text-red-400 transition-colors"
-            >
-              Sair
-            </button>
+            >Sair</button>
           </div>
         </div>
-        {/* XP mini-bar */}
         <XpMiniBar xp={xp} />
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 pt-6 pb-24">
-        {/* Daily challenge */}
+      <main className="max-w-2xl mx-auto px-4 pt-6 pb-24 space-y-6">
         <DailyCard userId={userId} onEnterGame={onEnterGame} />
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-aetas-surface border border-aetas-border rounded-xl p-1 mb-6">
-          <TabButton active={tab === 'myTurn'} count={myTurnGames.length} onClick={() => setTab('myTurn')}>
-            Minha Vez
-          </TabButton>
-          <TabButton active={tab === 'active'} count={activeGames.length} onClick={() => setTab('active')}>
-            Ativas
-          </TabButton>
-          <TabButton active={tab === 'finished'} count={finishedGames.length} onClick={() => setTab('finished')}>
-            Finalizadas
-          </TabButton>
-        </div>
-
-        {/* Game list */}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-6 h-6 rounded-full border-2 border-aetas-border border-t-aetas-muted animate-spin" />
           </div>
-        ) : currentList.length === 0 ? (
-          <EmptyState tab={tab} />
         ) : (
-          <div className="flex flex-col gap-3">
-            {currentList.map(row => (
-              <GameCard
-                key={row.game_id}
-                row={row}
-                isMyTurn={tab === 'myTurn'}
-                onEnter={() => onEnterGame(row.game_id)}
-              />
-            ))}
-          </div>
+          <>
+            {/* ── Minha Vez ── */}
+            <Section label="Minha Vez" count={myTurnGames.length}>
+              {myTurnGames.length === 0 ? (
+                <p className="text-aetas-dim text-sm py-2">
+                  Nenhuma civilização aguarda sua decisão…
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {myTurnGames.map(row => (
+                    <GameCard
+                      key={row.game_id}
+                      row={row}
+                      isMyTurn={true}
+                      onEnter={() => onEnterGame(row.game_id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </Section>
+
+            {/* ── Aguardando adversário (oculto se vazio) ── */}
+            {activeGames.length > 0 && (
+              <Section label="Aguardando adversário" count={activeGames.length} dim>
+                <div className="flex flex-col gap-2">
+                  {activeGames.map(row => (
+                    <GameCard
+                      key={row.game_id}
+                      row={row}
+                      isMyTurn={false}
+                      onEnter={() => onEnterGame(row.game_id)}
+                    />
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {/* ── Finalizadas (toggle) ── */}
+            {finishedGames.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowFinished(v => !v)}
+                  className="text-xs text-aetas-dim hover:text-aetas-muted transition-colors"
+                >
+                  {showFinished
+                    ? '↑ Ocultar finalizadas'
+                    : `Ver ${finishedGames.length} partidas finalizadas →`}
+                </button>
+                {showFinished && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {finishedGames.map(row => (
+                      <GameCard
+                        key={row.game_id}
+                        row={row}
+                        isMyTurn={false}
+                        onEnter={() => onEnterGame(row.game_id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
 
-      {/* FAB — criar partida de teste */}
+      {/* FAB */}
       <div className="fixed bottom-6 right-4 left-4 max-w-2xl mx-auto flex justify-end">
         <button
-          onClick={() => void createTestGame()}
-          disabled={creating}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-aetas-gold text-aetas-bg font-bold text-sm shadow-lg shadow-black/40 hover:bg-aetas-gold-light active:bg-aetas-gold-dark disabled:opacity-60 transition-colors"
+          onClick={onNewGame}
+          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-aetas-gold text-aetas-bg font-bold text-sm shadow-lg shadow-black/40 hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
         >
-          {creating ? (
-            <span className="w-4 h-4 rounded-full border-2 border-aetas-bg/60 border-t-aetas-bg animate-spin" />
-          ) : '+'}
-          Nova Partida
+          + Nova Partida
         </button>
       </div>
     </div>
   )
 }
 
-function TabButton({ active, count, onClick, children }: {
-  active: boolean
-  count: number
-  onClick: () => void
-  children: React.ReactNode
-}) {
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function CivAvatar({ civId, onClick }: { civId: string; onClick: () => void }) {
+  const civ = CIVILIZATIONS.find(c => c.id === civId)
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${
-        active
-          ? 'bg-aetas-raised text-aetas-text'
-          : 'text-aetas-muted hover:text-aetas-text'
-      }`}
+      title="Perfil"
+      className="w-8 h-8 rounded-full text-sm font-bold text-white flex items-center justify-center flex-shrink-0 transition-opacity hover:opacity-80"
+      style={{ backgroundColor: civ?.color ?? '#92400e' }}
     >
-      {children}
-      {count > 0 && (
-        <span className={`text-xs px-1.5 py-0.5 rounded-full ${active ? 'bg-aetas-gold text-aetas-bg font-semibold' : 'bg-aetas-raised text-aetas-muted'}`}>
-          {count}
-        </span>
-      )}
+      {civ?.name[0] ?? 'A'}
     </button>
+  )
+}
+
+function Section({ label, count, dim, children }: {
+  label: string
+  count: number
+  dim?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className={dim ? 'opacity-70' : ''}>
+      <div className="flex items-center gap-2 border-l-2 border-aetas-gold pl-3 mb-3">
+        <p className="text-xs uppercase tracking-wider text-aetas-dim font-semibold">{label}</p>
+        {count > 0 && (
+          <span className="text-xs px-1.5 py-0.5 rounded-full bg-aetas-gold text-aetas-bg font-semibold">
+            {count}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
   )
 }
 
 function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean; onEnter: () => void }) {
   const { games: g } = row
-  const shortId = row.game_id.slice(0, 8)
+  const shortId    = row.game_id.slice(0, 8)
   const updatedAgo = relativeTime(g.updated_at)
+  const isUrgent   = isMyTurn && g.turn_number > g.max_turns * 0.8
+  const turnPct    = Math.min(100, Math.round((g.turn_number / g.max_turns) * 100))
+  const iWon       = g.is_finished && g.winner_id === row.engine_player_id
 
-  const iWon = g.is_finished && g.winner_id === row.engine_player_id
+  const gameMap = useMemo(() => {
+    if (!g.seed) return null
+    return generateMap(MAP_SIZES[(g.map_size as MapSize) ?? 'medium'], g.seed, 2)
+  }, [g.seed, g.map_size])
 
   return (
-    <div className={`bg-aetas-surface border rounded-xl p-4 transition-colors ${
-      isMyTurn ? 'border-aetas-gold/40 hover:border-aetas-gold/70' : 'border-aetas-border hover:border-aetas-border-strong'
+    <div className={`relative bg-aetas-surface border rounded-lg p-3 transition-colors ${
+      isMyTurn
+        ? 'border-aetas-gold/40 hover:border-aetas-gold/70'
+        : 'border-aetas-border hover:border-aetas-border-strong'
     }`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          {/* Status dot + ID */}
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              g.is_finished ? 'bg-aetas-dim' : isMyTurn ? 'bg-aetas-gold animate-pulse' : 'bg-amber-500'
-            }`} />
-            <span className="text-aetas-muted font-mono text-sm font-medium">{shortId}…</span>
-            {g.is_finished && iWon && <span className="text-xs text-amber-400">🏆 Você venceu</span>}
-            {g.is_finished && !iWon && g.winner_id && <span className="text-xs text-aetas-dim">Derrota</span>}
-          </div>
+      {/* Left border accent */}
+      {isMyTurn && (
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg bg-emerald-500/60 ${isUrgent ? 'animate-pulse' : ''}`} />
+      )}
 
-          {/* Turn info */}
-          <div className="flex items-center gap-3 text-xs text-aetas-dim">
-            <span>Turno {g.turn_number}/{g.max_turns}</span>
-            <span>·</span>
-            <span>{updatedAgo}</span>
-          </div>
-
-          {/* Status label */}
-          {!g.is_finished && (
-            <p className="mt-1.5 text-xs text-aetas-dim">
-              {isMyTurn
-                ? <span className="text-aetas-gold font-semibold">● Sua vez</span>
-                : 'Aguardando oponente…'}
-            </p>
+      <div className="flex gap-3 items-start pl-1">
+        {/* Map thumbnail 64×52 */}
+        <div className="flex-shrink-0 rounded-lg overflow-hidden">
+          {gameMap ? (
+            <MapPreviewMini tiles={gameMap.tiles} radius={gameMap.radius} width={64} height={52} />
+          ) : (
+            <div
+              className="rounded-lg"
+              style={{
+                width: 64,
+                height: 52,
+                background: 'repeating-linear-gradient(45deg, var(--color-aetas-raised) 0px, var(--color-aetas-panel) 4px, var(--color-aetas-raised) 8px)',
+              }}
+            />
           )}
         </div>
 
-        {/* Action */}
-        {!g.is_finished && (
-          <button
-            onClick={onEnter}
-            className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              isMyTurn
-                ? 'bg-aetas-gold text-aetas-bg hover:bg-aetas-gold-light'
-                : 'bg-aetas-raised text-aetas-muted hover:bg-aetas-panel'
-            }`}
-          >
-            {isMyTurn ? 'Jogar →' : 'Ver →'}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
+        {/* Info column */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-1 mb-0.5">
+            <span className="text-aetas-muted font-mono text-xs font-medium">{shortId}…</span>
+            <span className="text-aetas-dim text-xs flex-shrink-0">{updatedAgo}</span>
+          </div>
 
-function EmptyState({ tab }: { tab: Tab }) {
-  const messages: Record<Tab, { icon: string; title: string; sub: string }> = {
-    myTurn: { icon: '⏳', title: 'Sem jogadas pendentes', sub: 'Quando for sua vez, as partidas aparecem aqui.' },
-    active: { icon: '🗺️', title: 'Sem partidas ativas', sub: 'Crie uma nova partida para começar.' },
-    finished: { icon: '🏁', title: 'Sem partidas finalizadas', sub: 'Partidas concluídas ficam registradas aqui.' },
-  }
-  const m = messages[tab]
-  return (
-    <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
-      <span className="text-4xl">{m.icon}</span>
-      <p className="text-aetas-muted font-medium mt-2">{m.title}</p>
-      <p className="text-aetas-dim text-sm">{m.sub}</p>
+          <div className="text-xs text-aetas-dim">
+            Turno {g.turn_number}/{g.max_turns}
+            {g.is_finished && (
+              iWon
+                ? <span className="ml-2 text-amber-400">🏆 Você venceu</span>
+                : g.winner_id
+                  ? <span className="ml-2"> · Derrota</span>
+                  : null
+            )}
+          </div>
+
+          {/* Turn progress bar */}
+          <div className="mt-1.5 h-0.5 bg-aetas-raised rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full ${isMyTurn ? 'bg-aetas-gold' : 'bg-aetas-muted/40'}`}
+              style={{ width: `${turnPct}%` }}
+            />
+          </div>
+
+          {!g.is_finished && (
+            <button
+              onClick={onEnter}
+              className={`mt-2 px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                isMyTurn
+                  ? 'bg-aetas-gold text-aetas-bg hover:brightness-110'
+                  : 'bg-aetas-raised text-aetas-muted hover:bg-aetas-panel'
+              }`}
+            >
+              {isMyTurn ? 'Jogar →' : 'Ver →'}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -274,7 +325,7 @@ function LevelBadge({ xp }: { xp: number }) {
 function XpMiniBar({ xp }: { xp: number }) {
   const [progress, range] = xpProgress(xp)
   const isMax = range === 0
-  const pct = isMax ? 100 : Math.round((progress / range) * 100)
+  const pct   = isMax ? 100 : Math.round((progress / range) * 100)
   return (
     <div className="mt-2 h-1 bg-aetas-raised rounded-full overflow-hidden">
       <div

@@ -127,6 +127,8 @@ export interface Civilization {
 
 // ─── Player ───────────────────────────────────────────────────────────────────
 
+export type AIDifficulty = 'easy' | 'normal' | 'hard'
+
 export interface Player {
   readonly id:              string  // matches Supabase auth userId
   readonly displayName:     string
@@ -135,6 +137,8 @@ export interface Player {
   isEliminated:             boolean
   /** True while the substitute AI is acting on behalf of this player. */
   isAIControlled:           boolean
+  /** Set only for dedicated AI opponent players, not for human-substitute turns. */
+  aiDifficulty?:            AIDifficulty
 }
 
 // ─── Unit ─────────────────────────────────────────────────────────────────────

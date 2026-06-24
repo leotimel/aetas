@@ -19,7 +19,7 @@ import {
 import { hexDistance, hexKey } from './map.js'
 import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
-import { canBuildBuilding, getBuildingDef, startConstruction } from './buildings.js'
+import { getBuildingDef, startConstruction } from './buildings.js'
 
 // ─── Action model ─────────────────────────────────────────────────────────────
 

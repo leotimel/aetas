@@ -16,7 +16,8 @@ import { decideOpponentTurn } from './ai.js'
 import { resolveTimedOutDispute, COMBAT_TIMEOUT_MS } from './combat.js'
 import { eliminatePlayersWithNoCities, determineWinner } from './scoring.js'
 import { CombatDisputeStatus, CitySpecialization, Era, TurnState } from './types.js'
-import type { GameState, Player, City, Unit, GameMap, TurnHooks } from './types.js'
+import type { GameState, Player, City, Unit, GameMap } from './types.js'
+import type { TurnHooks } from './turn.js'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 // Wire up the full hooks that the Edge Function will use in production.

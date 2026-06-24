@@ -4,6 +4,7 @@ import {
   resolveTimedOutDispute,
   determineWinner,
   decideSubstituteTurn,
+  decideOpponentTurn,
   CombatDisputeStatus,
   type GameAction,
   type GameState,
@@ -182,12 +183,17 @@ export async function sweepTimeouts(
   const { now } = params
   const summary: SweepSummary = { turnsAdvanced: 0, disputesResolved: 0, conflicts: 0 }
 
-  // 1) Absent-player turns: the substitute AI plays a conservative turn.
+  // 1) Absent-player turns: dedicated AI opponents use decideOpponentTurn; absent
+  //    human players fall back to the conservative decideSubstituteTurn.
   for (const { gameId } of await repo.findTimedOutTurns(now)) {
     const loaded = await repo.loadGame(gameId)
     if (!loaded || loaded.isFinished) continue
 
-    const actions = decideSubstituteTurn(loaded.gameState, loaded.currentPlayerId, now)
+    const currentPlayer = loaded.gameState.players.find(p => p.id === loaded.currentPlayerId)
+    const aiDifficulty = currentPlayer?.aiDifficulty
+    const actions = aiDifficulty
+      ? decideOpponentTurn(loaded.gameState, loaded.currentPlayerId, now, aiDifficulty === 'hard')
+      : decideSubstituteTurn(loaded.gameState, loaded.currentPlayerId, now)
     if (actions.length === 0) continue // not legally this player's turn anymore
 
     const next = foldActions(loaded.gameState, loaded.currentPlayerId, actions, now)

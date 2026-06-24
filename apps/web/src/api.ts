@@ -42,11 +42,28 @@ export const submitAction = (gameId: string, action: GameAction) =>
 export const resolveDispute = (gameId: string, disputeId: string) =>
   post<{ ok: boolean; state?: GameState }>('/resolve-dispute', { gameId, disputeId })
 
-export const createTestGame = () =>
-  post<{ gameId: string }>('/create-game', {})
+export interface CreateGameParams {
+  seed: string
+  mapSize: string
+  gameMode: 'solo' | 'mixed' | 'multiplayer'
+  playerCount: number
+  humanSlots: number
+  maxTurns: number
+  aiDifficulty: 'easy' | 'normal' | 'hard'
+  myCiv: string
+}
+
+export const createTestGame = (params: CreateGameParams) =>
+  post<{ gameId: string; status: string }>('/create-game', params)
+
+export const joinGame = (gameId: string) =>
+  post<{ ok: boolean; isFull: boolean; gameId: string; alreadyJoined?: boolean }>('/join-game', { gameId })
 
 export const createDailyGame = () =>
   post<{ gameId: string; isNew: boolean }>('/create-daily-game', {})
 
 export const awardXp = (gameId: string) =>
   post<{ xpGained: number; newXp: number; alreadyAwarded: boolean }>('/award-xp', { gameId })
+
+export const awardActionXp = (event: string, actionId: string, amount: number) =>
+  post<{ xpGained: number; newXp: number; alreadyAwarded: boolean }>('/award-xp', { event, actionId, amount })

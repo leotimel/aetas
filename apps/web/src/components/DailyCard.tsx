@@ -57,7 +57,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
       if (!data) { setDaily(null); return }
 
-      const g = data.games as {
+      const g = data.games as unknown as {
         is_finished: boolean; winner_id: string | null;
         turn_number: number; max_turns: number
       }
@@ -116,23 +116,28 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
     )
   }
 
-  const isWon = daily && daily !== 'none' && daily.isFinished && daily.winnerId === daily.enginePlayerId
-  const isLost = daily && daily !== 'none' && daily.isFinished && daily.winnerId !== daily.enginePlayerId
+  const isWon = !!daily && daily.isFinished && daily.winnerId === daily.enginePlayerId
+  const isLost = !!daily && daily.isFinished && daily.winnerId !== daily.enginePlayerId
 
   return (
-    <div className={`border rounded-2xl p-4 mb-4 ${
-      !daily ? 'bg-aetas-surface border-aetas-border-strong'
+    <div className={`min-h-28 border rounded-2xl p-4 mb-4 ${
+      !daily ? 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
       : daily.isFinished
-        ? isWon ? 'bg-amber-950/40 border-amber-800/60' : 'bg-aetas-surface border-aetas-border-strong'
-        : 'bg-aetas-gold/5 border-aetas-gold/30'
+        ? isWon
+          ? 'bg-amber-950/40 border-amber-800/60'
+          : 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
+        : 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
     }`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-lg">{daily && daily !== 'none' && daily.isFinished ? (isWon ? '🏆' : '🎮') : '🗓️'}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-lg">{daily && daily.isFinished ? (isWon ? '🏆' : '🎮') : '🗓️'}</span>
             <h2 className="text-aetas-text font-semibold text-sm">Desafio Diário</h2>
             <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today)}</span>
+            {!!daily && typeof daily !== 'string' && (
+              <span className="text-emerald-400 text-xs font-medium">✓ Jogado hoje</span>
+            )}
           </div>
           <p className="text-aetas-dim text-xs mt-0.5">
             Mesmo mapa para todos · Reinicia em <span className="text-aetas-muted font-mono">{countdown}</span>
@@ -140,7 +145,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
         </div>
 
         {/* Status badge */}
-        {daily && daily !== 'none' && (
+        {daily && (
           <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 font-medium ${
             daily.isFinished
               ? isWon ? 'bg-amber-900/60 text-amber-300' : 'bg-aetas-raised text-aetas-muted'
@@ -152,7 +157,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
       </div>
 
       {/* Score (when finished) */}
-      {daily && daily !== 'none' && daily.isFinished && finalScore && (
+      {daily && daily.isFinished && finalScore && (
         <div className="mt-3 flex items-center gap-4 bg-aetas-raised/60 rounded-xl px-3 py-2">
           <ScorePill icon="🏙️" label="Terr." value={finalScore.territory} />
           <ScorePill icon="👥" label="Pop." value={finalScore.population} />

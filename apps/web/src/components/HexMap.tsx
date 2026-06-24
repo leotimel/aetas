@@ -68,10 +68,11 @@ interface Props {
   onInitiateCombat: (attackerUnitId: string, defenderUnitId: string) => void
   onCityClick?: (cityId: string) => void
   onMoveUnit?: (unitId: string, targetCoord: HexCoord) => void
+  newUnitIds?: Set<string>
 }
 
 export default function HexMap({
-  gameState, myEnginePlayerId, selectedUnitId, godMode, onSelectUnit, onInitiateCombat, onCityClick, onMoveUnit,
+  gameState, myEnginePlayerId, selectedUnitId, godMode, onSelectUnit, onInitiateCombat, onCityClick, onMoveUnit, newUnitIds,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [origin, setOrigin] = useState({ x: 300, y: 300 })
@@ -407,6 +408,7 @@ export default function HexMap({
           const color = playerColorMap.get(unit.ownerId) ?? '#888'
           return (
             <g key={unit.id}
+               className={newUnitIds?.has(unit.id) ? 'anim-unit-appear' : undefined}
                style={{
                  transform: `translate(${px}px, ${uy}px)`,
                  transition: 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',

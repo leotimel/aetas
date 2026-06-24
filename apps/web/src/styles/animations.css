@@ -85,3 +85,26 @@
 .anim-victory-title {
   animation: victory-appear 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* Toast de XP — desliza da direita e some */
+@keyframes xp-toast-in {
+  0%   { opacity: 0; transform: translateX(60px); }
+  12%  { opacity: 1; transform: translateX(0); }
+  75%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(0); }
+}
+.anim-xp-toast {
+  animation: xp-toast-in 2.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Unidade recém-treinada — surgimento com spring */
+@keyframes unit-appear {
+  0%   { opacity: 0; transform: scale(0.2) rotate(-15deg); }
+  70%  { opacity: 1; transform: scale(1.1) rotate(3deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+.anim-unit-appear {
+  animation: unit-appear 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}

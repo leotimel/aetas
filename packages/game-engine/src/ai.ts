@@ -28,12 +28,13 @@ import { validateAction, applyAction, type GameAction } from './actions.js'
  * design: it simulates the defender mounting an active defense (+2), because
  * the defender (or its own substitute AI) may respond before the dispute
  * resolves. Only favorable if the defender still dies AND the attacker survives.
+ * Pass `hard=true` to skip the +2 active-defense assumption (more aggressive).
  */
-export function isFavorableAttack(state: GameState, attacker: Unit, defender: Unit): boolean {
+export function isFavorableAttack(state: GameState, attacker: Unit, defender: Unit, hard = false): boolean {
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
-    defenderActiveDefense: true,
+    defenderActiveDefense: !hard,
   })
   return result.defenderDestroyed && !result.attackerDestroyed
 }
@@ -202,8 +203,10 @@ export function decideSubstituteTurn(state: GameState, playerId: string, now: nu
 /**
  * Active opponent AI. Defends, then attacks adjacent enemies when favorable,
  * then ends the turn. Returns [] if it is not legally this player's turn.
+ * `hard=true` skips the +2 active-defense assumption when evaluating attacks
+ * (the AI becomes more aggressive — it takes fights Normal would skip).
  */
-export function decideOpponentTurn(state: GameState, playerId: string, now: number): GameAction[] {
+export function decideOpponentTurn(state: GameState, playerId: string, now: number, hard = false): GameAction[] {
   if (!canSubmitAction(state, playerId).valid) return []
 
   const defensive = planDefensiveResponses(state, playerId, now)
@@ -227,7 +230,7 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
         attackerUnitId: current.id,
         defenderUnitId: enemy.id,
       }
-      if (isFavorableAttack(s, current, enemy) && validateAction(s, playerId, action, now).valid) {
+      if (isFavorableAttack(s, current, enemy, hard) && validateAction(s, playerId, action, now).valid) {
         actions.push(action)
         const applied = applyAction(s, playerId, action, now)
         if (applied.ok) s = applied.state

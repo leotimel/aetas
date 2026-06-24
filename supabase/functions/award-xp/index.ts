@@ -1,14 +1,14 @@
-// POST /award-xp { gameId }
+// POST /award-xp
 //
-// Idempotent: uses xp_awarded flag to ensure XP is granted exactly once per game.
-// The atomicity trick: UPDATE games SET xp_awarded = true WHERE xp_awarded = false —
-// only succeeds once, concurrent calls are safe.
+// Two modes:
 //
-// XP table:
-//   Regular game, lose : +10
-//   Regular game, win  : +35  (10 + 25)
-//   Daily game,   lose : +15
-//   Daily game,   win  : +50  (15 + 35)
+// 1. End-of-game  { gameId }
+//    Idempotent via games.xp_awarded flag.
+//    XP table: regular lose +10, regular win +35, daily lose +15, daily win +50.
+//
+// 2. Per-action   { event, actionId, amount }
+//    Idempotent via xp_events(user_id, action_id) UNIQUE constraint.
+//    Caller chooses the event label and amount from the XP table.
 
 import { XP_FOR_PLAYING, XP_WIN_BONUS, XP_DAILY_BASE, XP_DAILY_WIN } from '../_shared/backend-core.js'
 import { serviceClient, getUserId } from '../_shared/clients.ts'
@@ -21,13 +21,32 @@ Deno.serve(async (req) => {
   const userId = await getUserId(req)
   if (!userId) return json({ error: 'unauthorized' }, 401)
 
-  let body: { gameId?: string }
+  let body: { gameId?: string; event?: string; actionId?: string; amount?: number }
   try { body = await req.json() } catch { return json({ error: 'invalid JSON' }, 400) }
-  if (!body.gameId) return json({ error: 'gameId required' }, 400)
 
   const svc = serviceClient()
 
-  // Resolve engine_player_id (the user's ID within the game engine state)
+  // ── Mode 2: per-action granular event ─────────────────────────────────────
+  if (body.event && body.actionId && typeof body.amount === 'number') {
+    const { error: insertErr } = await svc
+      .from('xp_events')
+      .insert({ user_id: userId, action_id: body.actionId, event_type: body.event, xp_gained: body.amount })
+
+    if (insertErr) {
+      // Unique violation → already awarded
+      if (insertErr.code === '23505') return json({ ok: true, xpGained: 0, alreadyAwarded: true }, 200)
+      return json({ ok: false, error: insertErr.message }, 500)
+    }
+
+    await svc.rpc('increment_xp', { p_user_id: userId, p_xp: body.amount })
+
+    const { data: profile } = await svc.from('profiles').select('xp').eq('user_id', userId).single()
+    return json({ ok: true, xpGained: body.amount, newXp: profile?.xp ?? body.amount, alreadyAwarded: false }, 200)
+  }
+
+  // ── Mode 1: end-of-game ───────────────────────────────────────────────────
+  if (!body.gameId) return json({ error: 'gameId or (event + actionId + amount) required' }, 400)
+
   const { data: playerRow } = await svc
     .from('game_players')
     .select('engine_player_id')
@@ -38,7 +57,6 @@ Deno.serve(async (req) => {
   if (!playerRow) return json({ error: 'player not in game' }, 403)
   const enginePlayerId = playerRow.engine_player_id as string
 
-  // Atomically mark as awarded — returns the row only if this call is the first
   const { data: marked } = await svc
     .from('games')
     .update({ xp_awarded: true })
@@ -48,26 +66,16 @@ Deno.serve(async (req) => {
     .select('is_daily, winner_id')
     .single()
 
-  if (!marked) {
-    // Game not finished yet, or XP already awarded in a previous call
-    return json({ ok: true, xpGained: 0, alreadyAwarded: true }, 200)
-  }
+  if (!marked) return json({ ok: true, xpGained: 0, alreadyAwarded: true }, 200)
 
-  const didWin    = marked.winner_id === enginePlayerId
-  const isDaily   = marked.is_daily as boolean
-  const xpGained  = isDaily
+  const didWin   = marked.winner_id === enginePlayerId
+  const isDaily  = marked.is_daily as boolean
+  const xpGained = isDaily
     ? (XP_DAILY_BASE + (didWin ? XP_DAILY_WIN : 0))
     : (XP_FOR_PLAYING + (didWin ? XP_WIN_BONUS : 0))
 
-  // Upsert profile and increment XP atomically
   await svc.rpc('increment_xp', { p_user_id: userId, p_xp: xpGained })
 
-  // Fetch new total to detect level-up
-  const { data: profile } = await svc
-    .from('profiles')
-    .select('xp')
-    .eq('user_id', userId)
-    .single()
-
+  const { data: profile } = await svc.from('profiles').select('xp').eq('user_id', userId).single()
   return json({ ok: true, xpGained, newXp: profile?.xp ?? xpGained, alreadyAwarded: false }, 200)
 })

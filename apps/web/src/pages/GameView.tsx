@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { GameState, HexCoord, CitySpecialization, Unit, Era, Resources } from '@aetas/game-engine'
-import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween } from '@aetas/game-engine'
+import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
-import { submitAction, resolveDispute, awardXp } from '../api.ts'
+import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
 import ActionSheet from '../components/ActionSheet.tsx'
 import PlayerBar from '../components/PlayerBar.tsx'
@@ -14,6 +14,8 @@ import DeclareWarModal from '../components/DeclareWarModal.tsx'
 import GameOverScreen from '../components/GameOverScreen.tsx'
 import ScoreModal from '../components/ScoreModal.tsx'
 import EraModal, { ERA_ICONS, ERA_NAMES_PT } from '../components/EraModal.tsx'
+import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
+import LevelUpModal from '../components/LevelUpModal.tsx'
 
 interface Props {
   gameId: string
@@ -186,9 +188,13 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [diplomacyLoading, setDiplomacyLoading] = useState(false)
   const [diplomacyOpenSignal, setDiplomacyOpenSignal] = useState(0)
   const [showScoreModal, setShowScoreModal] = useState(false)
+  const [newUnitIds, setNewUnitIds] = useState<Set<string>>(new Set())
+  const [xpToasts, setXpToasts] = useState<XpToastItem[]>([])
+  const [levelUpData, setLevelUpData] = useState<number | null>(null)
 
-  const gameStateRef = useRef<GameState | null>(null)
-  const prevEraRef   = useRef<Era | null>(null)
+  const gameStateRef    = useRef<GameState | null>(null)
+  const prevEraRef      = useRef<Era | null>(null)
+  const knownUnitIdsRef = useRef<Set<string>>(new Set())
   useEffect(() => { gameStateRef.current = gameState }, [gameState])
 
   // Detect era advancement to show the celebration modal
@@ -206,6 +212,18 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     setLog(l => [`${ts} ${msg}`, ...l].slice(0, 40))
   }
 
+  const triggerXp = useCallback(async (event: string, actionId: string, amount: number) => {
+    const res = await awardActionXp(event, actionId, amount)
+    if (!res.ok || !res.data || res.data.alreadyAwarded || res.data.xpGained === 0) return
+    const { xpGained, newXp } = res.data
+    const toastId = crypto.randomUUID()
+    setXpToasts(ts => [...ts, { id: toastId, event, xpGained }])
+    setTimeout(() => setXpToasts(ts => ts.filter(t => t.id !== toastId)), 2600)
+    const prevLevel = xpToLevel(newXp - xpGained)
+    const newLevel  = xpToLevel(newXp)
+    if (newLevel > prevLevel) setLevelUpData(newLevel)
+  }, [])
+
   const fetchGame = useCallback(async (): Promise<GameState | null> => {
     const { data, error: err } = await supabase
       .from('games')
@@ -216,6 +234,13 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const gs = data.game_state as GameState
     setGameState(gs)
     setLoading(false)
+    const currentIds = new Set(gs.units.map(u => u.id))
+    const appeared = new Set([...currentIds].filter(id => !knownUnitIdsRef.current.has(id)))
+    if (appeared.size > 0) {
+      setNewUnitIds(appeared)
+      setTimeout(() => setNewUnitIds(new Set()), 500)
+    }
+    knownUnitIdsRef.current = currentIds
     return gs
   }, [gameId])
 
@@ -292,9 +317,35 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const isMyTurn = !!gameState && gameState.currentPlayerId === enginePlayerId && !gameState.isFinished
 
   const handleEndTurn = async () => {
+    const preState = gameState!
     const res = await submitAction(gameId, { type: 'endTurn' })
     addLog(res.ok ? 'Turno encerrado' : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setSelectedUnitId(null); void fetchGame() }
+    if (res.ok) {
+      setSelectedUnitId(null)
+      const postState = await fetchGame()
+      void triggerXp('turn_played', `${gameId}:turn:${preState.turnNumber}:${enginePlayerId}`, 5)
+      if (postState) {
+        if (preState.era !== postState.era) {
+          void triggerXp('era_advanced', `${gameId}:era:${postState.era}:${enginePlayerId}`, 20)
+        }
+        for (const postCity of postState.cities.filter(c => c.ownerId === enginePlayerId)) {
+          const preCity = preState.cities.find(c => c.id === postCity.id)
+          if (!preCity) continue
+          const preBuilt = new Set(preCity.buildings ?? [])
+          for (const b of postCity.buildings ?? []) {
+            if (!preBuilt.has(b)) {
+              void triggerXp('building_constructed', `${gameId}:building:${postCity.id}:${b}`, 5)
+            }
+          }
+        }
+        for (const postPlayer of postState.players) {
+          const prePlayer = preState.players.find(p => p.id === postPlayer.id)
+          if (postPlayer.isEliminated && !prePlayer?.isEliminated) {
+            void triggerXp('civ_eliminated', `${gameId}:elim:${postPlayer.id}:${enginePlayerId}`, 15)
+          }
+        }
+      }
+    }
   }
 
   const handleInitiateCombat = (attackerUnitId: string, defenderUnitId: string) => {
@@ -320,6 +371,13 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       setGameState(post)
       if (preAtk && preDef) addLog(formatDisputeResolutionLog(preState, post, preAtk, preDef))
       else addLog('⚔️ Combate resolvido')
+      if (
+        preAtk?.ownerId === enginePlayerId &&
+        post.units.some(u => u.id === preAtk?.id) &&
+        !post.units.some(u => u.id === preDef?.id)
+      ) {
+        void triggerXp('combat_won', `${gameId}:combat:${disputeId}`, 6)
+      }
     } else {
       addLog(`✗ ${errorLabel(res.error)}`)
       void fetchGame()
@@ -419,13 +477,14 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       setSelectedUnitId(null)
       await fetchGame()
       setSelectedCityId(cityId)
+      void triggerXp('city_founded', `${gameId}:city:${cityId}`, 8)
     }
   }
 
   const handleTrainUnit = async (cityId: string, unitType: string) => {
     const unitId = crypto.randomUUID()
     const res = await submitAction(gameId, { type: 'trainUnit', cityId, unitType, unitId })
-    addLog(res.ok ? `${unitLabel(unitType)} em treinamento` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? `${unitLabel(unitType)} treinada com sucesso!` : `✗ ${errorLabel(res.error)}`)
     if (res.ok) void fetchGame()
   }
 
@@ -549,6 +608,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             onInitiateCombat={handleInitiateCombat}
             onCityClick={setSelectedCityId}
             onMoveUnit={(id, coord) => { void handleMoveUnit(id, coord) }}
+            newUnitIds={newUnitIds}
           />
         </div>
 
@@ -680,6 +740,14 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         >
           🏆 Ver resultado
         </button>
+      )}
+
+      {/* ── XP toasts ── */}
+      <XpToast toasts={xpToasts} />
+
+      {/* ── Level-up modal ── */}
+      {levelUpData !== null && (
+        <LevelUpModal level={levelUpData} onClose={() => setLevelUpData(null)} />
       )}
     </div>
   )

@@ -23,10 +23,23 @@ Deno.serve(async (req) => {
   }
   if (!body.gameId || !body.disputeId) return json({ error: 'gameId and disputeId are required' }, 400)
 
-  const repo = new SupabaseGameRepo(serviceClient())
+  const sc = serviceClient()
+
+  // Map auth userId → engine_player_id (for multiplayer games with seat UUIDs).
+  const { data: playerRow } = await sc
+    .from('game_players')
+    .select('engine_player_id')
+    .eq('game_id', body.gameId)
+    .eq('user_id', userId)
+    .eq('is_ai', false)
+    .maybeSingle()
+
+  const enginePlayerId = playerRow?.engine_player_id ?? userId
+
+  const repo = new SupabaseGameRepo(sc)
   const result = await resolveDispute(repo, {
     gameId: body.gameId,
-    userId,
+    userId: enginePlayerId,
     disputeId: body.disputeId,
     now: Date.now(),
   })

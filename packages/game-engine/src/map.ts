@@ -146,6 +146,12 @@ function findStartPositions(
   return positions
 }
 
+// ─── Map size presets ─────────────────────────────────────────────────────────
+
+/** Radius per map size. Hex count = 3R² + 3R + 1: small≈61, medium≈91, large≈169. */
+export const MAP_SIZES = { small: 4, medium: 5, large: 7 } as const
+export type MapSize = keyof typeof MAP_SIZES
+
 // ─── Map generation ───────────────────────────────────────────────────────────
 
 /**
