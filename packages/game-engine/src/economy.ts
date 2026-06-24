@@ -1,6 +1,7 @@
-import { CitySpecialization } from './types.js'
-import type { City, Resources } from './types.js'
+import { CitySpecialization, TerrainType } from './types.js'
+import type { City, Resources, HexTile } from './types.js'
 import { applyBuildingBonuses, tickConstruction } from './buildings.js'
+import { hexesInRadius, hexDistance, hexKey } from './map.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -53,17 +54,79 @@ const SPECIALIZATION_MULTIPLIERS: Record<CitySpecialization, ResourceMultipliers
   },
 }
 
+// ─── City borders / territory ───────────────────────────────────────────────
+
+/** Per-turn resource yield a city draws from each claimed terrain tile. */
+const TERRAIN_RESOURCE_BONUS: Record<TerrainType, Resources> = {
+  [TerrainType.Plains]:   { gold: 0, food: 2, production: 0 },
+  [TerrainType.Forest]:   { gold: 0, food: 0, production: 2 },
+  [TerrainType.Hills]:    { gold: 1, food: 0, production: 1 },
+  [TerrainType.Mountain]: { gold: 0, food: 0, production: 0 },
+  [TerrainType.Water]:    { gold: 0, food: 0, production: 0 },
+}
+
+/**
+ * Resource bonus a city earns from the terrain it controls.
+ * A city claims a tile within `radius` if it is the nearest city to that tile;
+ * ties break toward the city with the lexicographically smaller `id` (stable).
+ * Returns the summed terrain yield of all claimed tiles. Pure.
+ */
+export function computeCityTerritoryBonus(
+  city: City,
+  allCities: readonly City[],
+  tiles: readonly HexTile[],
+  radius = 2,
+): Resources {
+  const tileByKey = new Map<string, HexTile>()
+  for (const t of tiles) tileByKey.set(hexKey(t.coord), t)
+
+  const bonus: Resources = { gold: 0, food: 0, production: 0 }
+
+  for (const coord of hexesInRadius(city.position, radius)) {
+    const tile = tileByKey.get(hexKey(coord))
+    if (!tile) continue
+
+    // The owning city is the nearest one; ties go to the smaller id.
+    let owner = city
+    for (const other of allCities) {
+      if (other.id === city.id) continue
+      const dOther = hexDistance(other.position, coord)
+      const dOwner = hexDistance(owner.position, coord)
+      if (dOther < dOwner || (dOther === dOwner && other.id < owner.id)) {
+        owner = other
+      }
+    }
+    if (owner.id !== city.id) continue
+
+    const yld = TERRAIN_RESOURCE_BONUS[tile.terrainType]
+    bonus.gold       += yld.gold
+    bonus.food       += yld.food
+    bonus.production += yld.production
+  }
+
+  return bonus
+}
+
 // ─── City production ──────────────────────────────────────────────────────────
 
 /**
  * Computes how many resources a city produces in one turn.
- * Output = population × base_rate × specialization_multiplier × level_multiplier.
+ * Output = population × base_rate × specialization_multiplier × level_multiplier,
+ * plus the terrain yield of its claimed territory when `tiles` are supplied.
  * Results are rounded to the nearest integer; a pop-0 city produces nothing.
+ *
+ * `allCities` and `tiles` are optional for backward compatibility: callers that
+ * omit them get the base (pre-territory) output. When provided, territory yield
+ * is added BEFORE building multipliers so buildings amplify it too.
  *
  * Civilization ability bonuses (productionBonus, goldBonus) are applied by
  * turn.ts on top of this value, not here, to keep this function pure and simple.
  */
-export function computeCityProduction(city: City): Resources {
+export function computeCityProduction(
+  city: City,
+  allCities: readonly City[] = [],
+  tiles: readonly HexTile[] = [],
+): Resources {
   if (city.population === 0) return { gold: 0, food: 0, production: 0 }
 
   const m = SPECIALIZATION_MULTIPLIERS[city.specialization]
@@ -73,6 +136,13 @@ export function computeCityProduction(city: City): Resources {
     gold:       Math.round(city.population * BASE_GOLD_PER_POP        * m.gold       * lv),
     food:       Math.round(city.population * BASE_FOOD_PER_POP        * m.food       * lv),
     production: Math.round(city.population * BASE_PRODUCTION_PER_POP  * m.production * lv),
+  }
+
+  if (tiles.length > 0) {
+    const terr = computeCityTerritoryBonus(city, allCities, tiles)
+    base.gold       += terr.gold
+    base.food       += terr.food
+    base.production += terr.production
   }
 
   return applyBuildingBonuses(city.buildings ?? [], base)
@@ -126,6 +196,7 @@ export function applyGrowth(city: City, foodIncome: number): City {
 export function processTurnEconomy(
   cities: readonly City[],
   existingResources: Resources,
+  tiles: readonly HexTile[] = [],
 ): { updatedCities: City[]; updatedResources: Resources } {
   let gold       = existingResources.gold
   let food       = existingResources.food
@@ -134,7 +205,7 @@ export function processTurnEconomy(
   const updatedCities: City[] = []
 
   for (const city of cities) {
-    const produced = computeCityProduction(city)
+    const produced = computeCityProduction(city, cities, tiles)
     gold       += produced.gold
     food       += produced.food
     production += produced.production

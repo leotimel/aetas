@@ -32,7 +32,7 @@ interface Props {
 }
 
 export default function MapPreviewMini({ tiles, radius, width = 280, height = 240 }: Props) {
-  const hexSize = radius <= 4 ? 17 : radius <= 5 ? 13 : 9
+  const hexSize = radius <= 4 ? 17 : radius <= 5 ? 13 : radius <= 7 ? 9 : 6
 
   return (
     <svg

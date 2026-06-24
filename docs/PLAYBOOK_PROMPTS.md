@@ -506,6 +506,153 @@ Se tudo isso funcionar em produção, o Aetas está pronto para lançamento web.
 
 ---
 
+### Bloco FX — Correções pós-validação (engine + UX)
+
+> Bugs identificados após validação manual com partidas reais em produção.
+> Execute na ordem FX1 → FX2 → FX3 → FX4. FX1 e FX2 tocam apenas o motor
+> (game-engine); FX3 é UI pura; FX4 é a mudança mais profunda e requer Opus.
+
+**4.5.FX1 — Posições de início variadas** · Sonnet
+```
+Em `packages/game-engine/src/map.ts`, modifique `findStartPositions` para que
+as posições de início variem de acordo com o seed da partida:
+
+1. Adicione o parâmetro `rng: () => number` à assinatura de `findStartPositions`
+   (função interna — não exportada). `generateMap` já cria o RNG com o seed;
+   passe-o como quarto argumento.
+
+2. Antes do loop de placement, embaralhe a ordem dos índices [0..playerCount-1]
+   usando Fisher-Yates com o `rng`. Use o índice embaralhado no cálculo de
+   `angle = 2π × shuffledIndex[i] / playerCount`.
+
+3. Adicione um jitter angular: some `(rng() - 0.5) * Math.PI / playerCount`
+   ao ângulo de cada jogador antes de calcular `candidate`.
+
+4. Adicione teste em `packages/game-engine/src/map.test.ts`:
+   `generateMap(5, 'seed-A', 2).startPositions` deve ser diferente de
+   `generateMap(5, 'seed-B', 2).startPositions` (posições, não só terreno).
+   Confirme também que `generateMap(5, 'seed-A', 2)` é idempotente (mesmo
+   resultado em duas chamadas com o mesmo seed).
+```
+
+**4.5.FX2 — Fog of War dinâmico** · Sonnet
+```
+`updateFogOfWar` existe em `packages/game-engine/src/map.ts` mas nunca é chamado.
+O fog congela na posição inicial da partida. Corrija em dois arquivos:
+
+1. `packages/game-engine/src/actions.ts`
+   - Importe `updateFogOfWar` de `'./map.js'`.
+   - No case `moveUnit` (após aplicar a nova posição da unidade ao estado),
+     localize o `fogEntry` do `ownerId` da unidade em `newState.fogOfWar`.
+     Calcule as unidades e cidades do jogador no `newState` pós-move e chame:
+       const updated = updateFogOfWar(fogEntry, playerUnits, playerCities, state.map.radius)
+     Substitua o fogEntry no array `fogOfWar` do estado retornado.
+   - Use o estado pós-move (posição já atualizada) para calcular as unidades do jogador.
+
+2. `packages/game-engine/src/turn.ts`
+   - Importe `updateFogOfWar` de `'./map.js'`.
+   - No Step 6 de `endTurn` (após definir `nextId` e resetar unidades do próximo),
+     atualize o fog do próximo jogador antes de retornar o estado:
+       const nextFogEntry = working.fogOfWar.find(f => f.playerId === nextId)
+       if (nextFogEntry) {
+         const nextUnits  = units.filter(u => u.ownerId === nextId)
+         const nextCities = nextCities.filter(c => c.ownerId === nextId)
+         const updatedFog = updateFogOfWar(nextFogEntry, nextUnits, nextCities, state.map.radius)
+         working = { ...working, fogOfWar: working.fogOfWar.map(f => f.playerId === nextId ? updatedFog : f) }
+       }
+   (Cuidado com shadowing da variável `nextCities` — use nome alternativo.)
+
+Adicione teste: após moveUnit para nova posição, o fog do jogador deve incluir
+hexes ao redor da nova posição e NÃO remover a posição antiga de exploredHexes.
+```
+
+**4.5.FX3 — Mapa maior + scroll no HexMap** · Sonnet
+```
+1. `packages/game-engine/src/map.ts`
+   Atualize MAP_SIZES:
+     export const MAP_SIZES = { small: 5, medium: 7, large: 10 } as const
+   (small=91, medium=169, large=331 hexes — adequado para 2–8 jogadores)
+
+2. `apps/web/src/components/HexMap.tsx`
+   - Encapsule o <svg> em um <div className="w-full h-full overflow-auto">.
+   - O SVG já tem width/height calculados por useHexLayout — com radius 10 o
+     SVG terá ~900×800px, e o wrapper com overflow-auto permite scroll natural.
+   - Adicione controles de zoom opcionais: um useState<number>(1.0) e dois botões
+     (+/-) que ajustam entre 0.6 e 1.4, aplicados como style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }} no SVG wrapper.
+   - Garanta que o <svg> já renderizado a 100% do viewport seja o estado padrão
+     (zoom=1.0), sem regressão visual para mapas small/medium.
+
+3. `apps/web/src/components/MapPreviewMini.tsx`
+   Sem mudança funcional — mas verifique que o preview continua renderizando
+   corretamente com radius 10 (passado como `radius` prop). O componente usa o
+   mesmo cálculo de hexSize, então deve escalar automaticamente.
+```
+
+**4.5.FX4 — Bordas de cidade + rebalancear economia** · **Opus** 🔴 🧠
+```
+Implemente bordas automáticas de cidade (cada cidade reivindica tiles dentro de
+raio 2 pelo critério de proximidade) e rebalanceie os custos de construção.
+Mudanças em 4 arquivos — planeje antes de codar.
+
+── economy.ts ──
+1. Defina bônus de terreno (Resources por TerrainType) ao topo do arquivo:
+     Plains   → { gold: 0, food: 2, production: 0 }
+     Forest   → { gold: 0, food: 0, production: 2 }
+     Hills    → { gold: 1, food: 0, production: 1 }
+     Desert   → { gold: 1, food: 0, production: 0 }
+     Mountain/Water → { gold: 0, food: 0, production: 0 }
+
+2. Crie `computeCityTerritoryBonus(city, allCities, tiles, radius=2)`:
+   - Filtra tiles dentro de hexesInRadius(city.position, radius).
+   - Para cada tile, verifica se `city` é a cidade mais próxima entre todas
+     as `allCities` (usa hexDistance). Em caso de empate, o tile pertence
+     à cidade com menor `id` (ordem estável).
+   - Soma os bônus de terreno de todos os tiles reivindicados.
+   - Retorna Resources.
+
+3. Modifique `computeCityProduction(city, allCities, tiles)` — adicione
+   `allCities` e `tiles` como parâmetros opcionais (default []). Quando
+   fornecidos, some `computeCityTerritoryBonus` ao resultado base ANTES de
+   `applyBuildingBonuses`. Isso mantém retrocompatibilidade (testes existentes
+   que não passam allCities/tiles continuam funcionando com saída só-base).
+
+4. Modifique `processTurnEconomy(cities, existingResources, tiles?)`:
+   - Adicione `tiles` como terceiro parâmetro opcional (default []).
+   - Passe `cities` e `tiles` para cada chamada de `computeCityProduction`.
+
+── buildings.ts ──
+Rebalancear `productionCost` de cada BuildingDefinition:
+  Barracks (Military):  15 → 8
+  Wall (Military):      20 → 12
+  Market (Commercial):  25 → 10
+  Port (Commercial):    35 → 15
+  Library (Scientific): 25 → 10
+  Temple (Scientific):  25 → 10
+
+── orchestration.ts ──
+Na chamada de `processTurnEconomy` em `packages/backend-core/src/orchestration.ts`,
+passe `loaded.gameState.map.tiles` como terceiro argumento.
+
+── economy.test.ts ──
+Adicione testes de território:
+  - Cidade isolada próxima a 2 tiles Plains → territoryBonus.food = 4
+  - Duas cidades adjacentes: tile no meio vai para a mais próxima; empate → menor id
+  - `computeCityProduction` com tiles de Forest produz mais production do que sem tiles
+```
+
+✅ **Commit:** "FX: posições variadas + fog dinâmico + mapa maior + bordas de cidade + rebalancear economia".
+
+🛑 **CHECKPOINT FX — valide antes do Bloco C:**
+1. Crie 3 partidas com o mesmo playerCount (2) — as posições de início devem
+   ser diferentes nas 3 (verificar visualmente no mapa).
+2. Mova uma unidade → o fog deve atualizar imediatamente sem precisar encerrar o turno.
+3. Crie uma partida Large → mapa deve ocupar mais espaço que o atual e ter scroll.
+4. Crie uma partida com cidade perto de tiles Forest. Após 3 turnos (sem gastar
+   produção), deve ter produção suficiente para construir um edifício (≥8–10⚙).
+Se todos os 4 passarem, o Bloco C pode ser iniciado.
+
+---
+
 ### Bloco C — Idioma e polimento final
 
 **4.5.C1 — Internacionalização EN/PT (i18n)** · Sonnet 🧠

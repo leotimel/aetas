@@ -16,7 +16,7 @@ import {
   respondToProposal,
   type DiplomacyResult,
 } from './diplomacy.js'
-import { hexDistance, hexKey } from './map.js'
+import { hexDistance, hexKey, updateFogOfWar } from './map.js'
 import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
 import { getBuildingDef, startConstruction } from './buildings.js'
@@ -342,7 +342,22 @@ export function applyAction(
       const units = state.units.map(u =>
         u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u,
       )
-      return { ok: true, state: { ...state, units } }
+      const movedState = { ...state, units }
+      const ownerId    = unit.ownerId
+      const fogEntry   = movedState.fogOfWar.find(f => f.playerId === ownerId)
+      if (fogEntry) {
+        const ownerUnits  = movedState.units.filter(u => u.ownerId === ownerId)
+        const ownerCities = movedState.cities.filter(c => c.ownerId === ownerId)
+        const updatedFog  = updateFogOfWar(fogEntry, ownerUnits, ownerCities, state.map.radius)
+        return {
+          ok: true,
+          state: {
+            ...movedState,
+            fogOfWar: movedState.fogOfWar.map(f => f.playerId === ownerId ? updatedFog : f),
+          },
+        }
+      }
+      return { ok: true, state: movedState }
     }
 
     case 'foundCity': {

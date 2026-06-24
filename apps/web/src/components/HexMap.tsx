@@ -298,7 +298,28 @@ export default function HexMap({
 
   const gTransform = `translate(${origin.x + transform.x}, ${origin.y + transform.y}) scale(${transform.scale})`
 
+  const zoomIn  = () => setTransform(t => ({ ...t, scale: Math.min(1.4, parseFloat((t.scale * 1.2).toFixed(2))) }))
+  const zoomOut = () => setTransform(t => ({ ...t, scale: Math.max(0.6, parseFloat((t.scale / 1.2).toFixed(2))) }))
+
   return (
+    <div className="relative w-full h-full overflow-auto">
+      {/* Zoom controls */}
+      <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1">
+        <button
+          onClick={zoomIn}
+          className="w-8 h-8 rounded bg-aetas-surface/80 border border-aetas-border text-aetas-muted
+                     hover:text-aetas-gold hover:border-aetas-gold/40 text-lg font-bold leading-none
+                     transition-colors flex items-center justify-center"
+          title="Zoom in"
+        >+</button>
+        <button
+          onClick={zoomOut}
+          className="w-8 h-8 rounded bg-aetas-surface/80 border border-aetas-border text-aetas-muted
+                     hover:text-aetas-gold hover:border-aetas-gold/40 text-lg font-bold leading-none
+                     transition-colors flex items-center justify-center"
+          title="Zoom out"
+        >−</button>
+      </div>
     <svg
       ref={svgRef}
       className="absolute inset-0 w-full h-full select-none touch-none"
@@ -433,6 +454,7 @@ export default function HexMap({
         ))}
       </g>
     </svg>
+    </div>
   )
 }
 

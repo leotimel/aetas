@@ -101,6 +101,7 @@ function findStartPositions(
   tiles: readonly HexTile[],
   playerCount: number,
   mapRadius: number,
+  rng: () => number,
 ): readonly HexCoord[] {
   const tileMap = new Map<string, HexTile>()
   for (const tile of tiles) tileMap.set(hexKey(tile.coord), tile)
@@ -114,12 +115,21 @@ function findStartPositions(
     )
   }
 
+  // Shuffle slot indices so angular positions vary per seed (Fisher-Yates).
+  const slots = Array.from({ length: playerCount }, (_, i) => i)
+  for (let i = slots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[slots[i], slots[j]] = [slots[j]!, slots[i]!]
+  }
+
   const ringRadius = Math.round(mapRadius * 0.7)
   const taken = new Set<string>()
   const positions: HexCoord[] = []
 
   for (let i = 0; i < playerCount; i++) {
-    const angle = (2 * Math.PI * i) / playerCount
+    const slotAngle = (2 * Math.PI * slots[i]!) / playerCount
+    const jitter    = (rng() - 0.5) * Math.PI / playerCount
+    const angle     = slotAngle + jitter
     // Approximate: treat axial (q, r) as Cartesian for angular placement.
     // findStartPositions snaps to nearest valid tile, so this approximation is fine.
     const candidate: HexCoord = {
@@ -148,8 +158,8 @@ function findStartPositions(
 
 // ─── Map size presets ─────────────────────────────────────────────────────────
 
-/** Radius per map size. Hex count = 3R² + 3R + 1: small≈61, medium≈91, large≈169. */
-export const MAP_SIZES = { small: 4, medium: 5, large: 7 } as const
+/** Radius per map size. Hex count = 3R² + 3R + 1: small≈91, medium≈169, large≈331. */
+export const MAP_SIZES = { small: 5, medium: 7, large: 10 } as const
 export type MapSize = keyof typeof MAP_SIZES
 
 // ─── Map generation ───────────────────────────────────────────────────────────
@@ -174,7 +184,7 @@ export function generateMap(
     tiles,
     radius,
     seed,
-    startPositions: findStartPositions(tiles, playerCount, radius),
+    startPositions: findStartPositions(tiles, playerCount, radius, rng),
   }
 }
 

@@ -187,24 +187,34 @@ describe('generateMap', () => {
     const b = generateMap(4, '2026-06-20', 2)
     expect(JSON.stringify(a.tiles)).toBe(JSON.stringify(b.tiles))
   })
+  it('different seeds produce different startPositions', () => {
+    const a = generateMap(5, 'seed-A', 2)
+    const b = generateMap(5, 'seed-B', 2)
+    expect(JSON.stringify(a.startPositions)).not.toBe(JSON.stringify(b.startPositions))
+  })
+  it('startPositions are deterministic for the same seed', () => {
+    const a = generateMap(5, 'seed-A', 2)
+    const b = generateMap(5, 'seed-A', 2)
+    expect(JSON.stringify(a.startPositions)).toBe(JSON.stringify(b.startPositions))
+  })
 })
 
 // ─── Suite 2b: MAP_SIZES ─────────────────────────────────────────────────────
 
 describe('MAP_SIZES', () => {
-  it('small radius = 4 → 61 tiles (3·16+3·4+1)', () => {
+  it('small radius = 5 → 91 tiles (3·25+3·5+1)', () => {
     const map = generateMap(MAP_SIZES.small, 'test', 2)
-    expect(map.tiles).toHaveLength(3 * 16 + 3 * 4 + 1)
-  })
-
-  it('medium radius = 5 → 91 tiles (3·25+3·5+1)', () => {
-    const map = generateMap(MAP_SIZES.medium, 'test', 2)
     expect(map.tiles).toHaveLength(3 * 25 + 3 * 5 + 1)
   })
 
-  it('large radius = 7 → 169 tiles (3·49+3·7+1)', () => {
-    const map = generateMap(MAP_SIZES.large, 'test', 2)
+  it('medium radius = 7 → 169 tiles (3·49+3·7+1)', () => {
+    const map = generateMap(MAP_SIZES.medium, 'test', 2)
     expect(map.tiles).toHaveLength(3 * 49 + 3 * 7 + 1)
+  })
+
+  it('large radius = 10 → 331 tiles (3·100+3·10+1)', () => {
+    const map = generateMap(MAP_SIZES.large, 'test', 2)
+    expect(map.tiles).toHaveLength(3 * 100 + 3 * 10 + 1)
   })
 
   it('small < medium < large in tile count', () => {

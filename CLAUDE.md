@@ -1,4 +1,4 @@
-# CLAUDE.md — Aetas
+﻿# CLAUDE.md — Aetas
 
 ## O que é o Aetas
 
@@ -34,13 +34,16 @@ Violar essa regra duplica bugs em 3 interfaces. Não fazer.
 | 3 — Debug client | ✅ | mapa hex visual, ações de turno, inspeção de estado |
 | 4 — Web básica | ✅ | auth, mapa SVG, fog of war, modal de cidade, perfil/XP, daily |
 | 4 (polimento 4.4–4.7) | ✅ | cores de civ, tema dark/dourado (Cinzel + gold), [v2] removido, nomes de civ no lugar de IDs |
-| **4.5 — Web Jogável** | 🔜 | estética Roma Antiga, movimento com preview, Colono, combate narrativo, eras, diplomacia, i18n |
+| 4.5 — Bloco A (design system Roma Antiga) | ✅ | tokens CSS, texturas SVG de terreno, sprites por tipo de unidade, animações de movimento/combate |
+| 4.5 — Bloco B (mecânicas jogáveis) | ✅ | preview de movimento, Colono+fundação, combate narrativo, eras, diplomacia, pontuação, fim de partida |
+| **4.5 — Bloco B-Extra (pré-lançamento)** | 🔜 | mapa procedural por seed, criação de partida, home refinada, ações de cidade, XP backend, deploy Vercel |
+| 4.5 — Bloco C (i18n + polimento mobile) | ⏳ | — |
 | 5 — Android (Kotlin) | ⏳ | — |
 | 6 — Google Play | ⏳ | — |
 | 7 — iOS (Swift/SwiftUI) | ⏳ | requer Mac |
 | 8 — App Store | ⏳ | — |
 
-**Próximo:** Fase 4.5 — Bloco A (design system Roma Antiga + texturas + sprites + animações).
+**Próximo:** 🛑 CHECKPOINT DE JOGABILIDADE (manual) → Bloco B-Extra (BX1–BX6).
 **AskUserQuestions é obrigatório** antes de qualquer decisão de design, UX ou arquitetura não coberta no playbook.
 
 ---

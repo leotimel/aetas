@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { validateAction, applyAction, type GameAction } from './actions.js'
 import { createCombatDispute } from './combat.js'
+import { hexKey, hexesInRadius } from './map.js'
 import {
   TurnState,
   CombatDisputeStatus,
   CitySpecialization,
   BuildingType,
+  TerrainType,
   Era,
 } from './types.js'
 import type {
@@ -17,6 +19,7 @@ import type {
   HexCoord,
   Player,
   CombatDispute,
+  PlayerFogOfWar,
 } from './types.js'
 
 // ─── Builders ─────────────────────────────────────────────────────────────────
@@ -426,8 +429,8 @@ describe('validateAction — constructBuilding', () => {
 
   it('rejects when production is insufficient', () => {
     const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military
-    // Barracks costs 30; player has only 10
-    const state = makeState({ players: [playerWithProd('p0', 10), makePlayer('p1')], cities: [city] })
+    // Barracks costs 8; player has only 5
+    const state = makeState({ players: [playerWithProd('p0', 5), makePlayer('p1')], cities: [city] })
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
     expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient production' })
   })
@@ -442,7 +445,7 @@ describe('validateAction — constructBuilding', () => {
 
 describe('applyAction — constructBuilding', () => {
   it('sets city.construction with correct turnsRemaining', () => {
-    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military — Barracks costs 30, takes 3 turns
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military — Barracks costs 8, takes 3 turns
     const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
 
@@ -456,7 +459,7 @@ describe('applyAction — constructBuilding', () => {
   })
 
   it('deducts the building production cost from the player', () => {
-    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Barracks costs 30
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Barracks costs 8
     const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
 
@@ -464,7 +467,7 @@ describe('applyAction — constructBuilding', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) throw new Error(res.reason)
     const p0 = res.state.players.find(p => p.id === 'p0')!
-    expect(p0.resources.production).toBe(20) // 50 - 30
+    expect(p0.resources.production).toBe(42) // 50 - 8
   })
 
   it('does not mutate a frozen input state', () => {
@@ -473,5 +476,99 @@ describe('applyAction — constructBuilding', () => {
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
     expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
     expect(state.cities.find(c => c.id === 'c1')!.construction).toBeUndefined()
+  })
+})
+
+describe('applyAction — moveUnit fog update', () => {
+  const RADIUS = 5
+  // Build a map with all tiles in the radius set to Plains so moveUnit validation passes.
+  const FOG_MAP: GameMap = {
+    tiles: hexesInRadius({ q: 0, r: 0 }, RADIUS).map(coord => ({
+      coord,
+      terrainType: TerrainType.Plains,
+    })),
+    radius: RADIUS,
+    seed: 's',
+    startPositions: [],
+  }
+
+  function makeFogState(unitPos: HexCoord, initialFog: PlayerFogOfWar): GameState {
+    return {
+      gameId: 'g1',
+      players: [makePlayer('p0'), makePlayer('p1')],
+      map: FOG_MAP,
+      units: [makeUnit('u1', 'p0', unitPos)],
+      cities: [],
+      turnNumber: 1,
+      currentPlayerId: 'p0',
+      turnState: TurnState.WaitingForAction,
+      era: Era.Ancient,
+      maxTurns: 10,
+      combatDisputes: [],
+      nonAggressionPacts: [],
+      diplomaticProposals: [],
+      fogOfWar: [initialFog],
+      winner: null,
+      isFinished: false,
+    }
+  }
+
+  it('visibleHexes updates to include hexes around new position after move', () => {
+    const startPos: HexCoord  = { q: 0, r: 0 }
+    const targetPos: HexCoord = { q: 2, r: 0 }
+    const initialFog: PlayerFogOfWar = {
+      playerId: 'p0',
+      visibleHexes: [startPos],
+      exploredHexes: [startPos],
+    }
+    const state = makeFogState(startPos, initialFog)
+    const res = applyAction(state, 'p0', { type: 'moveUnit', unitId: 'u1', targetCoord: targetPos }, 0)
+    expect(res.ok).toBe(true)
+    const fog = res.state.fogOfWar.find(f => f.playerId === 'p0')!
+    const visibleKeys = new Set(fog.visibleHexes.map(hexKey))
+    expect(visibleKeys.has(hexKey(targetPos))).toBe(true)
+  })
+
+  it('exploredHexes retains hexes from old position (never shrinks)', () => {
+    const startPos: HexCoord  = { q: 0, r: 0 }
+    const targetPos: HexCoord = { q: 2, r: 0 }
+    const initialFog: PlayerFogOfWar = {
+      playerId: 'p0',
+      visibleHexes: [startPos],
+      exploredHexes: [startPos],
+    }
+    const state = makeFogState(startPos, initialFog)
+    const res = applyAction(state, 'p0', { type: 'moveUnit', unitId: 'u1', targetCoord: targetPos }, 0)
+    expect(res.ok).toBe(true)
+    const fog = res.state.fogOfWar.find(f => f.playerId === 'p0')!
+    const exploredKeys = new Set(fog.exploredHexes.map(hexKey))
+    expect(exploredKeys.has(hexKey(startPos))).toBe(true)
+    expect(exploredKeys.has(hexKey(targetPos))).toBe(true)
+  })
+
+  it('does not update fog when state has no fogOfWar entry for the player', () => {
+    const startPos: HexCoord  = { q: 0, r: 0 }
+    const targetPos: HexCoord = { q: 2, r: 0 }
+    const stateNoFog: GameState = {
+      gameId: 'g1',
+      players: [makePlayer('p0'), makePlayer('p1')],
+      map: FOG_MAP,
+      units: [makeUnit('u1', 'p0', startPos)],
+      cities: [],
+      turnNumber: 1,
+      currentPlayerId: 'p0',
+      turnState: TurnState.WaitingForAction,
+      era: Era.Ancient,
+      maxTurns: 10,
+      combatDisputes: [],
+      nonAggressionPacts: [],
+      diplomaticProposals: [],
+      fogOfWar: [],
+      winner: null,
+      isFinished: false,
+    }
+    const res = applyAction(stateNoFog, 'p0', { type: 'moveUnit', unitId: 'u1', targetCoord: targetPos }, 0)
+    expect(res.ok).toBe(true)
+    expect(res.state.fogOfWar).toHaveLength(0)
   })
 })

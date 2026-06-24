@@ -10,8 +10,9 @@ import {
   FOOD_PER_POPULATION_GROWTH,
   LEVEL_BONUS_PER_LEVEL,
 } from './economy.js'
-import { CitySpecialization } from './types.js'
-import type { City, Resources } from './types.js'
+import { computeCityTerritoryBonus } from './economy.js'
+import { CitySpecialization, TerrainType } from './types.js'
+import type { City, Resources, HexTile, HexCoord } from './types.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -308,5 +309,49 @@ describe('processTurnEconomy', () => {
     const start: Resources = { gold: 7, food: 3, production: 5 }
     const { updatedResources } = processTurnEconomy([], start)
     expect(updatedResources).toEqual(start)
+  })
+})
+
+// ─── Suite 6: computeCityTerritoryBonus — bordas de cidade ───────────────────
+
+function tile(q: number, r: number, terrainType: TerrainType): HexTile {
+  return { coord: { q, r } as HexCoord, terrainType }
+}
+
+describe('computeCityTerritoryBonus — território', () => {
+  it('cidade isolada com 2 tiles Plains vizinhos → food = 4', () => {
+    const city = makeCity({ id: 'a', position: { q: 0, r: 0 } })
+    const tiles = [tile(1, 0, TerrainType.Plains), tile(0, 1, TerrainType.Plains)]
+    const bonus = computeCityTerritoryBonus(city, [city], tiles)
+    expect(bonus.food).toBe(4)
+    expect(bonus.production).toBe(0)
+    expect(bonus.gold).toBe(0)
+  })
+
+  it('tile equidistante entre duas cidades vai para a de menor id', () => {
+    const a = makeCity({ id: 'a', position: { q: 0, r: 0 } })
+    const b = makeCity({ id: 'b', position: { q: 2, r: 0 } })
+    const contested = [tile(1, 0, TerrainType.Plains)] // dist 1 de ambas → empate
+    const all = [a, b]
+    // 'a' < 'b' → 'a' reivindica o tile do meio.
+    expect(computeCityTerritoryBonus(a, all, contested).food).toBe(2)
+    expect(computeCityTerritoryBonus(b, all, contested).food).toBe(0)
+  })
+
+  it('tile mais próximo de uma cidade vai para ela, não para a distante', () => {
+    const a = makeCity({ id: 'a', position: { q: 0, r: 0 } })
+    const b = makeCity({ id: 'b', position: { q: 4, r: 0 } })
+    const near = [tile(1, 0, TerrainType.Forest)] // dist 1 de 'a', dist 3 de 'b'
+    const all = [a, b]
+    expect(computeCityTerritoryBonus(a, all, near).production).toBe(2)
+    expect(computeCityTerritoryBonus(b, all, near).production).toBe(0)
+  })
+
+  it('computeCityProduction com tiles de Forest produz mais production do que sem tiles', () => {
+    const city = makeCity({ id: 'a', position: { q: 0, r: 0 }, population: 1 })
+    const forest = [tile(1, 0, TerrainType.Forest), tile(0, 1, TerrainType.Forest)]
+    const withTiles = computeCityProduction(city, [city], forest)
+    const without   = computeCityProduction(city)
+    expect(withTiles.production).toBeGreaterThan(without.production)
   })
 })

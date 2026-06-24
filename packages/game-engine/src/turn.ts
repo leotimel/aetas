@@ -1,5 +1,6 @@
 import { TurnState, CombatDisputeStatus, Era } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
+import { updateFogOfWar } from './map.js'
 import { determineWinner as computeWinner } from './scoring.js'
 import { processTurnEconomy } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
@@ -136,7 +137,7 @@ export function endTurn(
   if (actor) {
     const actorCities = cities.filter(c => c.ownerId === actorId)
     const preResources = { ...actor.resources }
-    const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources)
+    const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources, state.map.tiles)
     const updatedById = new Map(updatedCities.map(c => [c.id, c]))
     cities = cities.map(c => updatedById.get(c.id) ?? c)
     const m = getCivEconomyMultipliers(actor.civilizationId)
@@ -207,6 +208,19 @@ export function endTurn(
       : c,
   )
 
+  // Step 6b — recompute fog for the next player so they see tiles around their
+  // current unit/city positions at the start of their turn.
+  let nextFogOfWar = working.fogOfWar
+  if (nextId) {
+    const nextFogEntry = working.fogOfWar.find(f => f.playerId === nextId)
+    if (nextFogEntry) {
+      const nextPlayerUnits  = units.filter(u => u.ownerId === nextId)
+      const nextPlayerCities = nextCities.filter(c => c.ownerId === nextId)
+      const updatedFog = updateFogOfWar(nextFogEntry, nextPlayerUnits, nextPlayerCities, state.map.radius)
+      nextFogOfWar = working.fogOfWar.map(f => f.playerId === nextId ? updatedFog : f)
+    }
+  }
+
   // Step 6.5 — accumulate science from the actor's cities; advance era when threshold reached.
   const eraIdx = ERA_ORDER.indexOf(working.era as Era)
   let nextEra: Era = working.era as Era
@@ -230,6 +244,7 @@ export function endTurn(
       ...working,
       units,
       cities: nextCities,
+      fogOfWar: nextFogOfWar,
       era: nextEra,
       eraProgress: nextEraProgress,
       currentPlayerId: nextId ?? actorId,
