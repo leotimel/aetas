@@ -1,11 +1,11 @@
 import type { HexTile } from '@aetas/game-engine'
 
 const TERRAIN_FILL: Record<string, string> = {
-  plains:   '#4ade80',
-  forest:   '#166534',
-  hills:    '#92400e',
-  mountain: '#9ca3af',
-  water:    '#1d4ed8',
+  plains:   '#7a9e4e',
+  forest:   '#1e4d2b',
+  hills:    '#8b6f47',
+  mountain: '#6b7d8f',
+  water:    '#1a5270',
 }
 
 const S3 = Math.sqrt(3)

@@ -16,18 +16,18 @@ function civColor(civilizationId: string, fallback: string): string {
 }
 
 const TERRAIN_FILL: Record<string, string> = {
-  plains:   '#6b8c3e',
-  forest:   '#234a1f',
-  mountain: '#5a5668',
-  hills:    '#8c6e3a',
+  plains:   '#7a9e4e',
+  forest:   '#1e4d2b',
+  mountain: '#6b7d8f',
+  hills:    '#8b6f47',
   water:    '#1a5270',
 }
 
 const TERRAIN_STROKE: Record<string, string> = {
-  plains:   '#4e6b28',
-  forest:   '#162f12',
-  mountain: '#46425a',
-  hills:    '#6e5228',
+  plains:   '#5a7a33',
+  forest:   '#142e1a',
+  mountain: '#506070',
+  hills:    '#6a5235',
   water:    '#0e3a52',
 }
 
@@ -388,6 +388,17 @@ export default function HexMap({
               {isMoveTarget && (
                 <polygon points={points} fill="#3b82f6" fillOpacity={0.18} stroke="#3b82f6" strokeWidth={1}
                          style={{ animation: 'range-pulse 1.5s ease-in-out infinite' }} />
+              )}
+              {/* Vignette gradient — bright centre → dark edge on visible tiles */}
+              {isVisible && (
+                <polygon points={points} fill="url(#hex-vignette)" pointerEvents="none" />
+              )}
+              {/* Micro terrain icons */}
+              {isVisible && terrainType === 'forest' && (
+                <use href="#icon-forest" x={px - 7} y={py - 8} width={14} height={16} opacity={0.65} pointerEvents="none" />
+              )}
+              {isVisible && terrainType === 'mountain' && (
+                <use href="#icon-mountain" x={px - 8} y={py - 6} width={16} height={12} opacity={0.65} pointerEvents="none" />
               )}
               {/* Coord label in god mode */}
               {godMode && (
