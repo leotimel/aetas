@@ -77,22 +77,141 @@ export function hexesInRadius(center: HexCoord, radius: number): HexCoord[] {
   return results
 }
 
-// ─── Terrain weights ──────────────────────────────────────────────────────────
+// ─── Coherent terrain generation ──────────────────────────────────────────────
+// Replaces independent per-tile rolls with two smoothed noise fields (elevation
+// + moisture) combined through a decision table, plus a coast falloff that pushes
+// water to the rim. Fully deterministic from the seed RNG — no external libs.
 
-const TERRAIN_THRESHOLDS: ReadonlyArray<readonly [TerrainType, number]> = [
-  [TerrainType.Plains,   0.40],
-  [TerrainType.Forest,   0.65],
-  [TerrainType.Hills,    0.80],
-  [TerrainType.Mountain, 0.92],
-  [TerrainType.Water,    1.00],
-]
+const SMOOTH_PASSES   = 2     // box-blur passes over hex neighbors → blob size
+const COAST_WEIGHT    = 0.55  // how strongly distance-to-edge lowers elevation
+const WATER_LEVEL     = 0.30  // elevation below this → Water (lands on the rim)
+const MOUNTAIN_LEVEL  = 0.72  // elevation above this → Mountain (interior peaks)
+const HILLS_LEVEL     = 0.60  // elevation above this → Hills (ring below peaks)
+const FOREST_MOISTURE = 0.55  // moisture above this on mid-land → Forest
 
-function pickTerrain(rng: () => number): TerrainType {
-  const roll = rng()
-  for (const [type, threshold] of TERRAIN_THRESHOLDS) {
-    if (roll < threshold) return type
+/**
+ * Box-blur a per-hex scalar field over on-map neighbors. Each pass replaces a
+ * hex's value with the average of itself and its on-map neighbors, turning white
+ * noise into spatially-coherent blobs. Pure: no RNG, returns a fresh Map.
+ */
+function smoothField(
+  values: ReadonlyMap<string, number>,
+  onMapKeys: ReadonlySet<string>,
+  passes: number,
+): Map<string, number> {
+  let field = new Map(values)
+  for (let p = 0; p < passes; p++) {
+    const next = new Map<string, number>()
+    for (const [key, coord] of keyedCoords(field)) {
+      let sum = field.get(key)!
+      let count = 1
+      for (const n of hexNeighbors(coord)) {
+        const nk = hexKey(n)
+        if (onMapKeys.has(nk)) {
+          sum += field.get(nk)!
+          count++
+        }
+      }
+      next.set(key, sum / count)
+    }
+    field = next
   }
-  return TerrainType.Water
+  return field
+}
+
+/** Parses the "q,r" keys of a field back into coords for neighbor lookups. */
+function keyedCoords(field: ReadonlyMap<string, number>): [string, HexCoord][] {
+  return Array.from(field.keys()).map(key => {
+    const [q, r] = key.split(',').map(Number)
+    return [key, { q: q!, r: r! }] as [string, HexCoord]
+  })
+}
+
+/** Min-max normalize a field to [0,1]. Degenerate (all-equal) field → all 0.5. */
+function normalize01(values: ReadonlyMap<string, number>): Map<string, number> {
+  let min = Infinity
+  let max = -Infinity
+  for (const v of values.values()) {
+    if (v < min) min = v
+    if (v > max) max = v
+  }
+  const span = max - min
+  const out = new Map<string, number>()
+  for (const [key, v] of values) {
+    out.set(key, span > 1e-9 ? (v - min) / span : 0.5)
+  }
+  return out
+}
+
+/**
+ * Classifies one hex from its combined elevation + moisture. `elevation` already
+ * folds in the coast falloff, so low values cluster on the rim (→ Water) and high
+ * values cluster in the interior (→ Mountain ringed by Hills).
+ */
+function classifyTerrain(elevation: number, moisture: number): TerrainType {
+  if (elevation < WATER_LEVEL)    return TerrainType.Water
+  if (elevation > MOUNTAIN_LEVEL) return TerrainType.Mountain
+  if (elevation > HILLS_LEVEL)    return TerrainType.Hills
+  if (moisture  > FOREST_MOISTURE) return TerrainType.Forest
+  return TerrainType.Plains
+}
+
+/**
+ * Builds the full terrain layout for a map: two smoothed noise fields, a coast
+ * falloff, the decision table, then two cleanup passes that guarantee the spatial
+ * invariants (no isolated mountains; forests never touch water).
+ */
+function generateTerrain(
+  allCoords: readonly HexCoord[],
+  radius: number,
+  rng: () => number,
+): Map<string, TerrainType> {
+  const onMapKeys = new Set(allCoords.map(hexKey))
+
+  // 1. Two white-noise fields, consumed in a fixed order (deterministic).
+  const elev0  = new Map<string, number>()
+  for (const c of allCoords) elev0.set(hexKey(c), rng())
+  const moist0 = new Map<string, number>()
+  for (const c of allCoords) moist0.set(hexKey(c), rng())
+
+  // 2. Smooth → spatial coherence, then normalize so thresholds are robust.
+  const elev  = normalize01(smoothField(elev0,  onMapKeys, SMOOTH_PASSES))
+  const moist = normalize01(smoothField(moist0, onMapKeys, SMOOTH_PASSES))
+
+  // 3 + 4. Coast falloff folded into elevation, then the decision table.
+  const center: HexCoord = { q: 0, r: 0 }
+  const terrain = new Map<string, TerrainType>()
+  for (const c of allCoords) {
+    const key = hexKey(c)
+    const edgeFactor = radius > 0 ? hexDistance(c, center) / radius : 0
+    const elevation = elev.get(key)! * (1 - COAST_WEIGHT) + (1 - edgeFactor) * COAST_WEIGHT
+    terrain.set(key, classifyTerrain(elevation, moist.get(key)!))
+  }
+
+  // 5a. No isolated mountains: any Mountain without a Mountain/Hills neighbor is
+  //     demoted to Hills. Snapshot-based — demoting to Hills still satisfies the
+  //     neighbor rule, so one pass is enough.
+  const snapshot = new Map(terrain)
+  for (const c of allCoords) {
+    const key = hexKey(c)
+    if (snapshot.get(key) !== TerrainType.Mountain) continue
+    const hasHighNeighbor = hexNeighbors(c).some(n => {
+      const t = snapshot.get(hexKey(n))
+      return t === TerrainType.Mountain || t === TerrainType.Hills
+    })
+    if (!hasHighNeighbor) terrain.set(key, TerrainType.Hills)
+  }
+
+  // 5b. Forests never border water directly.
+  const snapshot2 = new Map(terrain)
+  for (const c of allCoords) {
+    const key = hexKey(c)
+    if (snapshot2.get(key) !== TerrainType.Forest) continue
+    const touchesWater = hexNeighbors(c).some(n => snapshot2.get(hexKey(n)) === TerrainType.Water)
+    if (touchesWater) terrain.set(key, TerrainType.Plains)
+  }
+
+  return terrain
 }
 
 // ─── Start position placement ─────────────────────────────────────────────────
@@ -175,9 +294,10 @@ export function generateMap(
 ): GameMap {
   const rng = createRng(seed)
   const allCoords = hexesInRadius({ q: 0, r: 0 }, radius)
+  const terrain = generateTerrain(allCoords, radius, rng)
   const tiles: HexTile[] = allCoords.map(coord => ({
     coord,
-    terrainType: pickTerrain(rng),
+    terrainType: terrain.get(hexKey(coord))!,
   }))
 
   return {

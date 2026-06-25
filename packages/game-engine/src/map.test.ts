@@ -199,6 +199,56 @@ describe('generateMap', () => {
   })
 })
 
+// ─── Suite 2c: terrain coherence ──────────────────────────────────────────────
+
+describe('generateMap — coerência de biomas', () => {
+  const center: HexCoord = { q: 0, r: 0 }
+
+  it('água concentrada nas bordas (anel externo >> miolo)', () => {
+    const R = 7
+    const map = generateMap(R, 'biome-coast', 2)
+    let outerWater = 0, outerTotal = 0, innerWater = 0, innerTotal = 0
+    for (const tile of map.tiles) {
+      const d = hexDistance(tile.coord, center)
+      const isWater = tile.terrainType === TerrainType.Water
+      if (d >= 0.8 * R) { outerTotal++; if (isWater) outerWater++ }
+      else if (d <= 0.5 * R) { innerTotal++; if (isWater) innerWater++ }
+    }
+    const outerRatio = outerWater / outerTotal
+    const innerRatio = innerWater / innerTotal
+    expect(outerRatio).toBeGreaterThan(innerRatio)
+    expect(innerRatio).toBeLessThan(0.15)
+  })
+
+  it('sem Mountain isolada (todo pico tem vizinho Mountain ou Hills)', () => {
+    const map = generateMap(7, 'biome-mountains', 2)
+    const byKey = new Map(map.tiles.map(t => [hexKey(t.coord), t.terrainType]))
+    const onMap = new Set(byKey.keys())
+    for (const tile of map.tiles) {
+      if (tile.terrainType !== TerrainType.Mountain) continue
+      const ok = hexNeighbors(tile.coord).some(n => {
+        const k = hexKey(n)
+        if (!onMap.has(k)) return false
+        const t = byKey.get(k)
+        return t === TerrainType.Mountain || t === TerrainType.Hills
+      })
+      expect(ok, `Mountain isolada em ${hexKey(tile.coord)}`).toBe(true)
+    }
+  })
+
+  it('floresta nunca adjacente a água', () => {
+    const map = generateMap(7, 'biome-forest', 2)
+    const byKey = new Map(map.tiles.map(t => [hexKey(t.coord), t.terrainType]))
+    for (const tile of map.tiles) {
+      if (tile.terrainType !== TerrainType.Forest) continue
+      const touchesWater = hexNeighbors(tile.coord).some(
+        n => byKey.get(hexKey(n)) === TerrainType.Water,
+      )
+      expect(touchesWater, `Forest encostando água em ${hexKey(tile.coord)}`).toBe(false)
+    }
+  })
+})
+
 // ─── Suite 2b: MAP_SIZES ─────────────────────────────────────────────────────
 
 describe('MAP_SIZES', () => {

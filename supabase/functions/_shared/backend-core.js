@@ -139,19 +139,93 @@ function hexesInRadius(center, radius) {
   }
   return results;
 }
-var TERRAIN_THRESHOLDS = [
-  ["plains" /* Plains */, 0.4],
-  ["forest" /* Forest */, 0.65],
-  ["hills" /* Hills */, 0.8],
-  ["mountain" /* Mountain */, 0.92],
-  ["water" /* Water */, 1]
-];
-function pickTerrain(rng) {
-  const roll = rng();
-  for (const [type, threshold] of TERRAIN_THRESHOLDS) {
-    if (roll < threshold) return type;
+var SMOOTH_PASSES = 2;
+var COAST_WEIGHT = 0.55;
+var WATER_LEVEL = 0.3;
+var MOUNTAIN_LEVEL = 0.72;
+var HILLS_LEVEL = 0.6;
+var FOREST_MOISTURE = 0.55;
+function smoothField(values, onMapKeys, passes) {
+  let field = new Map(values);
+  for (let p = 0; p < passes; p++) {
+    const next = /* @__PURE__ */ new Map();
+    for (const [key, coord] of keyedCoords(field)) {
+      let sum = field.get(key);
+      let count = 1;
+      for (const n of hexNeighbors(coord)) {
+        const nk = hexKey(n);
+        if (onMapKeys.has(nk)) {
+          sum += field.get(nk);
+          count++;
+        }
+      }
+      next.set(key, sum / count);
+    }
+    field = next;
   }
-  return "water" /* Water */;
+  return field;
+}
+function keyedCoords(field) {
+  return Array.from(field.keys()).map((key) => {
+    const [q, r] = key.split(",").map(Number);
+    return [key, { q, r }];
+  });
+}
+function normalize01(values) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const v of values.values()) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const span = max - min;
+  const out = /* @__PURE__ */ new Map();
+  for (const [key, v] of values) {
+    out.set(key, span > 1e-9 ? (v - min) / span : 0.5);
+  }
+  return out;
+}
+function classifyTerrain(elevation, moisture) {
+  if (elevation < WATER_LEVEL) return "water" /* Water */;
+  if (elevation > MOUNTAIN_LEVEL) return "mountain" /* Mountain */;
+  if (elevation > HILLS_LEVEL) return "hills" /* Hills */;
+  if (moisture > FOREST_MOISTURE) return "forest" /* Forest */;
+  return "plains" /* Plains */;
+}
+function generateTerrain(allCoords, radius, rng) {
+  const onMapKeys = new Set(allCoords.map(hexKey));
+  const elev0 = /* @__PURE__ */ new Map();
+  for (const c of allCoords) elev0.set(hexKey(c), rng());
+  const moist0 = /* @__PURE__ */ new Map();
+  for (const c of allCoords) moist0.set(hexKey(c), rng());
+  const elev = normalize01(smoothField(elev0, onMapKeys, SMOOTH_PASSES));
+  const moist = normalize01(smoothField(moist0, onMapKeys, SMOOTH_PASSES));
+  const center = { q: 0, r: 0 };
+  const terrain = /* @__PURE__ */ new Map();
+  for (const c of allCoords) {
+    const key = hexKey(c);
+    const edgeFactor = radius > 0 ? hexDistance(c, center) / radius : 0;
+    const elevation = elev.get(key) * (1 - COAST_WEIGHT) + (1 - edgeFactor) * COAST_WEIGHT;
+    terrain.set(key, classifyTerrain(elevation, moist.get(key)));
+  }
+  const snapshot = new Map(terrain);
+  for (const c of allCoords) {
+    const key = hexKey(c);
+    if (snapshot.get(key) !== "mountain" /* Mountain */) continue;
+    const hasHighNeighbor = hexNeighbors(c).some((n) => {
+      const t = snapshot.get(hexKey(n));
+      return t === "mountain" /* Mountain */ || t === "hills" /* Hills */;
+    });
+    if (!hasHighNeighbor) terrain.set(key, "hills" /* Hills */);
+  }
+  const snapshot2 = new Map(terrain);
+  for (const c of allCoords) {
+    const key = hexKey(c);
+    if (snapshot2.get(key) !== "forest" /* Forest */) continue;
+    const touchesWater = hexNeighbors(c).some((n) => snapshot2.get(hexKey(n)) === "water" /* Water */);
+    if (touchesWater) terrain.set(key, "plains" /* Plains */);
+  }
+  return terrain;
 }
 function findStartPositions(tiles, playerCount, mapRadius, rng) {
   const tileMap = /* @__PURE__ */ new Map();
@@ -196,9 +270,10 @@ var MAP_SIZES = { small: 5, medium: 7, large: 10 };
 function generateMap(radius, seed, playerCount) {
   const rng = createRng(seed);
   const allCoords = hexesInRadius({ q: 0, r: 0 }, radius);
+  const terrain = generateTerrain(allCoords, radius, rng);
   const tiles = allCoords.map((coord) => ({
     coord,
-    terrainType: pickTerrain(rng)
+    terrainType: terrain.get(hexKey(coord))
   }));
   return {
     tiles,
