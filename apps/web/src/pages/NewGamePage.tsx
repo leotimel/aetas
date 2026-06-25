@@ -51,6 +51,7 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
   const [difficulty,  setDifficulty]  = useState<Difficulty>('normal')
   const [seed,        setSeed]        = useState(() => crypto.randomUUID())
   const [creating,    setCreating]    = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -91,6 +92,7 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
 
   const handleCreate = async () => {
     setCreating(true)
+    setCreateError(null)
     const params: CreateGameParams = {
       seed,
       mapSize,
@@ -103,7 +105,10 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
     }
     const res = await createTestGame(params)
     setCreating(false)
-    if (!res.ok || !res.data) return
+    if (!res.ok || !res.data) {
+      setCreateError(res.error ?? 'Erro desconhecido ao criar partida')
+      return
+    }
     if (res.data.status === 'lobby') {
       onLobby(res.data.gameId)
     } else {
@@ -341,6 +346,9 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
       {/* ── Footer fixo ──────────────────────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 bg-aetas-bg border-t border-aetas-border px-4 py-4">
         <div className="max-w-lg mx-auto">
+          {createError && (
+            <p className="text-red-400 text-xs text-center mb-2 font-mono">{createError}</p>
+          )}
           <button
             onClick={() => void handleCreate()}
             disabled={creating}

@@ -50,13 +50,15 @@ export default function ActionSheet({
   const { combatDisputes, units, players } = gameState
   const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : undefined
 
-  const isFoundCityValid = !!selectedUnit?.canFoundCity &&
-    selectedUnit.ownerId === myEnginePlayerId &&
-    (() => {
-      const tile = gameState.map.tiles.find(t => hexKey(t.coord) === hexKey(selectedUnit.position))
-      if (!tile || tile.terrainType === 'water') return false
-      return !gameState.cities.some(c => hexDistance(c.position, selectedUnit.position) <= 1)
-    })()
+  const foundCityInvalidReason = (() => {
+    if (!selectedUnit?.canFoundCity || selectedUnit.ownerId !== myEnginePlayerId) return null
+    const tile = gameState.map.tiles.find(t => hexKey(t.coord) === hexKey(selectedUnit.position))
+    if (!tile || tile.terrainType === 'water') return 'terreno de água'
+    if (gameState.cities.some(c => hexDistance(c.position, selectedUnit.position) <= 1))
+      return 'muito perto de uma cidade (mova 2+ tiles)'
+    return null
+  })()
+  const isFoundCityValid = foundCityInvalidReason === null && !!selectedUnit?.canFoundCity && selectedUnit.ownerId === myEnginePlayerId
   const myPendingDisputes = combatDisputes.filter(
     d => d.status === CombatDisputeStatus.Pending &&
       (d.attackerPlayerId === myEnginePlayerId || d.defenderPlayerId === myEnginePlayerId),
@@ -122,6 +124,7 @@ export default function ActionSheet({
                 onResolveDispute={onResolveDispute}
                 onInitiateCombat={onInitiateCombat}
                 isFoundCityValid={isFoundCityValid}
+                foundCityInvalidReason={foundCityInvalidReason}
                 onFoundCity={onFoundCity}
                 onAttackCity={onAttackCity}
                 diplomacyHandlers={diplomacyHandlers}
@@ -158,6 +161,9 @@ export default function ActionSheet({
             log={log}
             onResolveDispute={onResolveDispute}
             onInitiateCombat={onInitiateCombat}
+            isFoundCityValid={isFoundCityValid}
+            foundCityInvalidReason={foundCityInvalidReason}
+            onFoundCity={onFoundCity}
             onAttackCity={onAttackCity}
             diplomacyHandlers={diplomacyHandlers}
           />
@@ -176,7 +182,7 @@ function formatCountdown(expiresAt: number, now: number): string {
 
 function ExpandedContent({
   selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, gameState, players, units, cities, log,
-  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity, diplomacyHandlers,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, foundCityInvalidReason, onFoundCity, onAttackCity, diplomacyHandlers,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
@@ -190,6 +196,7 @@ function ExpandedContent({
   onResolveDispute: (id: string) => void
   onInitiateCombat?: (atk: string, def: string) => void
   isFoundCityValid?: boolean
+  foundCityInvalidReason?: string | null
   onFoundCity?: (unitId: string) => void
   onAttackCity?: (unitId: string, cityId: string) => void
   diplomacyHandlers: DiplomacyHandlers
@@ -282,7 +289,7 @@ function ExpandedContent({
                   : 'bg-aetas-bg text-aetas-dim cursor-not-allowed'
               }`}
             >
-              🏛 Fundar Cidade{!isFoundCityValid ? ' (inválido)' : ''}
+              🏛 Fundar Cidade{foundCityInvalidReason ? ` — ${foundCityInvalidReason}` : ''}
             </button>
           )}
         </div>
