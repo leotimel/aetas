@@ -153,18 +153,25 @@ function pickTerrain(rng) {
   }
   return "water" /* Water */;
 }
-function findStartPositions(tiles, playerCount, mapRadius) {
+function findStartPositions(tiles, playerCount, mapRadius, rng) {
   const tileMap = /* @__PURE__ */ new Map();
   for (const tile of tiles) tileMap.set(hexKey(tile.coord), tile);
   const isValid = (coord) => {
     const tile = tileMap.get(hexKey(coord));
     return tile !== void 0 && tile.terrainType !== "water" /* Water */ && tile.terrainType !== "mountain" /* Mountain */;
   };
+  const slots = Array.from({ length: playerCount }, (_, i) => i);
+  for (let i = slots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
   const ringRadius = Math.round(mapRadius * 0.7);
   const taken = /* @__PURE__ */ new Set();
   const positions = [];
   for (let i = 0; i < playerCount; i++) {
-    const angle = 2 * Math.PI * i / playerCount;
+    const slotAngle = 2 * Math.PI * slots[i] / playerCount;
+    const jitter = (rng() - 0.5) * Math.PI / playerCount;
+    const angle = slotAngle + jitter;
     const candidate = {
       q: Math.round(ringRadius * Math.cos(angle)),
       r: Math.round(ringRadius * Math.sin(angle))
@@ -185,6 +192,7 @@ function findStartPositions(tiles, playerCount, mapRadius) {
   }
   return positions;
 }
+var MAP_SIZES = { small: 5, medium: 7, large: 10 };
 function generateMap(radius, seed, playerCount) {
   const rng = createRng(seed);
   const allCoords = hexesInRadius({ q: 0, r: 0 }, radius);
@@ -196,7 +204,7 @@ function generateMap(radius, seed, playerCount) {
     tiles,
     radius,
     seed,
-    startPositions: findStartPositions(tiles, playerCount, radius)
+    startPositions: findStartPositions(tiles, playerCount, radius, rng)
   };
 }
 var UNIT_VISION_RADIUS = 2;
@@ -247,7 +255,7 @@ var CATALOG_ENTRIES = [
     type: "barracks" /* Barracks */,
     name: "Quartel",
     specialization: "military" /* Military */,
-    productionCost: 30,
+    productionCost: 8,
     constructionTurns: 3,
     effect: { type: "productionMultiplier", value: 1.5 },
     description: "Aumenta a produ\xE7\xE3o da cidade em 50%. Treina unidades mais rapidamente."
@@ -256,7 +264,7 @@ var CATALOG_ENTRIES = [
     type: "wall" /* Wall */,
     name: "Muralha",
     specialization: "military" /* Military */,
-    productionCost: 40,
+    productionCost: 12,
     constructionTurns: 4,
     effect: { type: "cityDefenseBonus", value: 5 },
     description: "Concede +5 de defesa a todas as unidades dentro dos limites da cidade."
@@ -266,7 +274,7 @@ var CATALOG_ENTRIES = [
     type: "market" /* Market */,
     name: "Mercado",
     specialization: "commercial" /* Commercial */,
-    productionCost: 25,
+    productionCost: 10,
     constructionTurns: 2,
     effect: { type: "goldMultiplier", value: 1.5 },
     description: "Aumenta a produ\xE7\xE3o de ouro em 50%."
@@ -275,7 +283,7 @@ var CATALOG_ENTRIES = [
     type: "port" /* Port */,
     name: "Porto",
     specialization: "commercial" /* Commercial */,
-    productionCost: 35,
+    productionCost: 15,
     constructionTurns: 3,
     effect: { type: "foodMultiplier", value: 1.3 },
     description: "Rede de pesca costeira \u2014 aumenta a produ\xE7\xE3o de alimento em 30%."
@@ -285,7 +293,7 @@ var CATALOG_ENTRIES = [
     type: "library" /* Library */,
     name: "Biblioteca",
     specialization: "scientific" /* Scientific */,
-    productionCost: 30,
+    productionCost: 10,
     constructionTurns: 3,
     effect: { type: "eraProgressBonus", value: 1 },
     description: "Gera 1 ponto de pesquisa por turno, acelerando a progress\xE3o de era."
@@ -294,7 +302,7 @@ var CATALOG_ENTRIES = [
     type: "temple" /* Temple */,
     name: "Templo",
     specialization: "scientific" /* Scientific */,
-    productionCost: 35,
+    productionCost: 10,
     constructionTurns: 4,
     effect: { type: "scoreBonus", value: 10 },
     description: "Concede +10 pontos de pontua\xE7\xE3o cultural ao final da partida."
@@ -404,7 +412,38 @@ var SPECIALIZATION_MULTIPLIERS = {
     production: 0.9
   }
 };
-function computeCityProduction(city) {
+var TERRAIN_RESOURCE_BONUS = {
+  ["plains" /* Plains */]: { gold: 0, food: 2, production: 0 },
+  ["forest" /* Forest */]: { gold: 0, food: 0, production: 2 },
+  ["hills" /* Hills */]: { gold: 1, food: 0, production: 1 },
+  ["mountain" /* Mountain */]: { gold: 0, food: 0, production: 0 },
+  ["water" /* Water */]: { gold: 0, food: 0, production: 0 }
+};
+function computeCityTerritoryBonus(city, allCities, tiles, radius = 2) {
+  const tileByKey = /* @__PURE__ */ new Map();
+  for (const t of tiles) tileByKey.set(hexKey(t.coord), t);
+  const bonus = { gold: 0, food: 0, production: 0 };
+  for (const coord of hexesInRadius(city.position, radius)) {
+    const tile = tileByKey.get(hexKey(coord));
+    if (!tile) continue;
+    let owner = city;
+    for (const other of allCities) {
+      if (other.id === city.id) continue;
+      const dOther = hexDistance(other.position, coord);
+      const dOwner = hexDistance(owner.position, coord);
+      if (dOther < dOwner || dOther === dOwner && other.id < owner.id) {
+        owner = other;
+      }
+    }
+    if (owner.id !== city.id) continue;
+    const yld = TERRAIN_RESOURCE_BONUS[tile.terrainType];
+    bonus.gold += yld.gold;
+    bonus.food += yld.food;
+    bonus.production += yld.production;
+  }
+  return bonus;
+}
+function computeCityProduction(city, allCities = [], tiles = []) {
   if (city.population === 0) return { gold: 0, food: 0, production: 0 };
   const m = SPECIALIZATION_MULTIPLIERS[city.specialization];
   const lv = 1 + (city.level - 1) * LEVEL_BONUS_PER_LEVEL;
@@ -413,6 +452,12 @@ function computeCityProduction(city) {
     food: Math.round(city.population * BASE_FOOD_PER_POP * m.food * lv),
     production: Math.round(city.population * BASE_PRODUCTION_PER_POP * m.production * lv)
   };
+  if (tiles.length > 0) {
+    const terr = computeCityTerritoryBonus(city, allCities, tiles);
+    base.gold += terr.gold;
+    base.food += terr.food;
+    base.production += terr.production;
+  }
   return applyBuildingBonuses(city.buildings ?? [], base);
 }
 function growthThreshold(population) {
@@ -430,13 +475,13 @@ function applyGrowth(city, foodIncome) {
   }
   return { ...city, foodStored: newFoodStored };
 }
-function processTurnEconomy(cities, existingResources) {
+function processTurnEconomy(cities, existingResources, tiles = []) {
   let gold = existingResources.gold;
   let food = existingResources.food;
   let production = existingResources.production;
   const updatedCities = [];
   for (const city of cities) {
-    const produced = computeCityProduction(city);
+    const produced = computeCityProduction(city, cities, tiles);
     gold += produced.gold;
     food += produced.food;
     production += produced.production;
@@ -450,34 +495,48 @@ function processTurnEconomy(cities, existingResources) {
 }
 
 // ../game-engine/src/scoring.ts
+var TERRITORY_POINTS_PER_CITY = 10;
+var POPULATION_POINTS_PER_POP = 3;
+var DEVELOPMENT_POINTS_PER_LEVEL = 5;
+function computePlayerScore(playerId, cities) {
+  const owned = cities.filter((c) => c.ownerId === playerId);
+  const territory = owned.length * TERRITORY_POINTS_PER_CITY;
+  const population = owned.reduce((s, c) => s + c.population, 0) * POPULATION_POINTS_PER_POP;
+  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL;
+  return { playerId, territory, population, development, total: territory + population + development };
+}
 function scorePlayer(state, playerId) {
-  const owned = state.cities.filter((c) => c.ownerId === playerId);
-  const territory = owned.length * 3;
-  const population = owned.reduce((s, c) => s + c.population, 0);
-  const development = owned.reduce((s, c) => s + c.level + (c.buildings?.length ?? 0), 0);
-  return { territory, population, development, total: territory + population + development };
+  return computePlayerScore(playerId, state.cities);
 }
 function scoreAll(state) {
   return Object.fromEntries(
-    state.players.map((p) => [p.id, scorePlayer(state, p.id)])
+    state.players.map((p) => [p.id, computePlayerScore(p.id, state.cities)])
+  );
+}
+function rankPlayers(state) {
+  return state.players.filter((p) => !p.isEliminated).map((p) => computePlayerScore(p.id, state.cities)).sort(
+    (a, b) => b.total !== a.total ? b.total - a.total : a.playerId.localeCompare(b.playerId)
   );
 }
 function determineWinner(state) {
-  const active = state.players.filter((p) => !p.isEliminated);
-  let best = null;
-  let bestTotal = -Infinity;
-  let tie = false;
-  for (const p of active) {
-    const t = scorePlayer(state, p.id).total;
-    if (t > bestTotal) {
-      best = p.id;
-      bestTotal = t;
-      tie = false;
-    } else if (t === bestTotal) {
-      tie = true;
-    }
-  }
-  return tie ? null : best;
+  const ranked = rankPlayers(state);
+  if (ranked.length === 0) return null;
+  if (ranked.length >= 2 && ranked[0].total === ranked[1].total) return null;
+  return ranked[0].playerId;
+}
+function eliminatePlayersWithNoCities(state) {
+  const toEliminate = state.players.filter(
+    (p) => !p.isEliminated && !state.cities.some((c) => c.ownerId === p.id)
+  );
+  if (toEliminate.length === 0) return state;
+  const eliminatedIds = new Set(toEliminate.map((p) => p.id));
+  return {
+    ...state,
+    players: state.players.map(
+      (p) => eliminatedIds.has(p.id) ? { ...p, isEliminated: true } : p
+    ),
+    units: state.units.filter((u) => !eliminatedIds.has(u.ownerId))
+  };
 }
 
 // ../game-engine/src/units.ts
@@ -897,7 +956,7 @@ function endTurn(state, playerId, now, hooks = {}) {
   if (actor) {
     const actorCities = cities.filter((c) => c.ownerId === actorId);
     const preResources = { ...actor.resources };
-    const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources);
+    const { updatedCities, updatedResources } = processTurnEconomy(actorCities, actor.resources, state.map.tiles);
     const updatedById = new Map(updatedCities.map((c) => [c.id, c]));
     cities = cities.map((c) => updatedById.get(c.id) ?? c);
     const m = getCivEconomyMultipliers(actor.civilizationId);
@@ -953,6 +1012,16 @@ function endTurn(state, playerId, now, hooks = {}) {
   const nextCities = working.cities.map(
     (c) => c.ownerId === nextId ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 } : c
   );
+  let nextFogOfWar = working.fogOfWar;
+  if (nextId) {
+    const nextFogEntry = working.fogOfWar.find((f) => f.playerId === nextId);
+    if (nextFogEntry) {
+      const nextPlayerUnits = units.filter((u) => u.ownerId === nextId);
+      const nextPlayerCities = nextCities.filter((c) => c.ownerId === nextId);
+      const updatedFog = updateFogOfWar(nextFogEntry, nextPlayerUnits, nextPlayerCities, state.map.radius);
+      nextFogOfWar = working.fogOfWar.map((f) => f.playerId === nextId ? updatedFog : f);
+    }
+  }
   const eraIdx = ERA_ORDER2.indexOf(working.era);
   let nextEra = working.era;
   let nextEraProgress = working.eraProgress ?? 0;
@@ -975,6 +1044,7 @@ function endTurn(state, playerId, now, hooks = {}) {
       ...working,
       units,
       cities: nextCities,
+      fogOfWar: nextFogOfWar,
       era: nextEra,
       eraProgress: nextEraProgress,
       currentPlayerId: nextId ?? actorId,
@@ -1678,7 +1748,22 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       const units = state.units.map(
         (u) => u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u
       );
-      return { ok: true, state: { ...state, units } };
+      const movedState = { ...state, units };
+      const ownerId = unit.ownerId;
+      const fogEntry = movedState.fogOfWar.find((f) => f.playerId === ownerId);
+      if (fogEntry) {
+        const ownerUnits = movedState.units.filter((u) => u.ownerId === ownerId);
+        const ownerCities = movedState.cities.filter((c) => c.ownerId === ownerId);
+        const updatedFog = updateFogOfWar(fogEntry, ownerUnits, ownerCities, state.map.radius);
+        return {
+          ok: true,
+          state: {
+            ...movedState,
+            fogOfWar: movedState.fogOfWar.map((f) => f.playerId === ownerId ? updatedFog : f)
+          }
+        };
+      }
+      return { ok: true, state: movedState };
     }
     case "foundCity": {
       const unit = findUnit2(state, action.unitId);
@@ -1739,11 +1824,11 @@ function fromDiplomacy(res) {
 }
 
 // ../game-engine/src/ai.ts
-function isFavorableAttack(state, attacker, defender) {
+function isFavorableAttack(state, attacker, defender, hard = false) {
   const result = resolveCombat(attacker, defender, {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
-    defenderActiveDefense: true
+    defenderActiveDefense: !hard
   });
   return result.defenderDestroyed && !result.attackerDestroyed;
 }
@@ -1837,7 +1922,7 @@ function decideSubstituteTurn(state, playerId, now) {
   const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now);
   return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN];
 }
-function decideOpponentTurn(state, playerId, now) {
+function decideOpponentTurn(state, playerId, now, hard = false) {
   if (!canSubmitAction(state, playerId).valid) return [];
   const defensive = planDefensiveResponses(state, playerId, now);
   let s = defensive.state;
@@ -1853,7 +1938,7 @@ function decideOpponentTurn(state, playerId, now) {
         attackerUnitId: current.id,
         defenderUnitId: enemy.id
       };
-      if (isFavorableAttack(s, current, enemy) && validateAction(s, playerId, action, now).valid) {
+      if (isFavorableAttack(s, current, enemy, hard) && validateAction(s, playerId, action, now).valid) {
         actions.push(action);
         const applied = applyAction(s, playerId, action, now);
         if (applied.ok) s = applied.state;
@@ -1990,7 +2075,9 @@ async function sweepTimeouts(repo, params) {
   for (const { gameId } of await repo.findTimedOutTurns(now)) {
     const loaded = await repo.loadGame(gameId);
     if (!loaded || loaded.isFinished) continue;
-    const actions = decideSubstituteTurn(loaded.gameState, loaded.currentPlayerId, now);
+    const currentPlayer = loaded.gameState.players.find((p) => p.id === loaded.currentPlayerId);
+    const aiDifficulty = currentPlayer?.aiDifficulty;
+    const actions = aiDifficulty ? decideOpponentTurn(loaded.gameState, loaded.currentPlayerId, now, aiDifficulty === "hard") : decideSubstituteTurn(loaded.gameState, loaded.currentPlayerId, now);
     if (actions.length === 0) continue;
     const next = foldActions(loaded.gameState, loaded.currentPlayerId, actions, now);
     if (!next) continue;
@@ -2042,6 +2129,7 @@ export {
   COMBAT_TIMEOUT_MS,
   CitySpecialization,
   CombatDisputeStatus,
+  DEVELOPMENT_POINTS_PER_LEVEL,
   DiplomaticProposalStatus,
   ERA_ORDER_ARRAY,
   ERA_SCIENCE_THRESHOLDS_ARRAY,
@@ -2049,9 +2137,12 @@ export {
   FOOD_PER_POPULATION_GROWTH,
   LEVEL_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,
+  MAP_SIZES,
   MIN_DAMAGE,
+  POPULATION_POINTS_PER_POP,
   ResourceType,
   SPECIAL_UNIT_CATALOG,
+  TERRITORY_POINTS_PER_CITY,
   TURN_TIMEOUT_MS,
   TerrainType,
   TurnState,
@@ -2071,6 +2162,8 @@ export {
   canSubmitAction,
   canTrainUnit,
   computeCityProduction,
+  computeCityTerritoryBonus,
+  computePlayerScore,
   computeVisibleHexes,
   createCombatDispute,
   createUnitFromDef,
@@ -2080,6 +2173,7 @@ export {
   declareWar,
   determineWinner,
   diffDisputes,
+  eliminatePlayersWithNoCities,
   endTurn,
   generateMap,
   getBuildingDef,
@@ -2108,6 +2202,7 @@ export {
   proposeNonAggressionPact,
   proposePeace,
   proposeResourceTrade,
+  rankPlayers,
   relationBetween,
   resolveCombat,
   resolveDispute,
