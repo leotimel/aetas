@@ -5,9 +5,9 @@ decrescente travada na arquitetura: motor + backend → cliente de debug →
 web jogável → Android → iOS.
 Anexe `GAME_DESIGN.md` e `ARCHITECTURE.md` na primeira mensagem.
 
-**Estado atual (nesta revisão):** Fases 0–4 e 4.5 Blocos A/B completas. Motor, backend, debug-client e toda a web jogável implementados (design system, sprites, texturas, movimento, combate, diplomacia, eras, pontuação, fim de partida).
-O próximo bloco é o **Bloco B-Extra** — execute nesta ordem: BX4 → BX5 → BX1 → BX2 → BX3 → BX6. Precedido de 🛑 CHECKPOINT DE JOGABILIDADE com 2 contas reais.
-Só após BX6 (deploy Vercel) e o Bloco C seguir para Android (Fase 5).
+**Estado atual (nesta revisão):** Fases 0–4 e 4.5 Blocos A/B/B-Extra/FX completas (código). Motor, backend, debug-client e toda a web jogável implementados (design system, sprites, texturas, movimento, combate, diplomacia, eras, pontuação, fim de partida), deploy Vercel ativo.
+**Bloqueio atual:** validação em produção achou que FX1–FX4 não estão no servidor (Edge Functions não redeployadas) e que partidas com N IAs criam só 2 jogadores. O próximo bloco é o **Bloco GX** (jogabilidade mínima viável) — execute GX1 → GX2 → GX3 → GX4. GX1 (deploy + nº de jogadores) é o destravamento que resolve fog/custos/posições de uma vez.
+Só após o 🛑 CHECKPOINT GX seguir para o Bloco C → Android (Fase 5).
 
 ## Como usar este playbook
 
@@ -650,6 +650,312 @@ Adicione testes de território:
 4. Crie uma partida com cidade perto de tiles Forest. Após 3 turnos (sem gastar
    produção), deve ter produção suficiente para construir um edifício (≥8–10⚙).
 Se todos os 4 passarem, o Bloco C pode ser iniciado.
+
+---
+
+### Bloco GX — Jogabilidade mínima viável (gameplay fixes pós-validação)
+
+> **Contexto:** validação em produção revelou que FX1–FX4 foram commitados mas as
+> Edge Functions do Supabase **não foram redeployadas** — logo fog, posições de
+> início e custos de edifício continuam usando o código antigo no servidor. Além
+> disso, partidas criadas com N adversários IA só geram 2 jogadores, e as posições
+> de tropa/cidade nunca variam. O mapa é ruído branco (areia ao lado de mar ao
+> lado de montanha) e visualmente pouco atraente.
+> **Prioridade:** fog + cidade primeiro (loop de turno), depois IA/nº de jogadores,
+> depois mapa (lógica → visual).
+
+**4.5.GX1 — Deploy das Edge Functions + nº de jogadores correto** · Sonnet
+```
+A maioria dos bugs de fog/custo/posição é porque as Edge Functions do Supabase
+nunca foram redeployadas após FX1–FX4. Resolva isso primeiro.
+
+1. Deploye TODAS as Edge Functions:
+     supabase functions deploy --all
+   (ativa no servidor: FX1 posições por seed, FX2 fog dinâmico, FX3 MAP_SIZES,
+   FX4 custos de edifício e bordas de cidade)
+
+2. BUG "vejo só eu + 1 adversário + posições sempre iguais":
+   - Em `apps/web/src/pages/NewGamePage.tsx`, localize onde o número de
+     adversários é convertido em `playerCount` no payload de create-game.
+     Confirme: "2 adversários IA" deve enviar playerCount=3 (você + 2).
+   - Em `supabase/functions/create-game/index.ts`, confirme que `playerCount`
+     vem do body e é usado TANTO em `generateMap(radius, seed, playerCount)`
+     QUANTO no loop que cria a lista `players`. Se algo estiver fixo em 2,
+     corrija.
+   - Posições iguais: como FX1 só roda no servidor após o deploy do passo 1,
+     valide que após o deploy seeds diferentes geram startPositions diferentes.
+     Se ainda repetir, verifique se o `seed` enviado pela NewGamePage não está
+     fixo/constante.
+
+3. Oponentes IA não jogam: confirme se existe um cron job chamando
+   `sweepTimeouts` (ver `supabase/functions/`). Se não existir agendamento,
+   documente o passo manual de criar o schedule no painel do Supabase
+   (pg_cron ou Scheduled Functions), pois sem ele os turnos de IA nunca avançam.
+
+Teste: criar partida com 3 adversários IA → header mostra 4 jogadores.
+Teste: 2 partidas com seeds diferentes → posições de tropa/cidade variam.
+```
+✅ **Commit:** "fix: deploy FX1-FX4 nas Edge Functions + playerCount correto".
+
+**4.5.GX2 — Validar e corrigir fog + ações de cidade pós-deploy** · Sonnet
+```
+Após GX1, valide cada comportamento e corrija o que ainda falhar:
+
+a) FOG ao mover: mova uma unidade para longe → o fog deve revelar hexes ao
+   redor da nova posição E manter os anteriores em exploredHexes. Se não,
+   verifique se `fogOfWar` é realmente persistido em `applyTurn`
+   (orchestration.ts → repository → coluna do banco). É possível que o
+   campo fogOfWar não esteja na projeção salva/lida do gameState.
+
+b) COLONO/fundação: confirme que `foundCity` funciona ponta-a-ponta
+   (selecionar Colono → "Fundar Cidade" → cidade aparece). Trace o handler
+   em GameView.tsx se falhar.
+
+c) CONSTRUÇÃO: cidade Commercial com produção acumulada ≥ 10 → abrir
+   CityModal → construir Mercado. Se der "insufficient production", logue
+   produção atual vs. custo para diagnóstico.
+
+d) TREINO: cidade com produção ≥ custo da unidade → treinar. Confirme que
+   o `unitId` gerado é único (uuid).
+```
+✅ **Commit:** "fix: fog e ações de cidade validados/corrigidos pós-deploy".
+
+**4.5.GX3 — Mapa com biomas coerentes (noise por seed)** · **Opus** 🔴 🧠
+```
+Substitua a geração aleatória tile-a-tile de `pickTerrain` em
+`packages/game-engine/src/map.ts` por geração com coerência espacial.
+PLANEJE antes de codar.
+
+REQUISITOS:
+- Água concentrada nas bordas do mapa (anel externo), não no centro.
+- Montanhas em grupos compactos, nunca isoladas.
+- Planícies dominantes no interior, com transições suaves.
+- Florestas próximas a planícies; não ladear água diretamente.
+- Colinas fazem a transição entre Plains e Mountain.
+- Determinismo TOTAL por seed: mesmo seed → mesmo mapa. NÃO usar Math.random;
+  usar o mulberry32/createRng já existente em map.ts.
+- NÃO adicionar bibliotecas externas — implementar o noise com o RNG atual.
+
+ABORDAGEM SUGERIDA (dois passes de valor por hex):
+  1. Elevation: distância normalizada ao centro + ruído suave → define Water
+     (baixo/borda) e Mountain (alto, agrupado).
+  2. Moisture: segundo campo de ruído → Forest (úmido) vs Plains/Hills (seco).
+  Combine elevation×moisture numa tabela de decisão de 5 terrenos.
+
+Testes em map.test.ts:
+  - 'água concentrada nas bordas' (proporção de Water no anel externo >> centro)
+  - 'sem Mountain isolada' (todo hex Mountain tem ≥1 vizinho Mountain ou Hills)
+  - manter os testes existentes de determinismo por seed verdes.
+```
+✅ **Commit:** "feat: geração de mapa com biomas coerentes baseados em seed".
+
+**4.5.GX4 — Visual do mapa (gradientes, cores, ícones)** · Sonnet
+```
+Melhore a estética dos hexes em `apps/web/src/components/HexMap.tsx` e
+`apps/web/src/assets/terrain-patterns.tsx`.
+
+1. Gradiente sutil por terreno (radialGradient nos <defs>, claro no centro →
+   escuro nas bordas do hex).
+2. Cores base mais ricas:
+   Plains   → verde quente (#7a9e4e)
+   Forest   → verde escuro azulado (#1e4d2b)
+   Hills    → marrom arenoso (#8b6f47)
+   Mountain → cinza azulado + topo claro/neve (#6b7d8f)
+   Water    → azul mantendo a animação de onda existente
+3. Micro-ícone SVG por terreno (árvore p/ Forest, pico p/ Mountain),
+   camada leve e centralizada, no mesmo sistema de TerrainPatterns.
+4. Replicar a paleta nova em MapPreviewMini.tsx.
+5. Manter o contraste de fog (explored+dim vs. visível) claro.
+```
+✅ **Commit:** "feat: visual do mapa — gradientes, cores e ícones de terreno".
+
+🛑 **CHECKPOINT GX — valide antes do Bloco C:**
+1. Partida com 3 IAs → 4 jogadores no header; após timeout, a IA avança o turno.
+2. Mover tropa → fog abre os hexes ao redor da nova posição.
+3. Cidade com produção ≥ 10 → construir Mercado com sucesso.
+4. Treinar uma unidade a partir de uma cidade Military.
+5. Gerar 3 mapas → terrenos geograficamente coerentes (água nas bordas,
+   montanhas agrupadas), sem xadrez de areia+floresta+montanha.
+6. Mapa visualmente mais atraente que o atual.
+
+---
+
+### Bloco HX — HUD de recursos + fronteiras de território + responsividade
+
+> **Contexto:** três melhorias de jogabilidade identificadas pós-validação GX.
+> Execute HX1 → HX2 → HX3. Nenhum deles toca o engine ou o backend — são
+> mudanças de UI + API layer na web. Bloco C só começa após o CHECKPOINT HX.
+
+**4.5.HX1 — Resource HUD com income por turno** · Sonnet
+```
+Adicione uma faixa de recursos permanente em `apps/web/src/pages/GameView.tsx`,
+inserida entre o header e o PlayerBar (entre as linhas que renderizam o
+`<header>` e o `<PlayerBar>`).
+
+1. FAIXA DE RECURSOS
+   Crie um componente inline `ResourceBar` (ou um novo arquivo
+   `apps/web/src/components/ResourceBar.tsx`) que recebe:
+     - `resources: Resources` — totais acumulados do jogador
+     - `income: Resources` — ganho por turno
+
+   Layout: `flex items-center justify-center gap-4 px-3 py-1.5
+   bg-aetas-raised border-b border-aetas-border text-xs`.
+   Cada recurso: ícone + total em `text-aetas-text font-medium` +
+   income em `text-emerald-400` entre parênteses.
+   Ícones sugeridos: 🏅 ouro · 🌾 comida · ⚙ produção.
+   Exemplo de item: `🏅 <span>24</span> <span class="text-emerald-400">(+3)</span>`
+
+2. CALCULAR O INCOME POR TURNO NO CLIENTE
+   Em `GameView.tsx`, importe `computeCityProduction` de `@aetas/game-engine`.
+   Derive `income` com `useMemo`:
+   ```ts
+   const myIncome = useMemo((): Resources => {
+     if (!gameState) return { gold: 0, food: 0, production: 0 }
+     const myCities = gameState.cities.filter(c => c.ownerId === enginePlayerId)
+     return myCities.reduce(
+       (acc, city) => {
+         const p = computeCityProduction(city, gameState.cities, gameState.map.tiles)
+         return { gold: acc.gold + p.gold, food: acc.food + p.food, production: acc.production + p.production }
+       },
+       { gold: 0, food: 0, production: 0 },
+     )
+   }, [gameState, enginePlayerId])
+   ```
+
+3. PLAYER RESOURCES
+   `const myPlayer = gameState.players.find(p => p.id === enginePlayerId)`
+   Passe `myPlayer?.resources ?? { gold:0, food:0, production:0 }` como
+   `resources` e `myIncome` como `income` para o `ResourceBar`.
+
+4. NÃO quebre o layout existente: a faixa deve ser `flex-shrink-0` para não
+   comprimir o mapa. Em mobile (tela ≤ 375px) pode esconder o label de texto e
+   mostrar só ícone + número.
+```
+✅ **Commit:** "feat: HUD de recursos com income por turno".
+
+**4.5.HX2 — Fronteiras de território no mapa** · Sonnet 🧠
+```
+Renderize os territórios das civilizações como overlays translúcidos coloridos
+no mapa hex em `apps/web/src/components/HexMap.tsx`. PLANEJE antes de codar.
+
+LÓGICA DE TERRITÓRIO (client-side, sem importar economy.ts):
+Para cada tile visível, verificar se ele está dentro do raio 2 de alguma cidade
+e, se sim, pertence à cidade mais próxima. Em caso de empate de distância,
+a cidade com menor `id` (ordem lexicográfica) leva. Implementar como:
+
+```ts
+// Derive uma vez por render a partir de gameState
+const territoryMap = useMemo(() => {
+  const map = new Map<string, string>()  // hexKey → ownerId da cidade
+  for (const tile of gameState.map.tiles) {
+    const key = hexKey(tile.coord)
+    let best: { dist: number; cityId: string; ownerId: string } | null = null
+    for (const city of gameState.cities) {
+      const d = hexDistance(tile.coord, city.position)
+      if (d > 2) continue
+      if (!best || d < best.dist || (d === best.dist && city.id < best.cityId)) {
+        best = { dist: d, cityId: city.id, ownerId: city.ownerId }
+      }
+    }
+    if (best) map.set(key, best.ownerId)
+  }
+  return map
+}, [gameState.cities, gameState.map.tiles])
+```
+
+RENDERIZAÇÃO:
+No loop de tiles do SVG, após a polygon principal e antes dos overlays de
+seleção/ataque/movimento, adicione:
+```tsx
+{/* Territory overlay — only on currently visible tiles */}
+{isVisible && (() => {
+  const ownerId = territoryMap.get(key)
+  if (!ownerId) return null
+  const color = playerColorMap.get(ownerId) ?? '#888'
+  return (
+    <polygon
+      points={points}
+      fill={color}
+      fillOpacity={0.18}
+      stroke={color}
+      strokeWidth={0.4}
+      strokeOpacity={0.35}
+      pointerEvents="none"
+    />
+  )
+})()}
+```
+
+OBSERVAÇÕES:
+- `playerColorMap` já existe em HexMap (cor da civilização por playerId).
+- `hexDistance` e `hexKey` já são importados.
+- O `useMemo` deve depender de `gameState.cities` e `gameState.map.tiles` —
+  não do objeto `gameState` inteiro (evita re-render desnecessário).
+- O overlay deve ficar ABAIXO dos overlays de seleção/ataque/movimento (que
+  ficam acima dele na ordem de renderização SVG).
+- Tiles `!isVisible` (fog) NÃO recebem overlay — terreno em névoa não revela
+  quem controla o território.
+```
+✅ **Commit:** "feat: fronteiras de território visíveis no mapa".
+
+**4.5.HX3 — Eliminar roundtrip extra após ações** · Sonnet
+```
+Cada ação em `apps/web/src/pages/GameView.tsx` faz `submitAction` (que já
+retorna o GameState atualizado na resposta) e depois chama `fetchGame()`
+desnecessariamente — duplicando o delay. Corrija usando o estado retornado.
+
+1. VERIFICAR O TIPO DE submitAction
+   Em `apps/web/src/api.ts`, `submitAction` retorna `ApiResult<T>`. Verifique
+   se `T` inclui `state: GameState`. Se não incluir, adicione:
+   ```ts
+   export const submitAction = (gameId: string, action: GameAction) =>
+     post<{ state: GameState }>(PATH, { gameId, action })
+   ```
+   Importe `GameState` de `@aetas/game-engine` no api.ts se necessário.
+
+2. HELPER DE ATUALIZAÇÃO DE ESTADO
+   Em `GameView.tsx`, crie um helper que prioriza o estado retornado pela
+   Edge Function e só faz fetchGame como fallback:
+   ```ts
+   const applyOrFetch = useCallback((state?: GameState | null) => {
+     if (state) setGameState(state)
+     else void fetchGame()
+   }, [fetchGame])
+   ```
+
+3. SUBSTITUIR AS CHAMADAS
+   Para cada handler que faz `void fetchGame()` após `res.ok`:
+   ```ts
+   // Antes:
+   if (res.ok) void fetchGame()
+   // Depois:
+   if (res.ok) applyOrFetch(res.data?.state)
+   ```
+   Handlers afetados: handleMoveUnit, handleConstructBuilding, handleTrainUnit,
+   handleProposePact, handleBreakPact, handleProposePeace, handleAttackCity,
+   handleRespondDiplomacy, handleFoundCity (após setFoundingUnitId/setSelectedUnitId),
+   handleEndTurn (além do fetchGame existente).
+
+4. MANTER fetchGame() NOS SEGUINTES CASOS:
+   - Handlers de Realtime (.on 'turn_changed', 'dispute_resolved', 'game_over')
+   - `handleResolveDispute` (que usa `res.data.state` diretamente mas faz
+     fetchGame em caso de erro — manter esse fallback)
+   - O botão manual ↺ de refresh
+   - `useEffect` de carregamento inicial
+
+5. VERIFICAR pós-mudança: se uma ação de IA é disparada logo após endTurn
+   (sweepTimeouts roda dentro do submit-action), o state retornado pode já
+   incluir o turno da IA. Teste: jogue contra IA, termine seu turno — o HUD
+   e mapa devem atualizar sem precisar pressionar ↺.
+```
+✅ **Commit:** "perf: eliminar fetchGame redundante — usar estado retornado pela Edge Function".
+
+🛑 **CHECKPOINT HX — valide antes do Bloco C:**
+1. HUD de recursos aparece permanentemente entre o header e o PlayerBar.
+2. O income por turno (`+N`) bate com o que você acumula após terminar o turno.
+3. Ao explorar novos tiles, o overlay de território aparece na cor certa da civilização dona.
+4. Fronteiras NÃO aparecem em tiles com fog.
+5. Mover uma unidade → o mapa atualiza sem delay visível (sem o "piscar" do fetchGame extra).
 
 ---
 
