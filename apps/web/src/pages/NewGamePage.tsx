@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 import {
   CIVILIZATIONS,
@@ -23,21 +24,11 @@ interface Props {
   onLobby:        (gameId: string) => void
 }
 
-const MODE_LABELS: Record<GameMode, string>     = { solo: 'Solo vs IA', mixed: 'Misto', multiplayer: 'Multiplayer' }
-const SIZE_LABELS: Record<MapSize, string>       = { small: 'Pequeno', medium: 'Médio', large: 'Grande' }
-const SIZE_HINT:   Record<MapSize, string>       = { small: '~60 hexes · 15–20 min', medium: '~90 hexes · 25–35 min', large: '~170 hexes · 45–60 min' }
-const DIFF_LABELS: Record<Difficulty, string>   = { easy: 'Fácil', normal: 'Normal', hard: 'Difícil' }
-const DIFF_HINT:   Record<Difficulty, string>   = {
-  easy:   'IA defensiva, raramente ataca',
-  normal: 'IA equilibrada',
-  hard:   'IA agressiva, sem misericórdia',
-}
-const DUR_LABELS: Record<Duration, string> = { 10: 'Curta', 20: 'Média', 40: 'Longa' }
-const DUR_HINT:   Record<Duration, string> = { 10: '10 turnos', 20: '20 turnos', 40: '40 turnos' }
-
 const PLAYER_COUNTS = [2, 3, 4, 6, 8] as const
 
 export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: Props) {
+  const { t } = useTranslation()
+
   // Profile
   const [userXp,     setUserXp]     = useState(0)
   const [selectedCiv, setSelectedCiv] = useState('romans')
@@ -67,19 +58,18 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
     })()
   }, [userId])
 
-  // When mode changes, adjust humanSlots default
   const handleModeChange = (mode: GameMode) => {
     setGameMode(mode)
     if (mode === 'solo') setHumanSlots(1)
     else if (mode === 'multiplayer') setHumanSlots(playerCount)
-    else setHumanSlots(Math.max(1, Math.min(2, playerCount - 1))) // mixed default: 2 humans
+    else setHumanSlots(Math.max(1, Math.min(2, playerCount - 1)))
   }
 
   const handlePlayerCountChange = (n: number) => {
     setPlayerCount(n)
     if (gameMode === 'multiplayer') setHumanSlots(n)
     else if (gameMode === 'solo') setHumanSlots(1)
-    else setHumanSlots(h => Math.min(h, n - 1)) // keep humanSlots valid in mixed
+    else setHumanSlots(h => Math.min(h, n - 1))
   }
 
   const level = xpToLevel(userXp)
@@ -106,7 +96,7 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
     const res = await createTestGame(params)
     setCreating(false)
     if (!res.ok || !res.data) {
-      setCreateError(res.error ?? 'Erro desconhecido ao criar partida')
+      setCreateError(res.error ?? t('error.unknown'))
       return
     }
     if (res.data.status === 'lobby') {
@@ -114,6 +104,42 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
     } else {
       onGameCreated(res.data.gameId)
     }
+  }
+
+  const MODE_LABELS: Record<GameMode, string> = {
+    solo: t('newgame.solo'),
+    mixed: t('newgame.mixed'),
+    multiplayer: t('newgame.multiplayer'),
+  }
+  const SIZE_LABELS: Record<MapSize, string> = {
+    small: t('newgame.small'),
+    medium: t('newgame.medium'),
+    large: t('newgame.large'),
+  }
+  const SIZE_HINT: Record<MapSize, string> = {
+    small: t('newgame.smallHint'),
+    medium: t('newgame.mediumHint'),
+    large: t('newgame.largeHint'),
+  }
+  const DIFF_LABELS: Record<Difficulty, string> = {
+    easy: t('newgame.easy'),
+    normal: t('newgame.normal'),
+    hard: t('newgame.hard'),
+  }
+  const DIFF_HINT: Record<Difficulty, string> = {
+    easy: t('newgame.easyDesc'),
+    normal: t('newgame.normalDesc'),
+    hard: t('newgame.hardDesc'),
+  }
+  const DUR_LABELS: Record<Duration, string> = {
+    10: t('newgame.short'),
+    20: t('newgame.shortMedium'),
+    40: t('newgame.long'),
+  }
+  const DUR_HINT: Record<Duration, string> = {
+    10: t('newgame.turns10'),
+    20: t('newgame.turns20'),
+    40: t('newgame.turns40'),
   }
 
   return (
@@ -124,15 +150,15 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           onClick={onBack}
           className="text-aetas-muted hover:text-aetas-text transition-colors text-sm"
         >
-          ← Voltar
+          {t('ui.back')}
         </button>
-        <h1 className="font-display text-aetas-text font-semibold">Nova Partida</h1>
+        <h1 className="font-display text-aetas-text font-semibold">{t('newgame.title')}</h1>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-6 pb-32">
 
-        {/* ── Modo de jogo ─────────────────────────────────────────────── */}
-        <Section label="Modo de Jogo">
+        {/* ── Game Mode ─────────────────────────────────────────── */}
+        <Section label={t('newgame.mode')}>
           <div className="flex gap-2">
             {(['solo', 'mixed', 'multiplayer'] as GameMode[]).map(m => (
               <button
@@ -150,13 +176,13 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           </div>
           {gameMode === 'multiplayer' && (
             <p className="text-xs text-aetas-dim mt-2">
-              Você receberá um link de convite para compartilhar com os outros jogadores.
+              {t('newgame.multiDesc')}
             </p>
           )}
         </Section>
 
-        {/* ── Jogadores ────────────────────────────────────────────────── */}
-        <Section label={`Jogadores (${playerCount})`}>
+        {/* ── Players ───────────────────────────────────────────── */}
+        <Section label={t('newgame.players', { count: playerCount })}>
           <div className="flex gap-2">
             {PLAYER_COUNTS.map(n => (
               <button
@@ -176,7 +202,7 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           {/* Mixed: human slots sub-picker */}
           {gameMode === 'mixed' && playerCount > 1 && (
             <div className="mt-3 space-y-1.5">
-              <p className="text-xs text-aetas-dim">Vagas humanas (incluindo você)</p>
+              <p className="text-xs text-aetas-dim">{t('newgame.humanSlots')}</p>
               <div className="flex gap-2">
                 {Array.from({ length: playerCount - 1 }, (_, i) => i + 1).map(h => (
                   <button
@@ -198,16 +224,16 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           {/* Summary */}
           <div className="mt-3 flex gap-3 text-xs text-aetas-dim">
             <span className="text-aetas-muted font-medium">
-              {humanSlots} humano{humanSlots !== 1 ? 's' : ''}
+              {t('newgame.humanSummary', { count: humanSlots })}
             </span>
             {aiCount > 0 && (
-              <span>· {aiCount} IA{aiCount !== 1 ? 's' : ''}</span>
+              <span>{t('newgame.aiSummary', { count: aiCount })}</span>
             )}
           </div>
         </Section>
 
-        {/* ── Mapa ─────────────────────────────────────────────────────── */}
-        <Section label="Tamanho do Mapa">
+        {/* ── Map Size ──────────────────────────────────────────── */}
+        <Section label={t('newgame.mapSize')}>
           <div className="flex gap-2">
             {(Object.keys(MAP_SIZES) as MapSize[]).map(s => (
               <button
@@ -226,8 +252,8 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           </div>
         </Section>
 
-        {/* ── Duração ──────────────────────────────────────────────────── */}
-        <Section label="Duração">
+        {/* ── Duration ──────────────────────────────────────────── */}
+        <Section label={t('newgame.duration')}>
           <div className="flex gap-2">
             {([10, 20, 40] as Duration[]).map(d => (
               <button
@@ -246,9 +272,9 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           </div>
         </Section>
 
-        {/* ── Dificuldade da IA (oculto se apenas humanos) ─────────────── */}
+        {/* ── AI Difficulty (hidden if human-only) ───────────────── */}
         {aiCount > 0 && (
-          <Section label="Dificuldade da IA">
+          <Section label={t('newgame.aiDifficulty')}>
             <div className="flex gap-2">
               {(['easy', 'normal', 'hard'] as Difficulty[]).map(d => (
                 <button
@@ -268,8 +294,8 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           </Section>
         )}
 
-        {/* ── Sua Civilização ──────────────────────────────────────────── */}
-        <Section label="Sua Civilização">
+        {/* ── Your Civilization ─────────────────────────────────── */}
+        <Section label={t('newgame.yourCiv')}>
           <div className="grid grid-cols-2 gap-2.5">
             {CIVILIZATIONS.map(civ => {
               const unlocked = level >= civ.unlockLevel
@@ -307,7 +333,7 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
                       <p className="text-aetas-gold text-[10px] mt-0.5">★ {special.name}</p>
                     )}
                     {!unlocked && (
-                      <p className="text-aetas-dim text-[10px] mt-0.5">🔒 Nível {civ.unlockLevel}</p>
+                      <p className="text-aetas-dim text-[10px] mt-0.5">{t('profile.unlock', { n: civ.unlockLevel })}</p>
                     )}
                   </div>
                   {chosen && (
@@ -325,8 +351,8 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           </div>
         </Section>
 
-        {/* ── Prévia do Mapa ───────────────────────────────────────────── */}
-        <Section label="Prévia do Mapa">
+        {/* ── Map Preview ───────────────────────────────────────── */}
+        <Section label={t('newgame.mapPreview')}>
           <div className="flex flex-col items-center gap-3">
             <MapPreviewMini tiles={gameMap.tiles} radius={gameMap.radius} width={300} height={230} />
             <p className="text-[10px] text-aetas-dim font-mono truncate w-full text-center" title={seed}>
@@ -336,14 +362,14 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
               onClick={() => setSeed(crypto.randomUUID())}
               className="w-full py-2.5 rounded-xl border border-aetas-border text-aetas-muted text-sm font-medium hover:border-aetas-border-strong hover:text-aetas-text transition-all"
             >
-              🎲 Gerar Novo Mapa
+              {t('newgame.newMap')}
             </button>
           </div>
         </Section>
 
       </div>
 
-      {/* ── Footer fixo ──────────────────────────────────────────────── */}
+      {/* ── Fixed footer ──────────────────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 bg-aetas-bg border-t border-aetas-border px-4 py-4">
         <div className="max-w-lg mx-auto">
           {createError && (
@@ -358,8 +384,8 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
               <span className="w-4 h-4 rounded-full border-2 border-aetas-bg/50 border-t-aetas-bg animate-spin" />
             )}
             {gameMode === 'multiplayer' || (gameMode === 'mixed' && humanSlots > 1)
-              ? 'Criar e Compartilhar Link'
-              : 'Criar Partida'}
+              ? t('newgame.createShare')
+              : t('newgame.createGame')}
           </button>
         </div>
       </div>

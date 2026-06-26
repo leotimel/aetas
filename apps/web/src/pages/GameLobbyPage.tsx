@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 
 interface PlayerSlot {
@@ -19,6 +20,7 @@ interface Props {
 const INVITE_BASE = import.meta.env.VITE_APP_URL as string | undefined ?? 'https://playaetas.vercel.app'
 
 export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: Props) {
+  const { t } = useTranslation()
   const [slots,   setSlots]   = useState<PlayerSlot[]>([])
   const [copied,  setCopied]  = useState(false)
   const [loading, setLoading] = useState(true)
@@ -83,8 +85,6 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
   const allFilled   = filledCount === totalHuman && totalHuman > 0
 
   const handleFillWithAI = async () => {
-    // Fill all remaining open human slots with AI by calling a dedicated endpoint.
-    // For now we navigate directly — the edge function fills slots server-side.
     await supabase
       .from('games')
       .update({ status: 'active' })
@@ -100,16 +100,16 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
           onClick={onBack}
           className="text-aetas-muted hover:text-aetas-text transition-colors text-sm"
         >
-          ← Voltar
+          {t('ui.back')}
         </button>
-        <h1 className="font-display text-aetas-text font-semibold">Sala de Espera</h1>
+        <h1 className="font-display text-aetas-text font-semibold">{t('lobby.title')}</h1>
       </header>
 
       <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full space-y-6">
 
         {/* Game ID shorthand */}
         <div className="text-center">
-          <p className="text-aetas-dim text-xs uppercase tracking-wider mb-1">Código da partida</p>
+          <p className="text-aetas-dim text-xs uppercase tracking-wider mb-1">{t('lobby.gameCode')}</p>
           <p className="font-mono text-2xl font-bold text-aetas-gold tracking-widest">
             {gameId.slice(0, 8).toUpperCase()}
           </p>
@@ -117,7 +117,7 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
 
         {/* Invite link */}
         <div className="bg-aetas-surface border border-aetas-border rounded-xl p-4 space-y-3">
-          <p className="text-xs text-aetas-dim uppercase tracking-wider">Link de Convite</p>
+          <p className="text-xs text-aetas-dim uppercase tracking-wider">{t('lobby.inviteLink')}</p>
           <div className="flex gap-2">
             <input
               readOnly
@@ -132,18 +132,18 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
                   : 'bg-aetas-gold text-aetas-bg hover:brightness-110'
               }`}
             >
-              {copied ? '✓ Copiado' : 'Copiar'}
+              {copied ? t('lobby.copied') : t('lobby.copy')}
             </button>
           </div>
           <p className="text-xs text-aetas-dim">
-            Compartilhe este link com os outros jogadores. Cada um precisará ter uma conta.
+            {t('lobby.inviteDesc')}
           </p>
         </div>
 
         {/* Player slots */}
         <div className="space-y-2">
           <p className="border-l-2 border-aetas-gold pl-3 text-xs uppercase tracking-wider text-aetas-dim font-semibold mb-3">
-            Jogadores ({filledCount}/{totalHuman} prontos)
+            {t('lobby.players', { filled: filledCount, total: totalHuman })}
           </p>
 
           {loading ? (
@@ -173,15 +173,15 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
                       {isFilled ? (
                         <>
                           <p className="text-aetas-text text-sm font-medium">
-                            {isMe ? 'Você' : `Jogador ${i + 1}`}
-                            {isMe && <span className="ml-2 text-xs text-aetas-gold">(criador)</span>}
+                            {isMe ? t('lobby.you') : t('lobby.player', { n: i + 1 })}
+                            {isMe && <span className="ml-2 text-xs text-aetas-gold">{t('lobby.creator')}</span>}
                           </p>
-                          <p className="text-aetas-dim text-xs">Pronto ✓</p>
+                          <p className="text-aetas-dim text-xs">{t('lobby.ready')}</p>
                         </>
                       ) : (
                         <>
-                          <p className="text-aetas-dim text-sm">Aguardando…</p>
-                          <p className="text-aetas-dim text-xs">Vaga {i + 1} aberta</p>
+                          <p className="text-aetas-dim text-sm">{t('lobby.waiting')}</p>
+                          <p className="text-aetas-dim text-xs">{t('lobby.openSlot', { n: i + 1 })}</p>
                         </>
                       )}
                     </div>
@@ -201,8 +201,8 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
                     🤖
                   </div>
                   <div>
-                    <p className="text-aetas-muted text-sm">Oponente IA {i + 1}</p>
-                    <p className="text-aetas-dim text-xs">Pronto</p>
+                    <p className="text-aetas-muted text-sm">{t('lobby.aiOpponent', { n: i + 1 })}</p>
+                    <p className="text-aetas-dim text-xs">{t('lobby.aiReady')}</p>
                   </div>
                 </div>
               ))}
@@ -217,7 +217,7 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
               onClick={() => onGameReady(gameId)}
               className="w-full py-3 rounded-xl bg-aetas-gold text-aetas-bg font-bold text-sm hover:brightness-110 transition-all"
             >
-              Iniciar Partida →
+              {t('lobby.start')}
             </button>
           )}
           {!allFilled && (
@@ -225,7 +225,7 @@ export default function GameLobbyPage({ userId, gameId, onGameReady, onBack }: P
               onClick={() => void handleFillWithAI()}
               className="w-full py-3 rounded-xl border border-aetas-border text-aetas-muted text-sm font-medium hover:border-aetas-border-strong hover:text-aetas-text transition-all"
             >
-              Iniciar com IAs nas vagas abertas
+              {t('lobby.startWithAI')}
             </button>
           )}
         </div>

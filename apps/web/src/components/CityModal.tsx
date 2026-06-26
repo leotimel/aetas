@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
 import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS } from '@aetas/game-engine'
-import { ERA_ICONS, ERA_NAMES_PT, ERA_ORDER_UI } from './EraModal.tsx'
+import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
+import i18n from '../i18n.ts'
 
 const PLAYER_COLORS = [
   '#ef4444', '#3b82f6', '#22c55e', '#f59e0b',
@@ -18,16 +20,36 @@ const SPEC_ICON: Record<string, string> = {
   [CitySpecialization.Scientific]: '🔬',
 }
 
-const SPEC_LABEL: Record<string, string> = {
-  [CitySpecialization.Military]:   'Militar',
-  [CitySpecialization.Commercial]: 'Comercial',
-  [CitySpecialization.Scientific]: 'Científica',
+type SpecKey = 'city.spec.military' | 'city.spec.commercial' | 'city.spec.scientific'
+type SpecDescKey = 'city.spec.militaryDesc' | 'city.spec.commercialDesc' | 'city.spec.scientificDesc'
+
+const SPEC_LABEL_KEY: Record<string, SpecKey> = {
+  [CitySpecialization.Military]:   'city.spec.military',
+  [CitySpecialization.Commercial]: 'city.spec.commercial',
+  [CitySpecialization.Scientific]: 'city.spec.scientific',
 }
 
-const SPEC_DESC: Record<string, string> = {
-  [CitySpecialization.Military]:   '+Produção, +Ataque de unidades',
-  [CitySpecialization.Commercial]: '+Ouro, +Comércio',
-  [CitySpecialization.Scientific]: '+Crescimento de população, +Era',
+const SPEC_DESC_KEY: Record<string, SpecDescKey> = {
+  [CitySpecialization.Military]:   'city.spec.militaryDesc',
+  [CitySpecialization.Commercial]: 'city.spec.commercialDesc',
+  [CitySpecialization.Scientific]: 'city.spec.scientificDesc',
+}
+
+const ERA_NAME_KEY: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'> = {
+  [Era.Ancient]:   'era.ancient',
+  [Era.Classical]: 'era.classical',
+  [Era.Medieval]:  'era.medieval',
+}
+
+function effectLabel(effect: BuildingEffect): string {
+  switch (effect.type) {
+    case 'productionMultiplier': return i18n.t('building.productionMultiplier', { pct: Math.round((effect.value - 1) * 100) })
+    case 'goldMultiplier':       return i18n.t('building.goldMultiplier',       { pct: Math.round((effect.value - 1) * 100) })
+    case 'foodMultiplier':       return i18n.t('building.foodMultiplier',       { pct: Math.round((effect.value - 1) * 100) })
+    case 'cityDefenseBonus':     return i18n.t('building.cityDefenseBonus',     { value: effect.value })
+    case 'eraProgressBonus':     return i18n.t('building.eraProgressBonus',     { value: effect.value })
+    case 'scoreBonus':           return i18n.t('building.scoreBonus',           { value: effect.value })
+  }
 }
 
 interface Props {
@@ -40,6 +62,8 @@ interface Props {
 }
 
 export default function CityModal({ city, gameState, myEnginePlayerId, onClose, onTrainUnit, onConstructBuilding }: Props) {
+  const { t } = useTranslation()
+
   const isMyCity = city.ownerId === myEnginePlayerId
   const ownerIndex = gameState.players.findIndex(p => p.id === city.ownerId)
   const ownerPlayer = gameState.players.find(p => p.id === city.ownerId)
@@ -52,7 +76,6 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
     ? unitsForCiv(myPlayer.civilizationId, gameState.era)
     : []
 
-  // Units locked in the next era
   const eraIdx = ERA_ORDER_UI.indexOf(gameState.era)
   const nextEra = ERA_ORDER_UI[eraIdx + 1] as Era | undefined
   const currentTypes = new Set(available.map(u => u.type))
@@ -88,7 +111,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                 <h2 className="text-aetas-text font-bold text-base">{city.name}</h2>
                 <p className="text-aetas-dim text-xs">
                   {ownerCivName ?? ownerPlayer?.id.slice(0, 8) ?? '?'}
-                  {city.ownerId === myEnginePlayerId && ' (você)'}
+                  {city.ownerId === myEnginePlayerId && ` ${t('ui.you')}`}
                   {ownerPlayer?.isAIControlled && ' 🤖'}
                 </p>
               </div>
@@ -103,19 +126,19 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-2 mb-4">
-            <StatBox label="Nível" value={city.level} />
-            <StatBox label="População" value={city.population} />
-            <StatBox label="Comida" value={city.foodStored} />
+            <StatBox label={t('city.level')} value={city.level} />
+            <StatBox label={t('city.population')} value={city.population} />
+            <StatBox label={t('city.food')} value={city.foodStored} />
           </div>
 
           {/* My resources (only shown for my cities) */}
           {isMyCity && myResources && (
             <div className="bg-aetas-raised rounded-xl p-3 mb-4">
-              <p className="text-xs text-aetas-dim mb-2">Recursos do jogador</p>
+              <p className="text-xs text-aetas-dim mb-2">{t('city.playerResources')}</p>
               <div className="flex gap-4">
-                <ResourcePill icon="💰" label="Ouro" value={myResources.gold} />
-                <ResourcePill icon="🌾" label="Comida" value={myResources.food} />
-                <ResourcePill icon="⚙️" label="Produção" value={myResources.production} />
+                <ResourcePill icon="💰" label={t('city.gold')} value={myResources.gold} />
+                <ResourcePill icon="🌾" label={t('city.food')} value={myResources.food} />
+                <ResourcePill icon="⚙️" label={t('city.production')} value={myResources.production} />
               </div>
             </div>
           )}
@@ -123,15 +146,14 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
           {/* Specialization */}
           <div>
             <p className="text-xs text-aetas-dim mb-2">
-              Especialização atual: <span className="text-aetas-muted">{SPEC_ICON[city.specialization]} {SPEC_LABEL[city.specialization]}</span>
+              {t('city.specCurrent')} <span className="text-aetas-muted">{SPEC_ICON[city.specialization]} {t(SPEC_LABEL_KEY[city.specialization])}</span>
             </p>
-            <p className="text-xs text-aetas-dim mb-3">{SPEC_DESC[city.specialization]}</p>
-
+            <p className="text-xs text-aetas-dim mb-3">{t(SPEC_DESC_KEY[city.specialization])}</p>
           </div>
 
           {/* Buildings */}
           <div className="mt-4 border-t border-aetas-border pt-4">
-            <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-2">Construções</p>
+            <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-2">{t('city.buildings')}</p>
 
             {/* In-progress construction */}
             {constructing && (() => {
@@ -141,7 +163,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                 <div className="bg-aetas-raised/60 rounded-lg p-2.5 mb-2">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-aetas-text text-sm">🔨 {def.name}</span>
-                    <span className="text-amber-400 text-xs">{constructing.turnsRemaining} turno{constructing.turnsRemaining !== 1 ? 's' : ''}</span>
+                    <span className="text-amber-400 text-xs">{t('city.constructionRemaining', { turns: constructing.turnsRemaining })}</span>
                   </div>
                   <div className="h-1 bg-aetas-panel rounded-full overflow-hidden">
                     <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -184,7 +206,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                       disabled={!canAfford || constructing != null}
                       className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold/70 hover:bg-aetas-gold text-aetas-bg"
                     >
-                      Construir
+                      {t('city.buildBtn')}
                     </button>
                   </div>
                 )
@@ -192,7 +214,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             }
 
             {isMyCity && builtSet.size === buildingsForSpec.length && !constructing && (
-              <p className="text-xs text-aetas-dim">Todos os edifícios desta especialização já construídos.</p>
+              <p className="text-xs text-aetas-dim">{t('city.allBuilt')}</p>
             )}
           </div>
 
@@ -200,13 +222,13 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
           {isMyCity && onTrainUnit && (
             <div className="mt-4 border-t border-aetas-border pt-4">
               <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-2">
-                Produção <span className="normal-case text-aetas-dim font-sans">⚙ {myResources?.production ?? 0}</span>
+                {t('city.buildings')} <span className="normal-case text-aetas-dim font-sans">⚙ {myResources?.production ?? 0}</span>
               </p>
               {hexOccupied && (
-                <p className="text-xs text-amber-600 mb-2">Mova a unidade nessa cidade antes de treinar outra.</p>
+                <p className="text-xs text-amber-600 mb-2">{t('city.moveFirst')}</p>
               )}
               {available.length === 0
-                ? <p className="text-xs text-aetas-dim">Nenhuma unidade disponível nesta era.</p>
+                ? <p className="text-xs text-aetas-dim">{t('city.noUnits')}</p>
                 : available.map(def => {
                     const canAfford = (myResources?.production ?? 0) >= def.productionCost
                     return (
@@ -226,7 +248,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                           disabled={!canAfford || hexOccupied}
                           className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-amber-700/70 hover:bg-amber-600 text-white"
                         >
-                          Treinar
+                          {t('city.trainBtn')}
                         </button>
                       </div>
                     )
@@ -237,7 +259,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
               {lockedUnits.length > 0 && nextEra && (
                 <div className="mt-3 pt-2 border-t border-aetas-border">
                   <p className="text-[9px] text-aetas-dim uppercase tracking-wider mb-1.5">
-                    {ERA_ICONS[nextEra]} {ERA_NAMES_PT[nextEra]} — bloqueado
+                    {ERA_ICONS[nextEra]} {t(ERA_NAME_KEY[nextEra])} {t('era.locked')}
                   </p>
                   {lockedUnits.map(def => (
                     <div
@@ -251,7 +273,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                           ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp}
                         </span>
                       </div>
-                      <span className="text-[9px] text-aetas-dim whitespace-nowrap">Disponível na {ERA_NAMES_PT[nextEra]}</span>
+                      <span className="text-[9px] text-aetas-dim whitespace-nowrap">{t('city.availableIn', { era: t(ERA_NAME_KEY[nextEra]) })}</span>
                     </div>
                   ))}
                 </div>
@@ -262,17 +284,6 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
       </div>
     </>
   )
-}
-
-function effectLabel(effect: BuildingEffect): string {
-  switch (effect.type) {
-    case 'productionMultiplier': return `+${Math.round((effect.value - 1) * 100)}% produção`
-    case 'goldMultiplier':       return `+${Math.round((effect.value - 1) * 100)}% ouro`
-    case 'foodMultiplier':       return `+${Math.round((effect.value - 1) * 100)}% comida`
-    case 'cityDefenseBonus':     return `+${effect.value} defesa`
-    case 'eraProgressBonus':     return `+${effect.value} pesquisa/turno`
-    case 'scoreBonus':           return `+${effect.value} pts`
-  }
 }
 
 function StatBox({ label, value }: { label: string; value: number }) {

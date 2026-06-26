@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 import DailyCard from '../components/DailyCard.tsx'
 import MapPreviewMini from '../components/MapPreviewMini.tsx'
+import i18n from '../i18n.ts'
 import {
   CIVILIZATIONS,
   MAP_SIZES,
@@ -34,6 +36,7 @@ interface Props {
 }
 
 export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNewGame }: Props) {
+  const { t, i18n: i18nHook } = useTranslation()
   const [rows,         setRows]         = useState<GameRow[]>([])
   const [loading,      setLoading]      = useState(true)
   const [xp,           setXp]           = useState<number>(0)
@@ -73,6 +76,12 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
 
   const signOut = () => void supabase.auth.signOut()
 
+  const toggleLang = () => {
+    const next = i18nHook.language === 'en' ? 'pt' : 'en'
+    void i18nHook.changeLanguage(next)
+    localStorage.setItem('aetas-lang', next)
+  }
+
   return (
     <div className="min-h-screen bg-aetas-bg text-aetas-text">
       {/* Header */}
@@ -84,20 +93,21 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           </div>
           <div className="flex items-center gap-2">
             <button
-              disabled
-              className="opacity-40 cursor-not-allowed text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5"
-              title="Em breve — Bloco C1"
-            >EN | PT</button>
+              onClick={toggleLang}
+              className="text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5 hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
+            >
+              EN | PT
+            </button>
             <LevelBadge xp={xp} />
             <button
               onClick={() => void fetchGames()}
               className="p-2 rounded-lg text-aetas-dim hover:text-aetas-muted hover:bg-aetas-raised transition-colors"
-              title="Atualizar"
+              title={t('ui.refresh')}
             >↺</button>
             <button
               onClick={signOut}
               className="text-sm text-aetas-dim hover:text-red-400 transition-colors"
-            >Sair</button>
+            >{t('ui.logout')}</button>
           </div>
         </div>
         <XpMiniBar xp={xp} />
@@ -112,11 +122,11 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           </div>
         ) : (
           <>
-            {/* ── Minha Vez ── */}
-            <Section label="Minha Vez" count={myTurnGames.length}>
+            {/* ── My Turn ── */}
+            <Section label={t('list.myTurn')} count={myTurnGames.length}>
               {myTurnGames.length === 0 ? (
                 <p className="text-aetas-dim text-sm py-2">
-                  Nenhuma civilização aguarda sua decisão…
+                  {t('list.empty')}
                 </p>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -132,9 +142,9 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
               )}
             </Section>
 
-            {/* ── Aguardando adversário (oculto se vazio) ── */}
+            {/* ── Waiting for opponent (hidden if empty) ── */}
             {activeGames.length > 0 && (
-              <Section label="Aguardando adversário" count={activeGames.length} dim>
+              <Section label={t('list.waiting')} count={activeGames.length} dim>
                 <div className="flex flex-col gap-2">
                   {activeGames.map(row => (
                     <GameCard
@@ -148,7 +158,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
               </Section>
             )}
 
-            {/* ── Finalizadas (toggle) ── */}
+            {/* ── Finished (toggle) ── */}
             {finishedGames.length > 0 && (
               <div>
                 <button
@@ -156,8 +166,8 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                   className="text-xs text-aetas-dim hover:text-aetas-muted transition-colors"
                 >
                   {showFinished
-                    ? '↑ Ocultar finalizadas'
-                    : `Ver ${finishedGames.length} partidas finalizadas →`}
+                    ? t('list.hideFinished')
+                    : t('list.showFinished', { count: finishedGames.length })}
                 </button>
                 {showFinished && (
                   <div className="mt-3 flex flex-col gap-2">
@@ -183,7 +193,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           onClick={onNewGame}
           className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-aetas-gold text-aetas-bg font-bold text-sm shadow-lg shadow-black/40 hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
         >
-          + Nova Partida
+          {t('list.newGame')}
         </button>
       </div>
     </div>
@@ -193,11 +203,12 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function CivAvatar({ civId, onClick }: { civId: string; onClick: () => void }) {
+  const { t } = useTranslation()
   const civ = CIVILIZATIONS.find(c => c.id === civId)
   return (
     <button
       onClick={onClick}
-      title="Perfil"
+      title={t('profile.title')}
       className="w-8 h-8 rounded-full text-sm font-bold text-white flex items-center justify-center flex-shrink-0 transition-opacity hover:opacity-80"
       style={{ backgroundColor: civ?.color ?? '#92400e' }}
     >
@@ -228,6 +239,7 @@ function Section({ label, count, dim, children }: {
 }
 
 function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean; onEnter: () => void }) {
+  const { t } = useTranslation()
   const { games: g } = row
   const shortId    = row.game_id.slice(0, 8)
   const updatedAgo = relativeTime(g.updated_at)
@@ -276,12 +288,12 @@ function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean;
           </div>
 
           <div className="text-xs text-aetas-dim">
-            Turno {g.turn_number}/{g.max_turns}
+            {t('game.turnStatus', { n: g.turn_number, max: g.max_turns })}
             {g.is_finished && (
               iWon
-                ? <span className="ml-2 text-amber-400">🏆 Você venceu</span>
+                ? <span className="ml-2 text-amber-400">{t('list.youWon')}</span>
                 : g.winner_id
-                  ? <span className="ml-2"> · Derrota</span>
+                  ? <span className="ml-2">{t('list.defeat')}</span>
                   : null
             )}
           </div>
@@ -303,7 +315,7 @@ function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean;
                   : 'bg-aetas-raised text-aetas-muted hover:bg-aetas-panel'
               }`}
             >
-              {isMyTurn ? 'Jogar →' : 'Ver →'}
+              {isMyTurn ? t('list.play') : t('list.view')}
             </button>
           )}
         </div>
@@ -339,9 +351,9 @@ function XpMiniBar({ xp }: { xp: number }) {
 function relativeTime(iso: string): string {
   const diff = Date.now() - Date.parse(iso)
   const m = Math.floor(diff / 60_000)
-  if (m < 1) return 'agora mesmo'
-  if (m < 60) return `há ${m}min`
+  if (m < 1) return i18n.t('list.justNow')
+  if (m < 60) return i18n.t('list.minutesAgo', { m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `há ${h}h`
-  return `há ${Math.floor(h / 24)}d`
+  if (h < 24) return i18n.t('list.hoursAgo', { h })
+  return i18n.t('list.daysAgo', { d: Math.floor(h / 24) })
 }

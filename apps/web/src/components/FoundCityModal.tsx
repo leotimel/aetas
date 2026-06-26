@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CitySpecialization } from '@aetas/game-engine'
 
 const SPEC_ICON: Record<string, string> = {
@@ -7,19 +8,22 @@ const SPEC_ICON: Record<string, string> = {
   [CitySpecialization.Scientific]: '🔬',
 }
 
-const SPEC_LABEL: Record<string, string> = {
-  [CitySpecialization.Military]:   'Militar',
-  [CitySpecialization.Commercial]: 'Comercial',
-  [CitySpecialization.Scientific]: 'Científica',
-}
-
-const SPEC_DESC: Record<string, string> = {
-  [CitySpecialization.Military]:   '+Produção, +Ataque de unidades',
-  [CitySpecialization.Commercial]: '+Ouro, +Comércio',
-  [CitySpecialization.Scientific]: '+Crescimento de população, +Era',
-}
-
 const SPECS = [CitySpecialization.Military, CitySpecialization.Commercial, CitySpecialization.Scientific]
+
+type SpecKey = 'city.spec.military' | 'city.spec.commercial' | 'city.spec.scientific'
+type SpecDescKey = 'city.spec.militaryDesc' | 'city.spec.commercialDesc' | 'city.spec.scientificDesc'
+
+const SPEC_LABEL_KEY: Record<string, SpecKey> = {
+  [CitySpecialization.Military]:   'city.spec.military',
+  [CitySpecialization.Commercial]: 'city.spec.commercial',
+  [CitySpecialization.Scientific]: 'city.spec.scientific',
+}
+
+const SPEC_DESC_KEY: Record<string, SpecDescKey> = {
+  [CitySpecialization.Military]:   'city.spec.militaryDesc',
+  [CitySpecialization.Commercial]: 'city.spec.commercialDesc',
+  [CitySpecialization.Scientific]: 'city.spec.scientificDesc',
+}
 
 interface Props {
   onConfirm: (specialization: CitySpecialization) => void
@@ -28,6 +32,7 @@ interface Props {
 }
 
 export default function FoundCityModal({ onConfirm, onCancel, isLoading }: Props) {
+  const { t } = useTranslation()
   const [spec, setSpec] = useState<CitySpecialization | null>(null)
 
   return (
@@ -36,8 +41,8 @@ export default function FoundCityModal({ onConfirm, onCancel, isLoading }: Props
 
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-80">
         <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60 p-5">
-          <h2 className="font-display text-aetas-text text-base font-bold mb-1">Fundar Cidade</h2>
-          <p className="text-aetas-dim text-xs mb-4">O Colono será consumido. Escolha a especialização:</p>
+          <h2 className="font-display text-aetas-text text-base font-bold mb-1">{t('city.foundTitle')}</h2>
+          <p className="text-aetas-dim text-xs mb-4">{t('city.foundDesc')}</p>
 
           <div className="flex flex-col gap-2 mb-5">
             {SPECS.map(s => (
@@ -53,9 +58,9 @@ export default function FoundCityModal({ onConfirm, onCancel, isLoading }: Props
                 <span className="text-xl leading-none">{SPEC_ICON[s]}</span>
                 <div>
                   <p className={`text-sm font-medium ${spec === s ? 'text-aetas-gold' : 'text-aetas-text'}`}>
-                    {SPEC_LABEL[s]}
+                    {t(SPEC_LABEL_KEY[s])}
                   </p>
-                  <p className="text-aetas-dim text-xs">{SPEC_DESC[s]}</p>
+                  <p className="text-aetas-dim text-xs">{t(SPEC_DESC_KEY[s])}</p>
                 </div>
               </button>
             ))}
@@ -66,7 +71,7 @@ export default function FoundCityModal({ onConfirm, onCancel, isLoading }: Props
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-xl border border-aetas-border text-aetas-muted text-sm hover:bg-aetas-raised transition-colors"
             >
-              Cancelar
+              {t('ui.cancel')}
             </button>
             <button
               onClick={() => spec && onConfirm(spec)}
@@ -75,7 +80,7 @@ export default function FoundCityModal({ onConfirm, onCancel, isLoading }: Props
                          disabled:opacity-40 disabled:cursor-not-allowed
                          hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
             >
-              {isLoading ? 'Fundando…' : 'Confirmar'}
+              {isLoading ? t('city.founding') : t('ui.confirm')}
             </button>
           </div>
         </div>

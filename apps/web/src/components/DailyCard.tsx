@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { rankPlayers } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
@@ -18,7 +19,38 @@ interface Props {
   onEnterGame: (gameId: string) => void
 }
 
+function formatDateLabel(iso: string, lang: string): string {
+  return new Intl.DateTimeFormat(lang === 'pt' ? 'pt-BR' : 'en-US', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  }).format(new Date(iso + 'T12:00:00Z'))
+}
+
+function buildShareText(
+  today: string,
+  daily: DailyGame,
+  score: ReturnType<typeof rankPlayers>[0],
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  lang: string,
+): string {
+  const label = formatDateLabel(today, lang)
+  const isWon = daily.winnerId === daily.enginePlayerId
+  const result = isWon ? t('daily.resultWon') : daily.winnerId ? t('daily.resultLost') : t('daily.resultDraw')
+  const turnStatus = t('game.turnStatus', { n: daily.turnNumber, max: daily.maxTurns })
+  const lines = [
+    `Aetas Daily — ${label}`,
+    `${result} | ${score.total} pts`,
+    `🏙️ ${score.territory}  👥 ${score.population}  🔬 ${score.development}`,
+    `(${turnStatus})`,
+  ]
+  return lines.join('\n')
+}
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export default function DailyCard({ userId, onEnterGame }: Props) {
+  const { t, i18n } = useTranslation()
   const today = todayUTC()
   const [daily, setDaily] = useState<DailyGame | null | 'none'>('none')
   const [finalScore, setFinalScore] = useState<ReturnType<typeof rankPlayers>[0] | null>(null)
@@ -99,7 +131,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
   const handleShare = () => {
     if (!daily || daily === 'none' || !finalScore) return
-    const text = buildShareText(today, daily, finalScore)
+    const text = buildShareText(today, daily, finalScore, t as (key: string, opts?: Record<string, unknown>) => string, i18n.language)
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -119,6 +151,11 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   const isWon = !!daily && daily.isFinished && daily.winnerId === daily.enginePlayerId
   const isLost = !!daily && daily.isFinished && daily.winnerId !== daily.enginePlayerId
 
+  const statusLabel = !daily ? null
+    : daily.isFinished
+      ? isWon ? t('daily.victory') : isLost ? t('daily.defeat') : t('daily.draw')
+      : t('game.turnStatus', { n: daily.turnNumber, max: daily.maxTurns })
+
   return (
     <div className={`min-h-28 border rounded-2xl p-4 mb-4 ${
       !daily ? 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
@@ -133,14 +170,14 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg">{daily && daily.isFinished ? (isWon ? '🏆' : '🎮') : '🗓️'}</span>
-            <h2 className="text-aetas-text font-semibold text-sm">Desafio Diário</h2>
-            <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today)}</span>
+            <h2 className="text-aetas-text font-semibold text-sm">{t('daily.title')}</h2>
+            <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today, i18n.language)}</span>
             {!!daily && typeof daily !== 'string' && (
-              <span className="text-emerald-400 text-xs font-medium">✓ Jogado hoje</span>
+              <span className="text-emerald-400 text-xs font-medium">{t('daily.played')}</span>
             )}
           </div>
           <p className="text-aetas-dim text-xs mt-0.5">
-            Mesmo mapa para todos · Reinicia em <span className="text-aetas-muted font-mono">{countdown}</span>
+            {t('daily.desc', { countdown })}
           </p>
         </div>
 
@@ -151,7 +188,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
               ? isWon ? 'bg-amber-900/60 text-amber-300' : 'bg-aetas-raised text-aetas-muted'
               : 'bg-aetas-gold/20 text-aetas-gold'
           }`}>
-            {daily.isFinished ? (isWon ? 'Vitória' : isLost ? 'Derrota' : 'Empate') : `Turno ${daily.turnNumber}/${daily.maxTurns}`}
+            {statusLabel}
           </span>
         )}
       </div>
@@ -180,9 +217,9 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {starting ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-aetas-bg/60 border-t-aetas-bg rounded-full animate-spin" />
-                Criando…
+                {t('daily.creating')}
               </span>
-            ) : 'Jogar Desafio →'}
+            ) : t('daily.play')}
           </button>
         ) : (
           <>
@@ -191,7 +228,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
                 className="flex-1 py-2.5 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light transition-colors"
               >
-                Continuar →
+                {t('daily.continue')}
               </button>
             )}
             {daily.isFinished && (
@@ -199,7 +236,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
                 onClick={handleShare}
                 className="flex-1 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm font-semibold hover:bg-aetas-panel transition-colors"
               >
-                {copied ? '✓ Copiado!' : '📋 Compartilhar'}
+                {copied ? t('daily.shareCopied') : t('daily.share')}
               </button>
             )}
             {daily.isFinished && (
@@ -207,7 +244,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
                 className="px-4 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm hover:bg-aetas-panel transition-colors"
               >
-                Ver →
+                {t('daily.view')}
               </button>
             )}
           </>
@@ -227,33 +264,4 @@ function ScorePill({ icon, label, value }: { icon: string; label: string; value:
       </div>
     </div>
   )
-}
-
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function formatDateLabel(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-  return `${d} ${months[(m ?? 1) - 1]} ${y}`
-}
-
-function buildShareText(
-  today: string,
-  daily: DailyGame,
-  score: ReturnType<typeof rankPlayers>[0],
-): string {
-  const label = formatDateLabel(today)
-  const isWon = daily.winnerId === daily.enginePlayerId
-  const result = isWon ? '🏆 Vitória' : daily.winnerId ? '❌ Derrota' : '🤝 Empate'
-
-  const lines = [
-    `Aetas Daily — ${label}`,
-    `${result} | ${score.total} pts`,
-    `🏙️ ${score.territory}  👥 ${score.population}  🔬 ${score.development}`,
-    `(Turno ${daily.turnNumber}/${daily.maxTurns})`,
-  ]
-
-  return lines.join('\n')
 }

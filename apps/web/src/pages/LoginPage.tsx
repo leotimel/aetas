@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 
 export default function LoginPage() {
+  const { t } = useTranslation()
   const [devEmail, setDevEmail] = useState('')
   const [devSent, setDevSent] = useState(false)
   const [devOpen, setDevOpen] = useState(true)
@@ -31,14 +33,14 @@ export default function LoginPage() {
       <div className="mb-10 text-center">
         <h1 className="font-display text-5xl font-bold tracking-tight text-aetas-gold">Aetas</h1>
         <p className="mt-2 text-aetas-dim text-sm tracking-widest uppercase">
-          Civilizações através das eras
+          {t('login.tagline')}
         </p>
       </div>
 
       {/* Auth card */}
       <div className="w-full max-w-sm bg-aetas-surface border border-aetas-border rounded-2xl p-8 shadow-xl shadow-black/60">
         <p className="text-aetas-muted text-sm text-center mb-6">
-          Entre para jogar
+          {t('login.signIn')}
         </p>
 
         <div className="flex flex-col gap-3">
@@ -48,7 +50,7 @@ export default function LoginPage() {
             className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl bg-white text-slate-900 font-medium text-sm hover:bg-slate-100 active:bg-slate-200 transition-colors"
           >
             <GoogleIcon />
-            Continuar com Google
+            {t('login.google')}
           </button>
 
           {/* Apple */}
@@ -57,24 +59,24 @@ export default function LoginPage() {
             className="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl bg-aetas-raised border border-aetas-border-strong text-aetas-text font-medium text-sm hover:bg-aetas-panel active:bg-aetas-panel transition-colors"
           >
             <AppleIcon />
-            Continuar com Apple
+            {t('login.apple')}
           </button>
         </div>
 
-        {/* Dev escape — magic link, visualmente discreto */}
+        {/* Magic link */}
         <div className="mt-6 pt-5 border-t border-aetas-border">
           <button
             onClick={() => setDevOpen(v => !v)}
             className="text-xs text-aetas-dim hover:text-aetas-muted transition-colors w-full text-center"
           >
-            {devOpen ? 'Fechar ▲' : 'Entrar por e-mail ▼'}
+            {devOpen ? t('login.emailClose') : t('login.email')}
           </button>
 
           {devOpen && (
             <div className="mt-3 flex flex-col gap-2">
               {devSent ? (
                 <p className="text-green-500 text-xs text-center">
-                  ✓ Link enviado para {devEmail}
+                  {t('login.linkSent', { email: devEmail })}
                 </p>
               ) : (
                 <>
@@ -83,14 +85,14 @@ export default function LoginPage() {
                     value={devEmail}
                     onChange={e => setDevEmail(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && void sendMagicLink()}
-                    placeholder="seu@email.com"
+                    placeholder={t('login.emailPlaceholder')}
                     className="w-full px-3 py-2 rounded-lg bg-aetas-raised border border-aetas-border-strong text-aetas-muted text-xs placeholder:text-aetas-dim outline-none focus:border-aetas-gold/60 transition-colors"
                   />
                   <button
                     onClick={() => void sendMagicLink()}
                     className="w-full py-2 rounded-lg bg-aetas-panel text-aetas-muted text-xs hover:bg-aetas-border-strong transition-colors"
                   >
-                    Enviar magic link
+                    {t('login.magicLink')}
                   </button>
                   {error && <p className="text-red-400 text-xs">{error}</p>}
                 </>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 interface Props {
   targetCivName: string
   hasPact:       boolean
@@ -7,21 +9,22 @@ interface Props {
 }
 
 export default function DeclareWarModal({ targetCivName, hasPact, onConfirm, onCancel, isLoading }: Props) {
+  const { t } = useTranslation()
+
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
 
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-80">
         <div className="bg-aetas-surface border border-red-900/60 rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60 p-5">
-          <h2 className="font-display text-red-300 text-base font-bold mb-2">⚔️ Declarar Guerra</h2>
+          <h2 className="font-display text-red-300 text-base font-bold mb-2">{t('diplo.declareWarTitle')}</h2>
           <p className="text-aetas-text text-sm mb-2">
-            Declarar guerra aos <strong>{targetCivName}</strong>?
+            {t('diplo.declareWarPrefix')} <strong>{targetCivName}</strong>{t('diplo.declareWarSuffix')}
           </p>
           <div className="bg-red-950/50 border border-red-900/50 rounded-xl p-3 mb-4">
             <p className="text-red-300/90 text-xs leading-relaxed">
-              {hasPact && 'O Pacto de Não-Agressão será rompido. '}
-              Suas unidades poderão atacar os {targetCivName} e vice-versa. Esta ação não pode
-              ser desfeita sem uma proposta de paz aceita.
+              {hasPact && t('diplo.declareWarPactWarning')}
+              {t('diplo.declareWarWarning', { civ: targetCivName })}
             </p>
           </div>
 
@@ -30,7 +33,7 @@ export default function DeclareWarModal({ targetCivName, hasPact, onConfirm, onC
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-xl border border-aetas-border text-aetas-muted text-sm hover:bg-aetas-raised transition-colors"
             >
-              Cancelar
+              {t('ui.cancel')}
             </button>
             <button
               onClick={onConfirm}
@@ -39,7 +42,7 @@ export default function DeclareWarModal({ targetCivName, hasPact, onConfirm, onC
                          disabled:opacity-40 disabled:cursor-not-allowed
                          hover:bg-red-700 active:bg-red-900 transition-colors"
             >
-              {isLoading ? 'Declarando…' : 'Declarar Guerra'}
+              {isLoading ? t('diplo.declaring') : t('diplo.confirmDeclare')}
             </button>
           </div>
         </div>

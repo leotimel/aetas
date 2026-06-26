@@ -1,4 +1,5 @@
-﻿import { useMemo } from 'react'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { CIVILIZATIONS, scoreAll } from '@aetas/game-engine'
 
@@ -19,6 +20,7 @@ function civFlag(players: GameState['players'], playerId: string): string {
 }
 
 export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Props) {
+  const { t } = useTranslation()
   const scores = useMemo(() => scoreAll(gameState), [gameState])
 
   const ranked = useMemo(() => {
@@ -38,7 +40,7 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
       >
         <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-aetas-border">
           <h2 className="font-display text-sm font-semibold text-aetas-text uppercase tracking-wider">
-            Placar ao Vivo
+            {t('score.title')}
           </h2>
           <button
             onClick={onClose}
@@ -51,11 +53,11 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
         <div className="p-3">
           {/* Header row */}
           <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 px-2 mb-1 text-[10px] text-aetas-dim uppercase tracking-wider">
-            <span>Civilização</span>
-            <span className="text-right">Terr.</span>
-            <span className="text-right">Pop.</span>
-            <span className="text-right">Dev.</span>
-            <span className="text-right font-semibold">Total</span>
+            <span>{t('score.civilization')}</span>
+            <span className="text-right">{t('score.territory')}</span>
+            <span className="text-right">{t('score.population')}</span>
+            <span className="text-right">{t('score.development')}</span>
+            <span className="text-right font-semibold">{t('score.total')}</span>
           </div>
 
           <div className="flex flex-col gap-1">
@@ -78,7 +80,7 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
                     <span>{civFlag(gameState.players, player.id)}</span>
                     <span className={`truncate ${player.isEliminated ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
                       {civName(gameState.players, player.id)}
-                      {isMe && <span className="text-aetas-dim"> (você)</span>}
+                      {isMe && <span className="text-aetas-dim"> {t('ui.you')}</span>}
                     </span>
                   </div>
                   <span className="text-right text-aetas-muted">{s.territory}</span>
@@ -91,7 +93,7 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
           </div>
 
           <p className="text-[10px] text-aetas-dim mt-3 px-2">
-            Território (cidades × 3) + População + Desenvolvimento (nível + edifícios)
+            {t('score.formula')}
           </p>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { GameState, Unit } from '@aetas/game-engine'
 import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance, hexKey } from '@aetas/game-engine'
 import DiplomacyPanel from './DiplomacyPanel.tsx'
@@ -36,6 +37,7 @@ export default function ActionSheet({
   onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity, onAttackCity,
   onProposePact, onDeclareWar, onBreakPact, onProposePeace, onProposeTrade, onRespondDiplomacy,
 }: Props) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
 
   // The header diplomacy badge bumps expandSignal to open the mobile sheet.
@@ -50,15 +52,15 @@ export default function ActionSheet({
   const { combatDisputes, units, players } = gameState
   const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : undefined
 
-  const foundCityInvalidReason = (() => {
-    if (!selectedUnit?.canFoundCity || selectedUnit.ownerId !== myEnginePlayerId) return null
-    const tile = gameState.map.tiles.find(t => hexKey(t.coord) === hexKey(selectedUnit.position))
-    if (!tile || tile.terrainType === 'water') return 'terreno de água'
-    if (gameState.cities.some(c => hexDistance(c.position, selectedUnit.position) <= 1))
-      return 'muito perto de uma cidade (mova 2+ tiles)'
-    return null
-  })()
-  const isFoundCityValid = foundCityInvalidReason === null && !!selectedUnit?.canFoundCity && selectedUnit.ownerId === myEnginePlayerId
+  const isFoundCityValid = !!selectedUnit?.canFoundCity &&
+    selectedUnit.ownerId === myEnginePlayerId &&
+    (() => {
+      const tile = gameState.map.tiles.find(ti => hexKey(ti.coord) === hexKey(selectedUnit.position))
+      if (!tile || tile.terrainType === 'water') return false
+      if (gameState.cities.some(c => hexDistance(c.position, selectedUnit.position) <= 1)) return false
+      return true
+    })()
+
   const myPendingDisputes = combatDisputes.filter(
     d => d.status === CombatDisputeStatus.Pending &&
       (d.attackerPlayerId === myEnginePlayerId || d.defenderPlayerId === myEnginePlayerId),
@@ -87,7 +89,7 @@ export default function ActionSheet({
                     : 'bg-aetas-raised text-aetas-dim cursor-not-allowed'
                 }`}
               >
-                {isMyTurn ? 'Terminar Turno ✓' : 'Aguardando…'}
+                {isMyTurn ? t('action.endTurnMobile') : t('action.waiting')}
               </button>
 
               {hasPending && (
@@ -124,7 +126,6 @@ export default function ActionSheet({
                 onResolveDispute={onResolveDispute}
                 onInitiateCombat={onInitiateCombat}
                 isFoundCityValid={isFoundCityValid}
-                foundCityInvalidReason={foundCityInvalidReason}
                 onFoundCity={onFoundCity}
                 onAttackCity={onAttackCity}
                 diplomacyHandlers={diplomacyHandlers}
@@ -146,7 +147,7 @@ export default function ActionSheet({
                 : 'bg-aetas-raised text-aetas-dim cursor-not-allowed opacity-50'
             }`}
           >
-            {isMyTurn ? 'Terminar Turno' : 'Aguardando turno…'}
+            {isMyTurn ? t('action.endTurn') : t('action.waitingTurn')}
           </button>
 
           <ExpandedContent
@@ -162,7 +163,6 @@ export default function ActionSheet({
             onResolveDispute={onResolveDispute}
             onInitiateCombat={onInitiateCombat}
             isFoundCityValid={isFoundCityValid}
-            foundCityInvalidReason={foundCityInvalidReason}
             onFoundCity={onFoundCity}
             onAttackCity={onAttackCity}
             diplomacyHandlers={diplomacyHandlers}
@@ -182,7 +182,7 @@ function formatCountdown(expiresAt: number, now: number): string {
 
 function ExpandedContent({
   selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, gameState, players, units, cities, log,
-  onResolveDispute, onInitiateCombat, isFoundCityValid, foundCityInvalidReason, onFoundCity, onAttackCity, diplomacyHandlers,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity, diplomacyHandlers,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
@@ -196,16 +196,17 @@ function ExpandedContent({
   onResolveDispute: (id: string) => void
   onInitiateCombat?: (atk: string, def: string) => void
   isFoundCityValid?: boolean
-  foundCityInvalidReason?: string | null
   onFoundCity?: (unitId: string) => void
   onAttackCity?: (unitId: string, cityId: string) => void
   diplomacyHandlers: DiplomacyHandlers
 }) {
+  const { t } = useTranslation()
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [])
+
   return (
     <>
       {/* Selected unit panel */}
@@ -218,7 +219,7 @@ function ExpandedContent({
             </span>
             {selectedUnit.hasMoved && selectedUnit.ownerId === myEnginePlayerId && (
               <span className="text-aetas-dim bg-aetas-bg px-1.5 py-0.5 rounded-full border border-aetas-border text-[10px]">
-                Esgotado
+                {t('unit.exhausted')}
               </span>
             )}
           </div>
@@ -238,7 +239,7 @@ function ExpandedContent({
             ))}
           </div>
 
-          {/* Action row: Mover hint + Atacar button + Atacar Cidade button */}
+          {/* Action row */}
           {isMyTurn && selectedUnit.ownerId === myEnginePlayerId && (() => {
             const adjacentEnemies = units.filter(
               u => u.ownerId !== myEnginePlayerId &&
@@ -254,14 +255,14 @@ function ExpandedContent({
                   <div className={`flex-1 py-1.5 text-center rounded-lg text-[10px] font-medium ${
                     selectedUnit.hasMoved ? 'text-aetas-dim' : 'border border-aetas-border text-aetas-muted'
                   }`}>
-                    {selectedUnit.hasMoved ? '— Moveu' : 'Mover → clique no mapa'}
+                    {selectedUnit.hasMoved ? t('unit.moved') : t('unit.move')}
                   </div>
                   {adjacentEnemies.length > 0 && !selectedUnit.hasAttacked && (
                     <button
                       onClick={() => onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id)}
                       className="flex-1 py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors"
                     >
-                      Atacar ⚔
+                      {t('unit.attack')}
                     </button>
                   )}
                 </div>
@@ -270,31 +271,31 @@ function ExpandedContent({
                     onClick={() => onAttackCity?.(selectedUnit.id, adjacentEnemyCities[0].id)}
                     className="w-full py-1.5 rounded-lg bg-orange-900/70 text-orange-300 text-[10px] font-medium hover:bg-orange-800 transition-colors"
                   >
-                    Atacar Cidade 🏰
+                    {t('unit.attackCity')}
                   </button>
                 )}
               </div>
             )
           })()}
 
-          {/* Fundar Cidade (apenas Colonos) */}
+          {/* Found City (Settlers only) */}
           {selectedUnit.canFoundCity && isMyTurn && selectedUnit.ownerId === myEnginePlayerId && (
             <button
               onClick={() => isFoundCityValid && onFoundCity?.(selectedUnit.id)}
               disabled={!isFoundCityValid}
-              title={!isFoundCityValid ? 'Muito perto de outra cidade ou terreno inválido' : undefined}
+              title={!isFoundCityValid ? t('unit.foundInvalidTitle') : undefined}
               className={`w-full mt-1 py-1.5 rounded-lg text-[10px] font-medium transition-colors ${
                 isFoundCityValid
                   ? 'bg-emerald-800/70 text-emerald-300 hover:bg-emerald-700'
                   : 'bg-aetas-bg text-aetas-dim cursor-not-allowed'
               }`}
             >
-              🏛 Fundar Cidade{foundCityInvalidReason ? ` — ${foundCityInvalidReason}` : ''}
+              🏛 {t('unit.foundCity')}
             </button>
           )}
         </div>
       ) : isMyTurn ? (
-        <p className="text-aetas-dim text-xs py-1">Selecione uma unidade no mapa para agir.</p>
+        <p className="text-aetas-dim text-xs py-1">{t('unit.selectPrompt')}</p>
       ) : null}
 
       {/* Diplomacy */}
@@ -308,7 +309,7 @@ function ExpandedContent({
       {/* Pending disputes */}
       {myPendingDisputes.length > 0 && (
         <div>
-          <p className="text-xs text-aetas-muted uppercase tracking-wider mb-1.5">Disputas Pendentes</p>
+          <p className="text-xs text-aetas-muted uppercase tracking-wider mb-1.5">{t('combat.pendingDisputes')}</p>
           {myPendingDisputes.map((d: { id: string; attackerPlayerId: string; defenderPlayerId: string; expiresAt: number }) => {
             const isDefender = d.defenderPlayerId === myEnginePlayerId
             const attacker = civName(players, d.attackerPlayerId)
@@ -320,15 +321,15 @@ function ExpandedContent({
                 </p>
                 <p className="text-aetas-dim text-xs mt-0.5">
                   {isDefender
-                    ? `Você está sendo atacado — expira em ${formatCountdown(d.expiresAt, now)}`
-                    : `⏳ Aguardando resposta de ${defender} — ${formatCountdown(d.expiresAt, now)}`}
+                    ? t('combat.beingAttacked', { time: formatCountdown(d.expiresAt, now) })
+                    : t('combat.waitingResponse', { defender, time: formatCountdown(d.expiresAt, now) })}
                 </p>
                 {isDefender && (
                   <button
                     onClick={() => onResolveDispute(d.id)}
                     className="mt-2 w-full py-1.5 rounded-lg bg-amber-800 text-amber-200 text-xs font-medium hover:bg-amber-700 transition-colors"
                   >
-                    Resolver disputa
+                    {t('combat.resolveDispute')}
                   </button>
                 )}
               </div>
@@ -339,10 +340,10 @@ function ExpandedContent({
 
       {/* Event log */}
       <div>
-        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-1.5">Log</p>
+        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-1.5">{t('log.title')}</p>
         <div className="bg-aetas-bg rounded-lg p-2 text-xs space-y-0.5 max-h-40 overflow-y-auto">
           {log.length === 0
-            ? <span className="text-aetas-border-strong">As ações do turno aparecerão aqui.</span>
+            ? <span className="text-aetas-border-strong">{t('log.empty')}</span>
             : log.map((entry, i) => (
               <p key={i} className={
                 entry.includes('✗') ? 'text-red-400' :

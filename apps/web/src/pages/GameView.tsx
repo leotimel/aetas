@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import type { GameState, HexCoord, CitySpecialization, Unit, Era, Resources } from '@aetas/game-engine'
-import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction } from '@aetas/game-engine'
+import { useTranslation } from 'react-i18next'
+import type { GameState, HexCoord, CitySpecialization, Unit, Resources } from '@aetas/game-engine'
+import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -13,15 +14,22 @@ import TradeModal from '../components/TradeModal.tsx'
 import DeclareWarModal from '../components/DeclareWarModal.tsx'
 import GameOverScreen from '../components/GameOverScreen.tsx'
 import ScoreModal from '../components/ScoreModal.tsx'
-import EraModal, { ERA_ICONS, ERA_NAMES_PT } from '../components/EraModal.tsx'
+import EraModal, { ERA_ICONS } from '../components/EraModal.tsx'
 import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
 import LevelUpModal from '../components/LevelUpModal.tsx'
 import ResourceBar from '../components/ResourceBar.tsx'
+import i18n from '../i18n.ts'
 
 interface Props {
   gameId: string
   userId: string
   onBack: () => void
+}
+
+const ERA_NAME_KEY: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'> = {
+  [Era.Ancient]:   'era.ancient',
+  [Era.Classical]: 'era.classical',
+  [Era.Medieval]:  'era.medieval',
 }
 
 function civName(players: GameState['players'] | null | undefined, playerId: string): string {
@@ -50,29 +58,30 @@ function formatDisputeResolutionLog(pre: GameState, post: GameState, atk: Unit, 
   const dmgToDef = defDestroyed ? def.stats.hp : def.stats.hp - (defPostHp ?? def.stats.hp)
   const dmgToAtk = atkDestroyed ? atk.stats.hp : atk.stats.hp - (atkPostHp ?? atk.stats.hp)
   if (defDestroyed)
-    return `⚔️ Seu ${atkName} destruiu o ${defName} dos ${defCiv}. (+${dmgToDef} dano${dmgToAtk > 0 ? `, −${dmgToAtk} HP` : ''})`
+    return dmgToAtk > 0
+      ? i18n.t('combat.won', { atk: atkName, def: defName, civ: defCiv, dmg: dmgToDef, lost: dmgToAtk })
+      : i18n.t('combat.wonSimple', { atk: atkName, def: defName, civ: defCiv, dmg: dmgToDef })
   if (atkDestroyed)
-    return `⚔️ Seu ${atkName} foi destruído pelo ${defName} dos ${defCiv}. (inimigo: ${defPostHp} HP)`
-  return `⚔️ Seu ${atkName} atacou o ${defName} dos ${defCiv}. (−${dmgToDef} HP deles, −${dmgToAtk} HP seus)`
+    return i18n.t('combat.lost', { atk: atkName, def: defName, civ: defCiv, hp: defPostHp })
+  return i18n.t('combat.draw', { atk: atkName, def: defName, civ: defCiv, dmgToDef, dmgToAtk })
 }
 
 function formatCityAttackLog(pre: GameState, post: GameState | null, unitId: string, cityId: string): string {
   const unit = pre.units.find(u => u.id === unitId)
   const city = pre.cities.find(c => c.id === cityId)
-  if (!unit || !city) return '🏰 Ataque à cidade realizado'
+  if (!unit || !city) return i18n.t('game.cityAttackDone')
   const postCity = post?.cities.find(c => c.id === cityId)
   const captured = postCity && postCity.ownerId !== city.ownerId
   const name = unitLabel(unit.unitType)
-  if (captured) return `🏰 Seu ${name} capturou ${city.name}!`
+  if (captured) return i18n.t('combat.cityCapture', { unit: name, city: city.name })
   const dmg = (city.hp ?? 10) - (postCity?.hp ?? city.hp ?? 10)
-  return `🏰 Seu ${name} atacou ${city.name} (−${dmg} HP, restante: ${postCity?.hp ?? '?'}/${city.maxHp ?? 10})`
+  return i18n.t('combat.cityAttack', { unit: name, city: city.name, dmg, hp: postCity?.hp ?? '?', maxHp: city.maxHp ?? 10 })
 }
 
 function pairKey(a: string, b: string): string {
   return [a, b].sort().join('|')
 }
 
-/** Narrative lines for diplomacy changes between two snapshots — shown to every player. */
 function diffDiplomacyForLog(pre: GameState, post: GameState): string[] {
   const logs: string[] = []
   const name = (id: string) => civName(post.players, id)
@@ -84,91 +93,94 @@ function diffDiplomacyForLog(pre: GameState, post: GameState): string[] {
 
   for (const w of post.wars ?? []) {
     if (!preWars.has(pairKey(w.declarerId, w.targetId))) {
-      logs.push(`⚔️ ${name(w.declarerId)} declarou guerra a ${name(w.targetId)}!`)
+      logs.push(i18n.t('diplo.logWarDeclared', { attacker: name(w.declarerId), target: name(w.targetId) }))
     }
   }
   for (const k of preWars) {
     if (!postWars.has(k)) {
       const [a, b] = k.split('|')
-      logs.push(`🕊️ ${name(a)} e ${name(b)} firmaram a paz.`)
+      logs.push(i18n.t('diplo.logPeaceMade', { p1: name(a), p2: name(b) }))
     }
   }
   for (const p of post.nonAggressionPacts) {
     if (!prePacts.has(pairKey(p.proposerId, p.acceptorId))) {
-      logs.push(`🤝 ${name(p.proposerId)} e ${name(p.acceptorId)} firmaram um pacto.`)
+      logs.push(i18n.t('diplo.logPactMade', { p1: name(p.proposerId), p2: name(p.acceptorId) }))
     }
   }
   for (const k of prePacts) {
     if (!postPacts.has(k) && !postWars.has(k)) {
       const [a, b] = k.split('|')
-      logs.push(`💔 O pacto entre ${name(a)} e ${name(b)} foi rompido.`)
+      logs.push(i18n.t('diplo.logPactBroken', { p1: name(a), p2: name(b) }))
     }
   }
   const preResolved = new Set(pre.diplomaticProposals.filter(p => p.status !== 'pending').map(p => p.id))
   for (const p of post.diplomaticProposals) {
     if (preResolved.has(p.id) || p.status === 'pending') continue
     const kind = p.kind ?? (p.terms ? 'trade' : 'pact')
-    const label = kind === 'trade' ? 'troca' : kind === 'peace' ? 'paz' : 'pacto'
     if (p.status === 'accepted') {
-      if (kind === 'trade') logs.push(`📦 Troca aceita entre ${name(p.proposerId)} e ${name(p.targetId)}.`)
+      if (kind === 'trade') logs.push(i18n.t('diplo.logTradeAccepted', { p1: name(p.proposerId), p2: name(p.targetId) }))
     } else if (p.status === 'rejected') {
-      logs.push(`❌ ${name(p.targetId)} recusou a ${label} de ${name(p.proposerId)}.`)
+      const key = kind === 'trade' ? 'diplo.logRejectedTrade' : kind === 'peace' ? 'diplo.logRejectedPeace' : 'diplo.logRejectedPact'
+      logs.push(i18n.t(key, { player: name(p.targetId), from: name(p.proposerId) }))
     }
   }
   for (const p of post.players) {
     const prev = pre.players.find(pl => pl.id === p.id)
     if (!prev?.isEliminated && p.isEliminated) {
-      logs.push(`🚫 ${name(p.id)} foi eliminado da partida.`)
+      logs.push(i18n.t('diplo.logEliminated', { player: name(p.id) }))
     }
   }
   return logs
 }
 
+const ERROR_KEY_MAP: Record<string, string> = {
+  'unit has already attacked this turn': 'error.unitAlreadyAttacked',
+  'unit has already moved this turn': 'error.unitAlreadyMoved',
+  'city hex occupied': 'error.cityHexOccupied',
+  'insufficient production': 'error.insufficientProduction',
+  'target is not adjacent': 'error.targetNotAdjacent',
+  'cannot move to water': 'error.cannotMoveToWater',
+  'target hex is occupied': 'error.targetHexOccupied',
+  'target out of movement range': 'error.targetOutOfRange',
+  'unit is not yours': 'error.unitNotYours',
+  'unit is already there': 'error.unitAlreadyThere',
+  'not your city': 'error.notYourCity',
+  'city not found': 'error.cityNotFound',
+  'unit not found': 'error.unitNotFound',
+  'dispute already resolved': 'error.disputeAlreadyResolved',
+  'unit not available in this era': 'error.unitNotAvailable',
+  'building already constructed': 'error.buildingAlreadyConstructed',
+  'construction already in progress': 'error.constructionInProgress',
+  'unit cannot found a city': 'error.unitCannotFoundCity',
+  'cannot found a city on water': 'error.cannotFoundOnWater',
+  'too close to an existing city': 'error.tooClose',
+  'cannot attack your own city': 'error.cannotAttackOwnCity',
+  'city is not adjacent': 'error.cityNotAdjacent',
+  'non-aggression pact prevents this attack': 'error.pactPreventsAttack',
+  'no contact established between players': 'error.noContact',
+  'non-aggression pact already exists': 'error.pactAlreadyExists',
+  'a pending non-aggression pact proposal already exists': 'error.pendingPactProposal',
+  'proposer lacks resources for this offer': 'error.insufficientResources',
+  'proposer no longer has enough resources': 'error.insufficientResourcesComplete',
+  'target lacks resources for this trade': 'error.targetInsufficientResources',
+  'trade must include at least one resource': 'error.tradeMustInclude',
+  'players are not at war': 'error.notAtWar',
+  'already at war': 'error.alreadyAtWar',
+  'no non-aggression pact to break': 'error.noPactToBreak',
+  'a pending peace proposal already exists': 'error.pendingPeaceProposal',
+  'proposal not found': 'error.proposalNotFound',
+  'only the proposal target can respond': 'error.onlyTargetCanRespond',
+  'proposal already resolved': 'error.proposalAlreadyResolved',
+}
+
 function errorLabel(err?: string | null): string {
-  if (!err) return 'ação inválida'
-  const known: Record<string, string> = {
-    'unit has already attacked this turn': 'unidade já atacou neste turno',
-    'unit has already moved this turn': 'unidade já se moveu neste turno',
-    'city hex occupied': 'hex da cidade ocupado',
-    'insufficient production': 'produção insuficiente',
-    'target is not adjacent': 'alvo não é adjacente',
-    'cannot move to water': 'não é possível mover para água',
-    'target hex is occupied': 'hex alvo está ocupado',
-    'target out of movement range': 'alvo fora do alcance de movimento',
-    'unit is not yours': 'unidade não é sua',
-    'unit is already there': 'unidade já está neste hex',
-    'not your city': 'não é sua cidade',
-    'city not found': 'cidade não encontrada',
-    'unit not found': 'unidade não encontrada',
-    'dispute already resolved': 'disputa já resolvida',
-    'unit not available in this era': 'unidade não disponível nesta era',
-    'building already constructed': 'edifício já construído',
-    'construction already in progress': 'construção em andamento',
-    'unit cannot found a city': 'unidade não pode fundar cidade',
-    'cannot found a city on water': 'não é possível fundar em água',
-    'too close to an existing city': 'muito perto de outra cidade',
-    'cannot attack your own city': 'não é possível atacar sua própria cidade',
-    'city is not adjacent': 'cidade não é adjacente',
-    'non-aggression pact prevents this attack': 'um pacto de não-agressão impede este ataque',
-    'no contact established between players': 'sem contato com esta civilização',
-    'non-aggression pact already exists': 'já existe um pacto com esta civilização',
-    'a pending non-aggression pact proposal already exists': 'já há uma proposta de pacto pendente',
-    'proposer lacks resources for this offer': 'você não tem recursos para esta oferta',
-    'proposer no longer has enough resources': 'recursos insuficientes para concluir a troca',
-    'target lacks resources for this trade': 'o alvo não tem recursos para esta troca',
-    'trade must include at least one resource': 'a troca precisa incluir ao menos um recurso',
-    'players are not at war': 'vocês não estão em guerra',
-    'already at war': 'vocês já estão em guerra',
-    'no non-aggression pact to break': 'não há pacto para romper',
-    'a pending peace proposal already exists': 'já há uma proposta de paz pendente',
-    'proposal not found': 'proposta não encontrada',
-    'only the proposal target can respond': 'apenas o alvo da proposta pode responder',
-    'proposal already resolved': 'proposta já resolvida',
-  }
-  return known[err] ?? err
+  if (!err) return i18n.t('error.unknown')
+  const key = ERROR_KEY_MAP[err]
+  return key ? i18n.t(key) : err
 }
 
 export default function GameView({ gameId, userId, onBack }: Props) {
+  const { t } = useTranslation()
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [enginePlayerId, setEnginePlayerId] = useState<string>(userId)
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
@@ -268,7 +280,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         const preState = gameStateRef.current
         const isMe = p.currentPlayerId === enginePlayerId
         const name = civName(preState?.players, p.currentPlayerId)
-        addLog(isMe ? `Turno ${p.turnNumber} — sua vez!` : `Turno ${p.turnNumber} — vez de ${name}`)
+        addLog(isMe
+          ? i18n.t('log.turnYours', { n: p.turnNumber })
+          : i18n.t('log.turnTheirs', { n: p.turnNumber, player: name }))
         void fetchGame().then(postState => {
           if (preState && postState) {
             for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
@@ -287,9 +301,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
               const atk = preState.units.find(u => u.id === resolved.attackerUnitId)
               const def = preState.units.find(u => u.id === resolved.defenderUnitId)
               if (atk && def) addLog(formatDisputeResolutionLog(preState, postState, atk, def))
-              else addLog('⚔️ Combate resolvido — ver log para resultado')
+              else addLog(i18n.t('combat.resolvedCheckLog'))
             } else {
-              addLog('⚔️ Combate resolvido')
+              addLog(i18n.t('combat.resolved'))
             }
           }
         })
@@ -297,7 +311,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       .on('broadcast', { event: 'game_over' }, (msg) => {
         const p = msg.payload as { winnerId: string | null }
         const players = gameStateRef.current?.players
-        addLog(p.winnerId ? `★ ${civName(players, p.winnerId)} venceu a partida!` : '★ Fim de partida — empate!')
+        addLog(p.winnerId
+          ? i18n.t('game.finished', { winner: civName(players, p.winnerId) })
+          : i18n.t('game.draw'))
         void fetchGame()
       })
       .subscribe()
@@ -339,7 +355,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleEndTurn = async () => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'endTurn' })
-    addLog(res.ok ? 'Turno encerrado' : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('action.turnEnded') : `✗ ${errorLabel(res.error)}`)
     if (res.ok) {
       setSelectedUnitId(null)
       let postState = res.data?.state ?? null
@@ -378,7 +394,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     setCombatLoading(true)
     const res = await submitAction(gameId, { type: 'initiateCombat', attackerUnitId, defenderUnitId })
     setCombatLoading(false)
-    addLog(res.ok ? 'Ataque iniciado ⚔️ — aguardando resposta do adversário' : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('combat.initiated') : `✗ ${errorLabel(res.error)}`)
     if (res.ok) { setCombatPreview(null); setSelectedUnitId(null); applyOrFetch(res.data?.state) }
   }
 
@@ -392,7 +408,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       const post = res.data.state
       setGameState(post)
       if (preAtk && preDef) addLog(formatDisputeResolutionLog(preState, post, preAtk, preDef))
-      else addLog('⚔️ Combate resolvido')
+      else addLog(i18n.t('combat.resolved'))
       if (
         preAtk?.ownerId === enginePlayerId &&
         post.units.some(u => u.id === preAtk?.id) &&
@@ -408,7 +424,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
   const handleConstructBuilding = async (cityId: string, buildingType: BuildingType) => {
     const res = await submitAction(gameId, { type: 'constructBuilding', cityId, buildingType })
-    addLog(res.ok ? `${buildingLabel(buildingType)} em construção` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('city.buildingStarted', { building: buildingLabel(buildingType) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
@@ -428,7 +444,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
   const handleMoveUnit = async (unitId: string, targetCoord: HexCoord) => {
     const res = await submitAction(gameId, { type: 'moveUnit', unitId, targetCoord })
-    addLog(res.ok ? 'Unidade movida' : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('action.unitMoved') : `✗ ${errorLabel(res.error)}`)
     if (res.ok) { setSelectedUnitId(null); applyOrFetch(res.data?.state) }
   }
 
@@ -438,19 +454,19 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
   const handleProposePact = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'proposePact', targetId })
-    addLog(res.ok ? `🤝 Pacto proposto aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('diplo.proposePactLog', { civ: civOf(targetId) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleBreakPact = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'breakPact', targetId })
-    addLog(res.ok ? `💔 Pacto com os ${civOf(targetId)} rompido` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('diplo.breakPactLog', { civ: civOf(targetId) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleProposePeace = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'proposePeace', targetId })
-    addLog(res.ok ? `🕊️ Paz proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('diplo.proposePeaceLog', { civ: civOf(targetId) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
@@ -458,7 +474,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     setDiplomacyLoading(true)
     const res = await submitAction(gameId, { type: 'declareWar', targetId })
     setDiplomacyLoading(false)
-    addLog(res.ok ? `⚔️ Você declarou guerra aos ${civOf(targetId)}!` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('diplo.declareWarLog', { civ: civOf(targetId) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) { setWarTarget(null); applyOrFetch(res.data?.state) }
   }
 
@@ -466,7 +482,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     setDiplomacyLoading(true)
     const res = await submitAction(gameId, { type: 'proposeTrade', targetId, offer, request })
     setDiplomacyLoading(false)
-    addLog(res.ok ? `📦 Troca proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('diplo.proposeTradeLog', { civ: civOf(targetId) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) { setTradeTarget(null); applyOrFetch(res.data?.state) }
   }
 
@@ -501,7 +517,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const cityName = CITY_NAMES.find(n => !usedNames.has(n)) ?? `Cidade ${gameState.cities.length + 1}`
     const res = await submitAction(gameId, { type: 'foundCity', unitId: foundingUnitId, cityId, cityName, specialization })
     setFoundCityLoading(false)
-    addLog(res.ok ? `${cityName} fundada!` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('city.founded', { name: cityName }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) {
       setFoundingUnitId(null)
       setSelectedUnitId(null)
@@ -514,7 +530,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleTrainUnit = async (cityId: string, unitType: string) => {
     const unitId = crypto.randomUUID()
     const res = await submitAction(gameId, { type: 'trainUnit', cityId, unitType, unitId })
-    addLog(res.ok ? `${unitLabel(unitType)} treinada com sucesso!` : `✗ ${errorLabel(res.error)}`)
+    addLog(res.ok ? i18n.t('city.unitTrained', { unit: unitLabel(unitType) }) : `✗ ${errorLabel(res.error)}`)
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
@@ -523,7 +539,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       <div className="min-h-screen bg-aetas-bg flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-aetas-border border-t-aetas-muted animate-spin" />
-          <p className="text-aetas-dim text-sm">Carregando partida…</p>
+          <p className="text-aetas-dim text-sm">{t('game.loading')}</p>
         </div>
       </div>
     )
@@ -533,9 +549,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     return (
       <div className="min-h-screen bg-aetas-bg flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400 text-sm mb-3">{error || 'Erro ao carregar partida.'}</p>
+          <p className="text-red-400 text-sm mb-3">{error || t('game.errorLoad')}</p>
           <button onClick={onBack} className="text-aetas-muted hover:text-aetas-text text-sm underline">
-            Voltar
+            {t('ui.back')}
           </button>
         </div>
       </div>
@@ -555,30 +571,34 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           onClick={onBack}
           className="text-aetas-muted hover:text-aetas-text transition-colors text-sm"
         >
-          ← Lista
+          {t('ui.backToList')}
         </button>
 
         <span className="text-aetas-dim font-mono text-xs">{gameId.slice(0, 8)}…</span>
 
-        <span className="text-aetas-dim text-xs">Turno {gameState.turnNumber}/{gameState.maxTurns}</span>
+        <span className="text-aetas-dim text-xs">
+          {t('game.turnStatus', { n: gameState.turnNumber, max: gameState.maxTurns })}
+        </span>
 
         <span className="hidden sm:inline-flex items-center gap-1 text-xs text-aetas-muted border border-aetas-border rounded-full px-2 py-0.5">
-          {ERA_ICONS[gameState.era]} {ERA_NAMES_PT[gameState.era]}
+          {ERA_ICONS[gameState.era]} {t(ERA_NAME_KEY[gameState.era])}
         </span>
 
         <span className={`text-xs font-semibold ml-1 ${isMyTurn ? 'text-aetas-gold' : 'text-aetas-dim'}`}>
           {isFinished
-            ? `★ ${gameState.winner ? `${civName(gameState.players, gameState.winner)} venceu` : 'Empate'}`
+            ? gameState.winner
+              ? t('game.finished', { winner: civName(gameState.players, gameState.winner) })
+              : t('game.draw')
             : isMyTurn
-              ? '● SUA VEZ'
-              : `○ vez de ${civName(gameState.players, gameState.currentPlayerId)}`}
+              ? t('game.yourTurn')
+              : t('game.theirTurn', { player: civName(gameState.players, gameState.currentPlayerId) })}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setDiplomacyOpenSignal(s => s + 1)}
             className="relative w-7 h-7 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
-            title="Diplomacia"
+            title={t('game.diplomacyTitle')}
           >
             ⚖️
             {incomingProposals > 0 && (
@@ -601,7 +621,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           <button
             onClick={() => void fetchGame()}
             className="w-7 h-7 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
-            title="Atualizar"
+            title={t('game.refreshTitle')}
           >
             ↺
           </button>
@@ -635,7 +655,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
       {/* ── Main area ── */}
       <div className="flex flex-1 min-h-0">
-        {/* Hex map — fills remaining space */}
+        {/* Hex map */}
         <div className="relative flex-1 min-h-0 bg-aetas-bg">
           <HexMap
             gameState={gameState}
@@ -663,11 +683,11 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           onInitiateCombat={handleInitiateCombat}
           onFoundCity={setFoundingUnitId}
           onAttackCity={(uid, cid) => { void handleAttackCity(uid, cid) }}
-          onProposePact={(t) => { void handleProposePact(t) }}
-          onDeclareWar={(t) => setWarTarget(t)}
-          onBreakPact={(t) => { void handleBreakPact(t) }}
-          onProposePeace={(t) => { void handleProposePeace(t) }}
-          onProposeTrade={(t) => setTradeTarget(t)}
+          onProposePact={(tgt) => { void handleProposePact(tgt) }}
+          onDeclareWar={(tgt) => setWarTarget(tgt)}
+          onBreakPact={(tgt) => { void handleBreakPact(tgt) }}
+          onProposePeace={(tgt) => { void handleProposePeace(tgt) }}
+          onProposeTrade={(tgt) => setTradeTarget(tgt)}
           onRespondDiplomacy={(id, accept) => { void handleRespondDiplomacy(id, accept) }}
         />
       </div>
@@ -776,7 +796,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           onClick={() => setShowGameOver(true)}
           className="fixed bottom-24 md:bottom-4 right-4 z-20 px-4 py-2 rounded-xl bg-aetas-surface border border-aetas-border-strong text-aetas-muted text-sm font-medium hover:bg-aetas-raised transition-colors shadow-lg"
         >
-          🏆 Ver resultado
+          {t('game.viewResult')}
         </button>
       )}
 

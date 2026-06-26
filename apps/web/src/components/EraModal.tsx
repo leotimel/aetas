@@ -1,12 +1,7 @@
+import { useTranslation } from 'react-i18next'
 import { Era, unitsForCiv } from '@aetas/game-engine'
 
 // ─── Era constants (exported for reuse in other components) ───────────────────
-
-export const ERA_NAMES_PT: Record<Era, string> = {
-  [Era.Ancient]:   'Idade Antiga',
-  [Era.Classical]: 'Idade Clássica',
-  [Era.Medieval]:  'Idade Medieval',
-}
 
 export const ERA_ICONS: Record<Era, string> = {
   [Era.Ancient]:   '🏛️',
@@ -26,10 +21,18 @@ interface Props {
 }
 
 export default function EraModal({ era, prevEra, myCivId, onClose }: Props) {
+  const { t } = useTranslation()
+
   const prevUnits = unitsForCiv(myCivId, prevEra)
   const newUnits  = unitsForCiv(myCivId, era)
   const prevTypes = new Set(prevUnits.map(u => u.type))
   const unlocked  = newUnits.filter(u => !prevTypes.has(u.type))
+
+  const ERA_NAME: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'> = {
+    [Era.Ancient]:   'era.ancient',
+    [Era.Classical]: 'era.classical',
+    [Era.Medieval]:  'era.medieval',
+  }
 
   return (
     <>
@@ -40,17 +43,17 @@ export default function EraModal({ era, prevEra, myCivId, onClose }: Props) {
 
           {/* Header */}
           <div className="text-center mb-4">
-            <p className="text-aetas-gold text-sm font-medium tracking-widest uppercase mb-1">✨ Nova Era Desbloqueada!</p>
+            <p className="text-aetas-gold text-sm font-medium tracking-widest uppercase mb-1">{t('era.unlocked')}</p>
             <div className="inline-flex items-center gap-2 bg-aetas-raised border border-aetas-border-strong rounded-full px-4 py-1.5 mt-1">
               <span className="text-2xl">{ERA_ICONS[era]}</span>
-              <span className="font-display text-aetas-text text-lg font-bold">{ERA_NAMES_PT[era]}</span>
+              <span className="font-display text-aetas-text text-lg font-bold">{t(ERA_NAME[era])}</span>
             </div>
           </div>
 
           {/* Unlocked units */}
           {unlocked.length > 0 ? (
             <div className="mb-4">
-              <p className="text-[10px] text-aetas-dim uppercase tracking-wider mb-2">Unidades desbloqueadas</p>
+              <p className="text-[10px] text-aetas-dim uppercase tracking-wider mb-2">{t('era.unitsUnlocked')}</p>
               <div className="space-y-1.5">
                 {unlocked.map(def => (
                   <div key={def.type} className="flex items-center gap-3 bg-aetas-raised rounded-xl p-2.5 border border-aetas-border">
@@ -69,7 +72,7 @@ export default function EraModal({ era, prevEra, myCivId, onClose }: Props) {
             </div>
           ) : (
             <p className="text-aetas-dim text-xs text-center mb-4">
-              Novas possibilidades desbloqueadas nesta era.
+              {t('era.newPossibilities')}
             </p>
           )}
 
@@ -78,7 +81,7 @@ export default function EraModal({ era, prevEra, myCivId, onClose }: Props) {
             onClick={onClose}
             className="w-full py-3 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
           >
-            Continuar →
+            {t('era.continue')}
           </button>
         </div>
       </div>

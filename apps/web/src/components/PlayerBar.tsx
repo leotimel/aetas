@@ -1,6 +1,8 @@
+import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { CIVILIZATIONS, ERA_SCIENCE_THRESHOLDS_ARRAY, scorePlayer } from '@aetas/game-engine'
-import { ERA_ICONS, ERA_NAMES_PT, ERA_ORDER_UI } from './EraModal.tsx'
+import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
+import { Era } from '@aetas/game-engine'
 
 const PLAYER_COLORS = [
   '#ef4444', '#3b82f6', '#22c55e', '#f59e0b',
@@ -11,6 +13,12 @@ function civColor(civilizationId: string, fallback: string): string {
   return CIVILIZATIONS.find(c => c.id === civilizationId)?.color ?? fallback
 }
 
+const ERA_NAME_KEY: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'> = {
+  [Era.Ancient]:   'era.ancient',
+  [Era.Classical]: 'era.classical',
+  [Era.Medieval]:  'era.medieval',
+}
+
 interface Props {
   gameState:       GameState
   myEnginePlayerId: string
@@ -18,10 +26,12 @@ interface Props {
 }
 
 export default function PlayerBar({ gameState, myEnginePlayerId, onScoreClick }: Props) {
+  const { t } = useTranslation()
   const { players, units, cities, currentPlayerId } = gameState
   const eraIdx    = ERA_ORDER_UI.indexOf(gameState.era)
   const eraProgress = gameState.eraProgress ?? 0
   const threshold = ERA_SCIENCE_THRESHOLDS_ARRAY[eraIdx] as number | undefined
+  const eraName = t(ERA_NAME_KEY[gameState.era])
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 overflow-x-auto bg-aetas-surface">
@@ -47,7 +57,7 @@ export default function PlayerBar({ gameState, myEnginePlayerId, onScoreClick }:
             <span className={`${player.isEliminated ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
               {civ?.name ?? player.id.slice(0, 6)}
             </span>
-            {isMe && <span className="text-aetas-dim">(você)</span>}
+            {isMe && <span className="text-aetas-dim">{t('ui.you')}</span>}
             {player.isAIControlled && <span>🤖</span>}
             <span className="text-aetas-dim">{uCount}u {cCount}c</span>
             <span className="text-aetas-gold font-medium">{score.total}pts</span>
@@ -58,8 +68,8 @@ export default function PlayerBar({ gameState, myEnginePlayerId, onScoreClick }:
 
       {/* Era badge — global per-game, shown once after the player list */}
       <div className="flex-shrink-0 flex items-center gap-1 ml-1 pl-2 border-l border-aetas-border text-xs text-aetas-muted whitespace-nowrap">
-        <span title={ERA_NAMES_PT[gameState.era]}>{ERA_ICONS[gameState.era]}</span>
-        <span className="hidden sm:inline">{ERA_NAMES_PT[gameState.era]}</span>
+        <span title={eraName}>{ERA_ICONS[gameState.era]}</span>
+        <span className="hidden sm:inline">{eraName}</span>
         {threshold !== undefined && (
           <span className="text-[9px] text-aetas-dim">({eraProgress}/{threshold}⚗)</span>
         )}

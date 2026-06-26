@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { Resources } from '@aetas/game-engine'
 
 interface Props {
@@ -5,13 +6,15 @@ interface Props {
   income: Resources
 }
 
-const ITEMS = [
-  { key: 'gold'       as const, icon: '🏅', label: 'Ouro' },
-  { key: 'food'       as const, icon: '🌾', label: 'Comida' },
-  { key: 'production' as const, icon: '⚙',  label: 'Produção' },
-]
-
 export default function ResourceBar({ resources, income }: Props) {
+  const { t } = useTranslation()
+
+  const ITEMS = [
+    { key: 'gold'       as const, icon: '🏅', label: t('resource.gold') },
+    { key: 'food'       as const, icon: '🌾', label: t('resource.food') },
+    { key: 'production' as const, icon: '⚙',  label: t('resource.production') },
+  ]
+
   return (
     <div className="flex items-center justify-center gap-5 px-3 py-1.5 bg-aetas-raised border-b border-aetas-border text-xs flex-shrink-0">
       {ITEMS.map(({ key, icon, label }) => (

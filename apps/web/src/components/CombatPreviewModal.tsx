@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { Unit, GameState } from '@aetas/game-engine'
 import { resolveCombat, terrainAt, getCivCombatMultiplier, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType } from '@aetas/game-engine'
 
@@ -29,6 +30,8 @@ export default function CombatPreviewModal({
   attacker, defender, attackerCivName, defenderCivName,
   gameState, onConfirm, onCancel, isLoading,
 }: Props) {
+  const { t } = useTranslation()
+
   const atkCivId = gameState.players.find(p => p.id === attacker.ownerId)?.civilizationId ?? ''
   const defCivId = gameState.players.find(p => p.id === defender.ownerId)?.civilizationId ?? ''
 
@@ -44,10 +47,10 @@ export default function CombatPreviewModal({
   const atkDestroyed = preview.attackerDestroyed
 
   const outcomeLabel = defDestroyed
-    ? 'Vitória prevista — inimigo eliminado'
+    ? t('combat.victoryPredicted')
     : atkDestroyed
-      ? 'Derrota prevista — você será destruído'
-      : 'Combate — ambos sobrevivem'
+      ? t('combat.defeatPredicted')
+      : t('combat.bothSurvive')
 
   const outcomeColor = defDestroyed
     ? 'border-emerald-800 bg-emerald-950/60 text-emerald-300'
@@ -61,13 +64,13 @@ export default function CombatPreviewModal({
 
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[22rem]">
         <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60 p-5">
-          <h2 className="font-display text-aetas-text text-base font-bold mb-3">Prévia de Combate</h2>
+          <h2 className="font-display text-aetas-text text-base font-bold mb-3">{t('combat.preview')}</h2>
 
           {/* Combatants side by side */}
           <div className="grid grid-cols-2 gap-2 mb-3">
             {/* Attacker */}
             <div className="bg-aetas-raised rounded-xl p-2.5 border border-aetas-border">
-              <p className="text-[9px] text-aetas-dim uppercase tracking-wider mb-1">Atacante</p>
+              <p className="text-[9px] text-aetas-dim uppercase tracking-wider mb-1">{t('combat.attacker')}</p>
               <p className="text-aetas-text text-xs font-semibold mb-0.5 capitalize">{unitName(attacker.unitType)}</p>
               <p className="text-aetas-dim text-[10px] mb-2">{attackerCivName}</p>
               <div className="grid grid-cols-2 gap-1">
@@ -80,7 +83,7 @@ export default function CombatPreviewModal({
 
             {/* Defender */}
             <div className="bg-aetas-raised rounded-xl p-2.5 border border-red-900/40">
-              <p className="text-[9px] text-red-400 uppercase tracking-wider mb-1">Defensor</p>
+              <p className="text-[9px] text-red-400 uppercase tracking-wider mb-1">{t('combat.defender')}</p>
               <p className="text-aetas-text text-xs font-semibold mb-0.5 capitalize">{unitName(defender.unitType)}</p>
               <p className="text-aetas-dim text-[10px] mb-2">{defenderCivName}</p>
               <div className="grid grid-cols-2 gap-1">
@@ -96,12 +99,12 @@ export default function CombatPreviewModal({
           <div className={`rounded-xl border p-3 mb-4 ${outcomeColor}`}>
             <p className="text-xs font-semibold mb-1">{outcomeLabel}</p>
             <div className="flex gap-3 text-[10px] opacity-80">
-              <span>Dano causado: <strong>+{preview.damageToDefender}</strong></span>
+              <span>{t('combat.damageDealt', { dmg: preview.damageToDefender })}</span>
               {preview.damageToAttacker > 0 && (
-                <span>Dano recebido: <strong>−{preview.damageToAttacker}</strong></span>
+                <span>{t('combat.damageTaken', { dmg: preview.damageToAttacker })}</span>
               )}
             </div>
-            <p className="text-[9px] opacity-60 mt-1.5">* Defensor pode ganhar +2 Def ao responder</p>
+            <p className="text-[9px] opacity-60 mt-1.5">{t('combat.defenderBonus')}</p>
           </div>
 
           {/* Actions */}
@@ -110,7 +113,7 @@ export default function CombatPreviewModal({
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-xl border border-aetas-border text-aetas-muted text-sm hover:bg-aetas-raised transition-colors"
             >
-              Cancelar
+              {t('ui.cancel')}
             </button>
             <button
               onClick={onConfirm}
@@ -119,7 +122,7 @@ export default function CombatPreviewModal({
                          disabled:opacity-40 disabled:cursor-not-allowed
                          hover:bg-red-700 active:bg-red-900 transition-colors"
             >
-              {isLoading ? 'Atacando…' : 'Confirmar Ataque ⚔'}
+              {isLoading ? t('combat.attacking') : t('combat.confirmAttack')}
             </button>
           </div>
         </div>

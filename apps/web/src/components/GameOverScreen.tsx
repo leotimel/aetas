@@ -1,4 +1,5 @@
-﻿import { useMemo } from 'react'
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { CIVILIZATIONS, scoreAll, type PlayerScore } from '@aetas/game-engine'
 
@@ -22,11 +23,12 @@ function civFlag(players: GameState['players'], playerId: string): string {
 function buildShareText(
   gameState: GameState,
   scores: Record<string, PlayerScore>,
+  title: string,
 ): string {
   const ranked = [...gameState.players]
     .sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0))
 
-  const lines = [`🏛️ Aetas • Turno ${gameState.maxTurns}`]
+  const lines = [title]
   ranked.forEach((p, i) => {
     const medal = i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`
     const name  = civName(gameState.players, p.id)
@@ -73,6 +75,7 @@ const RANK_LABEL = ['🥇', '🥈', '🥉']
 const RANK_ORD   = ['1º', '2º', '3º', '4º', '5º', '6º', '7º', '8º']
 
 export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, onBack }: Props) {
+  const { t } = useTranslation()
   const scores = useMemo(() => scoreAll(gameState), [gameState])
 
   const ranked = useMemo(() => {
@@ -88,7 +91,8 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
   const iWon      = winner === myEnginePlayerId
 
   const handleShare = () => {
-    const text = buildShareText(gameState, scores)
+    const title = t('gameover.title', { max: gameState.maxTurns })
+    const text = buildShareText(gameState, scores, title)
     navigator.clipboard.writeText(text).catch(() => {/* silent */})
   }
 
@@ -102,13 +106,13 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
           {winnerCiv ? (
             <>
               <div className="text-5xl mb-2">🏆</div>
-              <h1 className="text-2xl font-bold text-aetas-gold">{winnerCiv} venceu!</h1>
-              {iWon && <p className="text-aetas-muted text-sm mt-1">Parabéns, você é o vencedor!</p>}
+              <h1 className="text-2xl font-bold text-aetas-gold">{t('gameover.winner', { winner: winnerCiv })}</h1>
+              {iWon && <p className="text-aetas-muted text-sm mt-1">{t('gameover.congrats')}</p>}
             </>
           ) : (
             <>
               <div className="text-5xl mb-2">🤝</div>
-              <h1 className="text-2xl font-bold text-aetas-text">Empate!</h1>
+              <h1 className="text-2xl font-bold text-aetas-text">{t('gameover.draw')}</h1>
             </>
           )}
           {xpGain && (
@@ -142,7 +146,7 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
                   <span className="text-lg">{civFlag(gameState.players, player.id)}</span>
                   <span className={`font-medium text-sm ${isElim ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
                     {civName(gameState.players, player.id)}
-                    {isMe && <span className="text-aetas-dim font-normal"> (você)</span>}
+                    {isMe && <span className="text-aetas-dim font-normal"> {t('ui.you')}</span>}
                     {isElim && <span className="ml-1">🚫</span>}
                   </span>
                   <span className={`ml-auto text-sm font-bold ${isWinner ? 'text-aetas-gold' : 'text-aetas-muted'}`}>
@@ -151,9 +155,9 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
                 </div>
                 {!isElim && (
                   <div className="flex gap-3 mt-1.5 ml-10 text-[11px] text-aetas-dim">
-                    <span>Terr. {s.territory}</span>
-                    <span>Pop. {s.population}</span>
-                    <span>Dev. {s.development}</span>
+                    <span>{t('gameover.territory')} {s.territory}</span>
+                    <span>{t('gameover.population')} {s.population}</span>
+                    <span>{t('gameover.development')} {s.development}</span>
                   </div>
                 )}
               </div>
@@ -167,21 +171,21 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
             onClick={onBack}
             className="w-full py-3 rounded-xl bg-aetas-gold text-aetas-bg font-bold text-sm hover:bg-aetas-gold-light transition-colors"
           >
-            Voltar ao Lobby
+            {t('gameover.backLobby')}
           </button>
           <div className="flex gap-2">
             <button
               onClick={handleShare}
               className="flex-1 py-2.5 rounded-xl bg-aetas-raised border border-aetas-border text-aetas-muted text-sm font-medium hover:bg-aetas-panel transition-colors"
             >
-              Compartilhar 📋
+              {t('gameover.share')}
             </button>
             <button
               disabled
               title="Em breve"
               className="flex-1 py-2.5 rounded-xl bg-aetas-raised border border-aetas-border text-aetas-border-strong text-sm font-medium cursor-not-allowed"
             >
-              Ver Histórico
+              {t('gameover.viewHistory')}
             </button>
           </div>
         </div>

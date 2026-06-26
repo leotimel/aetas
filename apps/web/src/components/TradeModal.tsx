@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Resources } from '@aetas/game-engine'
 
 interface Props {
@@ -10,10 +11,12 @@ interface Props {
   isLoading?:        boolean
 }
 
-const RES_META: { key: keyof Resources; icon: string; label: string }[] = [
-  { key: 'gold',       icon: '🪙', label: 'Ouro' },
-  { key: 'food',       icon: '🌾', label: 'Comida' },
-  { key: 'production', icon: '⚙️', label: 'Produção' },
+type ResKey = 'resource.gold' | 'resource.food' | 'resource.production'
+
+const RES_META: { key: keyof Resources; icon: string; labelKey: ResKey }[] = [
+  { key: 'gold',       icon: '🪙', labelKey: 'resource.gold' },
+  { key: 'food',       icon: '🌾', labelKey: 'resource.food' },
+  { key: 'production', icon: '⚙️', labelKey: 'resource.production' },
 ]
 
 const EMPTY: Resources = { gold: 0, food: 0, production: 0 }
@@ -45,6 +48,7 @@ function ResourceSlider({
 export default function TradeModal({
   proposerResources, targetResources, targetCivName, onConfirm, onCancel, isLoading,
 }: Props) {
+  const { t } = useTranslation()
   const [offer, setOffer] = useState<Resources>(EMPTY)
   const [request, setRequest] = useState<Resources>(EMPTY)
 
@@ -59,17 +63,17 @@ export default function TradeModal({
 
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[22rem]">
         <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60 p-5">
-          <h2 className="font-display text-aetas-text text-base font-bold mb-1">📦 Propor Troca</h2>
-          <p className="text-aetas-dim text-xs mb-4">Negociando com os <strong>{targetCivName}</strong></p>
+          <h2 className="font-display text-aetas-text text-base font-bold mb-1">{t('diplo.proposeTradeTitle')}</h2>
+          <p className="text-aetas-dim text-xs mb-4">{t('diplo.proposeTradeWith', { civ: targetCivName })}</p>
 
           {/* Offer */}
           <div className="bg-aetas-raised rounded-xl p-3 mb-3 border border-aetas-border">
-            <p className="text-[10px] text-emerald-400 uppercase tracking-wider mb-2">Você oferece</p>
+            <p className="text-[10px] text-emerald-400 uppercase tracking-wider mb-2">{t('diplo.youOffer')}</p>
             <div className="flex flex-col gap-2">
               {RES_META.map(m => (
                 <ResourceSlider
                   key={m.key}
-                  icon={m.icon} label={m.label}
+                  icon={m.icon} label={t(m.labelKey)}
                   value={offer[m.key]}
                   max={proposerResources[m.key]}
                   onChange={v => setOfferKey(m.key, v)}
@@ -80,12 +84,12 @@ export default function TradeModal({
 
           {/* Request */}
           <div className="bg-aetas-raised rounded-xl p-3 mb-4 border border-aetas-border">
-            <p className="text-[10px] text-amber-400 uppercase tracking-wider mb-2">Você pede</p>
+            <p className="text-[10px] text-amber-400 uppercase tracking-wider mb-2">{t('diplo.youRequest')}</p>
             <div className="flex flex-col gap-2">
               {RES_META.map(m => (
                 <ResourceSlider
                   key={m.key}
-                  icon={m.icon} label={m.label}
+                  icon={m.icon} label={t(m.labelKey)}
                   value={request[m.key]}
                   max={targetResources[m.key]}
                   onChange={v => setRequestKey(m.key, v)}
@@ -99,7 +103,7 @@ export default function TradeModal({
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-xl border border-aetas-border text-aetas-muted text-sm hover:bg-aetas-raised transition-colors"
             >
-              Cancelar
+              {t('ui.cancel')}
             </button>
             <button
               onClick={() => onConfirm(offer, request)}
@@ -108,7 +112,7 @@ export default function TradeModal({
                          disabled:opacity-40 disabled:cursor-not-allowed
                          hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
             >
-              {isLoading ? 'Propondo…' : 'Propor Troca'}
+              {isLoading ? t('diplo.proposingTrade') : t('diplo.confirmTrade')}
             </button>
           </div>
         </div>

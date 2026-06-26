@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 import {
   CIVILIZATIONS, CIVILIZATION_CATALOG, SPECIAL_UNIT_CATALOG,
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export default function ProfilePage({ userId, onClose }: Props) {
+  const { t, i18n } = useTranslation()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -29,7 +31,6 @@ export default function ProfilePage({ userId, onClose }: Props) {
       if (data) {
         setProfile(data as Profile)
       } else {
-        // No profile yet — upsert with defaults
         await supabase.from('profiles').upsert({ user_id: userId, xp: 0, selected_civ: 'romans' })
         setProfile({ xp: 0, selected_civ: 'romans' })
       }
@@ -45,6 +46,12 @@ export default function ProfilePage({ userId, onClose }: Props) {
       .eq('user_id', userId)
     setProfile(p => p ? { ...p, selected_civ: civId } : p)
     setSaving(false)
+  }
+
+  const toggleLang = () => {
+    const next = i18n.language === 'en' ? 'pt' : 'en'
+    void i18n.changeLanguage(next)
+    localStorage.setItem('aetas-lang', next)
   }
 
   if (!profile) {
@@ -69,10 +76,18 @@ export default function ProfilePage({ userId, onClose }: Props) {
           onClick={onClose}
           className="text-aetas-muted hover:text-aetas-text transition-colors"
         >
-          ← Voltar
+          {t('ui.back')}
         </button>
-        <h1 className="font-display text-aetas-text font-semibold">Perfil</h1>
-        {saving && <span className="ml-auto text-aetas-dim text-xs animate-pulse">Salvando…</span>}
+        <h1 className="font-display text-aetas-text font-semibold">{t('profile.title')}</h1>
+        <div className="ml-auto flex items-center gap-2">
+          {saving && <span className="text-aetas-dim text-xs animate-pulse">{t('profile.saving')}</span>}
+          <button
+            onClick={toggleLang}
+            className="text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5 hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
+          >
+            EN | PT
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full">
@@ -83,16 +98,16 @@ export default function ProfilePage({ userId, onClose }: Props) {
               <span className="text-aetas-gold font-bold text-xl">{level}</span>
             </div>
             <div>
-              <p className="text-aetas-text font-bold">Nível {level}</p>
-              <p className="text-aetas-muted text-sm">{profile.xp} XP total</p>
+              <p className="text-aetas-text font-bold">{t('profile.level', { n: level })}</p>
+              <p className="text-aetas-muted text-sm">{t('profile.xpTotal', { xp: profile.xp })}</p>
             </div>
           </div>
 
           {/* XP progress bar */}
           <div className="space-y-1.5">
             <div className="flex justify-between text-xs text-aetas-dim">
-              <span>{isMaxLevel ? 'Nível máximo' : `${progressXp} / ${rangeXp} XP`}</span>
-              {!isMaxLevel && <span>Próximo: nível {level + 1}</span>}
+              <span>{isMaxLevel ? t('profile.maxLevel') : `${progressXp} / ${rangeXp} XP`}</span>
+              {!isMaxLevel && <span>{t('profile.nextLevel', { n: level + 1 })}</span>}
             </div>
             <div className="h-2 bg-aetas-raised rounded-full overflow-hidden">
               <div
@@ -104,16 +119,16 @@ export default function ProfilePage({ userId, onClose }: Props) {
 
           {/* XP table */}
           <div className="mt-4 grid grid-cols-3 gap-1.5 text-center">
-            <XpPill label="Partida jogada" value="+10" />
-            <XpPill label="Vitória" value="+35" />
-            <XpPill label="Daily (jogada)" value="+15" />
-            <XpPill label="Daily (vitória)" value="+50" />
+            <XpPill label={t('profile.xpGame')} value="+10" />
+            <XpPill label={t('profile.xpVictory')} value="+35" />
+            <XpPill label={t('profile.xpDaily')} value="+15" />
+            <XpPill label={t('profile.xpDailyWin')} value="+50" />
           </div>
         </div>
 
         {/* Level ladder */}
         <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-4 mb-6">
-          <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">Níveis</p>
+          <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">{t('profile.levels')}</p>
           <div className="flex flex-wrap gap-1.5">
             {Array.from({ length: LEVEL_XP_THRESHOLDS.length }, (_, i) => {
               const lvl = i + 1
@@ -139,7 +154,7 @@ export default function ProfilePage({ userId, onClose }: Props) {
         </div>
 
         {/* Civilization grid */}
-        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">Civilizações</p>
+        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">{t('profile.civilizations')}</p>
         <div className="grid grid-cols-2 gap-3 pb-6">
           {CIVILIZATIONS.map(civ => {
             const unlocked = level >= civ.unlockLevel
@@ -186,7 +201,7 @@ export default function ProfilePage({ userId, onClose }: Props) {
                     )
                   })()}
                   {!unlocked && (
-                    <p className="text-aetas-dim text-xs mt-1">🔒 Nível {civ.unlockLevel}</p>
+                    <p className="text-aetas-dim text-xs mt-1">{t('profile.unlock', { n: civ.unlockLevel })}</p>
                   )}
                 </div>
                 {/* Selected checkmark */}
