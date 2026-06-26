@@ -89,7 +89,7 @@ export default function ProfilePage({ userId, onClose }: Props) {
           {saving && <span className="text-aetas-dim text-xs animate-pulse">{t('profile.saving')}</span>}
           <button
             onClick={toggleLang}
-            className="text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5 hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
+            className="h-10 px-3 flex items-center text-[10px] text-aetas-dim border border-aetas-border rounded hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
           >
             EN | PT
           </button>

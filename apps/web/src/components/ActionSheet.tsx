@@ -73,12 +73,15 @@ export default function ActionSheet({
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-20">
         <div className={`bg-aetas-surface border-t border-aetas-border-strong transition-all duration-300 ${expanded ? 'max-h-[50vh]' : 'max-h-20'} overflow-hidden`}>
           {/* Handle + quick actions */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+          <div className="relative flex items-center gap-2 px-3 pt-3 pb-2">
+            {/* Drag handle — full-width touch target, visual is just the line */}
             <button
               onClick={() => setExpanded(v => !v)}
-              className="w-8 h-1 rounded-full bg-aetas-border-strong mx-auto absolute left-1/2 -translate-x-1/2 top-2"
+              className="absolute inset-x-0 top-0 h-7 flex items-start justify-center pt-2"
               aria-label="Expandir painel"
-            />
+            >
+              <span className="w-10 h-1 rounded-full bg-aetas-border-strong block" />
+            </button>
             <div className="flex gap-2 w-full mt-2">
               <button
                 onClick={onEndTurn}

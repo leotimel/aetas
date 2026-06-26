@@ -100,13 +100,14 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
         onClick={onClose}
       />
 
-      {/* Sheet — slides up from bottom */}
+      {/* Sheet — slides up from bottom; max-height + scroll on mobile */}
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-96">
-        <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60 p-5">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60
+                        flex flex-col max-h-[85dvh] md:max-h-[90vh]">
+          {/* Sticky header */}
+          <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-aetas-border/50">
             <div className="flex items-center gap-3">
-              <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: ownerColor }} />
+              <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: ownerColor }} />
               <div>
                 <h2 className="text-aetas-text font-bold text-base">{city.name}</h2>
                 <p className="text-aetas-dim text-xs">
@@ -118,11 +119,13 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors"
+              className="w-11 h-11 flex items-center justify-center rounded-full bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors flex-shrink-0"
             >
               ✕
             </button>
           </div>
+          {/* Scrollable body */}
+          <div className="overflow-y-auto flex-1 px-5 pb-5 pt-4">
 
           {/* Stats grid */}
           <div className="grid grid-cols-3 gap-2 mb-4">
@@ -280,6 +283,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
               )}
             </div>
           )}
+          </div>{/* end scrollable body */}
         </div>
       </div>
     </>

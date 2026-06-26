@@ -94,7 +94,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           <div className="flex items-center gap-2">
             <button
               onClick={toggleLang}
-              className="text-[10px] text-aetas-dim border border-aetas-border rounded px-1.5 py-0.5 hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
+              className="h-10 px-3 flex items-center text-[10px] text-aetas-dim border border-aetas-border rounded hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
             >
               EN | PT
             </button>

@@ -628,7 +628,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setDiplomacyOpenSignal(s => s + 1)}
-            className="relative w-7 h-7 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
+            className="relative w-10 h-10 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
             title={t('game.diplomacyTitle')}
           >
             ⚖️
@@ -651,7 +651,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           )}
           <button
             onClick={() => void fetchGame()}
-            className="w-7 h-7 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
+            className="w-10 h-10 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
             title={t('game.refreshTitle')}
           >
             ↺
