@@ -20,6 +20,12 @@ export default function ProfilePage({ userId, onClose }: Props) {
   const { t, i18n } = useTranslation()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [saving, setSaving] = useState(false)
+  const [tutorialReset, setTutorialReset] = useState(false)
+
+  const handleReactivateTutorial = () => {
+    localStorage.removeItem('aetas-tutorial-done')
+    setTutorialReset(true)
+  }
 
   useEffect(() => {
     void (async () => {
@@ -151,6 +157,21 @@ export default function ProfilePage({ userId, onClose }: Props) {
               )
             })}
           </div>
+        </div>
+
+        {/* Tutorial settings */}
+        <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-4 mb-6">
+          <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-3">{t('tutorial.settingsTitle')}</p>
+          {tutorialReset ? (
+            <p className="text-emerald-400 text-sm">{t('tutorial.reactivated')}</p>
+          ) : (
+            <button
+              onClick={handleReactivateTutorial}
+              className="text-sm text-aetas-muted hover:text-aetas-text border border-aetas-border hover:border-aetas-border-strong rounded-lg px-3 py-1.5 transition-colors"
+            >
+              {t('tutorial.reactivate')}
+            </button>
+          )}
         </div>
 
         {/* Civilization grid */}

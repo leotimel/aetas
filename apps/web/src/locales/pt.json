@@ -371,5 +371,20 @@
     "subtitle": "Você subiu de nível!",
     "unlocked": "Desbloqueado",
     "continue": "Continuar"
+  },
+  "tutorial": {
+    "step0title": "Selecionar Unidade",
+    "step0": "Suas unidades são os círculos coloridos no mapa. Toque em um para selecioná-lo.",
+    "step1title": "Mover sua Unidade",
+    "step1": "Os hexes iluminados mostram para onde você pode mover. Toque em um para ir até lá.",
+    "step2title": "Abrir sua Cidade",
+    "step2": "Toque no marcador de cidade (★) no mapa para construir edifícios e treinar unidades.",
+    "step3title": "Terminar Turno",
+    "step3": "Toque em \"Terminar Turno\" — o botão está no painel à direita (ou na parte inferior no mobile).",
+    "skip": "Pular",
+    "stepOf": "{{step}} / {{total}}",
+    "settingsTitle": "Tutorial",
+    "reactivate": "Reativar Tutorial",
+    "reactivated": "✓ Tutorial reiniciado — aparecerá na sua próxima partida."
   }
 }

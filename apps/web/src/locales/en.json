@@ -371,5 +371,20 @@
     "subtitle": "You leveled up!",
     "unlocked": "Unlocked",
     "continue": "Continue"
+  },
+  "tutorial": {
+    "step0title": "Select a Unit",
+    "step0": "Your units are the colored circles on the map. Tap one to select it.",
+    "step1title": "Move Your Unit",
+    "step1": "The highlighted hexes show where you can move. Tap one to go there.",
+    "step2title": "Open Your City",
+    "step2": "Tap the city marker (★) on the map to construct buildings and train new units.",
+    "step3title": "End Your Turn",
+    "step3": "Tap \"End Turn\" — the button is in the panel on the right (or at the bottom on mobile).",
+    "skip": "Skip",
+    "stepOf": "{{step}} / {{total}}",
+    "settingsTitle": "Tutorial",
+    "reactivate": "Reactivate Tutorial",
+    "reactivated": "✓ Tutorial reset — it will appear in your next game."
   }
 }

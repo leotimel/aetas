@@ -18,6 +18,7 @@ import EraModal, { ERA_ICONS } from '../components/EraModal.tsx'
 import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
 import LevelUpModal from '../components/LevelUpModal.tsx'
 import ResourceBar from '../components/ResourceBar.tsx'
+import TutorialOverlay from '../components/TutorialOverlay.tsx'
 import i18n from '../i18n.ts'
 
 interface Props {
@@ -204,6 +205,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [newUnitIds, setNewUnitIds] = useState<Set<string>>(new Set())
   const [xpToasts, setXpToasts] = useState<XpToastItem[]>([])
   const [levelUpData, setLevelUpData] = useState<number | null>(null)
+  const [tutorialStep, setTutorialStep] = useState<number>(() =>
+    localStorage.getItem('aetas-tutorial-done') ? -1 : 0
+  )
 
   const gameStateRef    = useRef<GameState | null>(null)
   const prevEraRef      = useRef<Era | null>(null)
@@ -224,6 +228,28 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const ts = new Date().toISOString().slice(11, 19)
     setLog(l => [`${ts} ${msg}`, ...l].slice(0, 40))
   }
+
+  const skipTutorial = () => {
+    localStorage.setItem('aetas-tutorial-done', '1')
+    setTutorialStep(-1)
+  }
+
+  // Step 0 → 1: advance when player selects a unit
+  useEffect(() => {
+    if (tutorialStep === 0 && selectedUnitId) setTutorialStep(1)
+  }, [selectedUnitId, tutorialStep])
+
+  // Step 2 → 3: advance when player opens a city (or auto-skip if no cities)
+  useEffect(() => {
+    if (tutorialStep === 2 && selectedCityId) setTutorialStep(3)
+  }, [selectedCityId, tutorialStep])
+
+  useEffect(() => {
+    if (tutorialStep === 2 && gameState) {
+      const hasCities = gameState.cities.some(c => c.ownerId === enginePlayerId)
+      if (!hasCities) setTutorialStep(3)
+    }
+  }, [tutorialStep, gameState, enginePlayerId])
 
   const triggerXp = useCallback(async (event: string, actionId: string, amount: number) => {
     const res = await awardActionXp(event, actionId, amount)
@@ -357,6 +383,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const res = await submitAction(gameId, { type: 'endTurn' })
     addLog(res.ok ? i18n.t('action.turnEnded') : `✗ ${errorLabel(res.error)}`)
     if (res.ok) {
+      if (tutorialStep === 3) skipTutorial()
       setSelectedUnitId(null)
       let postState = res.data?.state ?? null
       if (postState) setGameState(postState)
@@ -445,7 +472,11 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleMoveUnit = async (unitId: string, targetCoord: HexCoord) => {
     const res = await submitAction(gameId, { type: 'moveUnit', unitId, targetCoord })
     addLog(res.ok ? i18n.t('action.unitMoved') : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setSelectedUnitId(null); applyOrFetch(res.data?.state) }
+    if (res.ok) {
+      if (tutorialStep === 1) setTutorialStep(2)
+      setSelectedUnitId(null)
+      applyOrFetch(res.data?.state)
+    }
   }
 
   // ─── Diplomacy ──────────────────────────────────────────────────────────────
@@ -807,6 +838,9 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       {levelUpData !== null && (
         <LevelUpModal level={levelUpData} onClose={() => setLevelUpData(null)} />
       )}
+
+      {/* ── Tutorial overlay ── */}
+      <TutorialOverlay step={tutorialStep} onSkip={skipTutorial} />
     </div>
   )
 }
