@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import type { GameState, HexCoord, CitySpecialization, Unit, Era, Resources } from '@aetas/game-engine'
-import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel } from '@aetas/game-engine'
+import { BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -16,6 +16,7 @@ import ScoreModal from '../components/ScoreModal.tsx'
 import EraModal, { ERA_ICONS, ERA_NAMES_PT } from '../components/EraModal.tsx'
 import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
 import LevelUpModal from '../components/LevelUpModal.tsx'
+import ResourceBar from '../components/ResourceBar.tsx'
 
 interface Props {
   gameId: string
@@ -316,6 +317,20 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
   const isMyTurn = !!gameState && gameState.currentPlayerId === enginePlayerId && !gameState.isFinished
 
+  const myPlayer = gameState?.players.find(p => p.id === enginePlayerId)
+
+  const myIncome = useMemo((): Resources => {
+    if (!gameState) return { gold: 0, food: 0, production: 0 }
+    const myCities = gameState.cities.filter(c => c.ownerId === enginePlayerId)
+    return myCities.reduce(
+      (acc, city) => {
+        const p = computeCityProduction(city, gameState.cities, gameState.map.tiles)
+        return { gold: acc.gold + p.gold, food: acc.food + p.food, production: acc.production + p.production }
+      },
+      { gold: 0, food: 0, production: 0 },
+    )
+  }, [gameState, enginePlayerId])
+
   const handleEndTurn = async () => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'endTurn' })
@@ -585,6 +600,14 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           style={{ width: `${Math.min(100, (gameState.turnNumber / gameState.maxTurns) * 100)}%` }}
         />
       </div>
+
+      {/* ── Resource HUD ── */}
+      {myPlayer && (
+        <ResourceBar
+          resources={myPlayer.resources}
+          income={myIncome}
+        />
+      )}
 
       {/* ── Player bar ── */}
       <div className="flex-shrink-0 border-b border-aetas-border">
