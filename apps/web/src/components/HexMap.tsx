@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { GameState, HexCoord } from '@aetas/game-engine'
 import { hexKey, hexDistance, UnitType, Era, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, CIVILIZATIONS } from '@aetas/game-engine'
 import TerrainPatterns from '../assets/terrain-patterns.tsx'
@@ -229,6 +229,23 @@ export default function HexMap({
   const playerColorMap = new Map<string, string>()
   players.forEach((p, i) => playerColorMap.set(p.id, civColor(p.civilizationId, PLAYER_COLORS[i % PLAYER_COLORS.length])))
 
+  const territoryMap = useMemo(() => {
+    const m = new Map<string, string>()  // hexKey → ownerId
+    for (const tile of gameState.map.tiles) {
+      const key = hexKey(tile.coord)
+      let best: { dist: number; cityId: string; ownerId: string } | null = null
+      for (const city of gameState.cities) {
+        const d = hexDistance(tile.coord, city.position)
+        if (d > 2) continue
+        if (!best || d < best.dist || (d === best.dist && city.id < best.cityId)) {
+          best = { dist: d, cityId: city.id, ownerId: city.ownerId }
+        }
+      }
+      if (best) m.set(key, best.ownerId)
+    }
+    return m
+  }, [gameState.cities, gameState.map.tiles])
+
   const myFow = fogOfWar.find(f => f.playerId === myEnginePlayerId)
   const visibleSet = new Set((myFow?.visibleHexes ?? []).map(hexKey))
   const exploredSet = new Set((myFow?.exploredHexes ?? []).map(hexKey))
@@ -375,6 +392,23 @@ export default function HexMap({
                 stroke={stroke}
                 strokeWidth={strokeWidth}
               />
+              {/* Territory overlay — visible tiles only */}
+              {isVisible && (() => {
+                const ownerId = territoryMap.get(key)
+                if (!ownerId) return null
+                const color = playerColorMap.get(ownerId) ?? '#888'
+                return (
+                  <polygon
+                    points={points}
+                    fill={color}
+                    fillOpacity={0.18}
+                    stroke={color}
+                    strokeWidth={0.4}
+                    strokeOpacity={0.35}
+                    pointerEvents="none"
+                  />
+                )
+              })()}
               {/* Selection overlay — gold pulse */}
               {isSelectedHex && (
                 <polygon points={points} fill="none" stroke="#c9a84c" strokeWidth={2}
