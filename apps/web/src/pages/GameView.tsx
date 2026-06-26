@@ -331,13 +331,20 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     )
   }, [gameState, enginePlayerId])
 
+  const applyOrFetch = useCallback((state?: GameState | null) => {
+    if (state) setGameState(state)
+    else void fetchGame()
+  }, [fetchGame])
+
   const handleEndTurn = async () => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'endTurn' })
     addLog(res.ok ? 'Turno encerrado' : `✗ ${errorLabel(res.error)}`)
     if (res.ok) {
       setSelectedUnitId(null)
-      const postState = await fetchGame()
+      let postState = res.data?.state ?? null
+      if (postState) setGameState(postState)
+      else postState = await fetchGame()
       void triggerXp('turn_played', `${gameId}:turn:${preState.turnNumber}:${enginePlayerId}`, 5)
       if (postState) {
         if (preState.era !== postState.era) {
@@ -372,7 +379,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const res = await submitAction(gameId, { type: 'initiateCombat', attackerUnitId, defenderUnitId })
     setCombatLoading(false)
     addLog(res.ok ? 'Ataque iniciado ⚔️ — aguardando resposta do adversário' : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setCombatPreview(null); setSelectedUnitId(null); void fetchGame() }
+    if (res.ok) { setCombatPreview(null); setSelectedUnitId(null); applyOrFetch(res.data?.state) }
   }
 
   const handleResolveDispute = async (disputeId: string) => {
@@ -402,14 +409,16 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleConstructBuilding = async (cityId: string, buildingType: BuildingType) => {
     const res = await submitAction(gameId, { type: 'constructBuilding', cityId, buildingType })
     addLog(res.ok ? `${buildingLabel(buildingType)} em construção` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleAttackCity = async (unitId: string, cityId: string) => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'attackCity', unitId, cityId })
     if (res.ok) {
-      const postState = await fetchGame()
+      const postState = res.data?.state ?? null
+      if (postState) setGameState(postState)
+      else void fetchGame()
       addLog(formatCityAttackLog(preState, postState, unitId, cityId))
       setSelectedUnitId(null)
     } else {
@@ -420,7 +429,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleMoveUnit = async (unitId: string, targetCoord: HexCoord) => {
     const res = await submitAction(gameId, { type: 'moveUnit', unitId, targetCoord })
     addLog(res.ok ? 'Unidade movida' : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setSelectedUnitId(null); void fetchGame() }
+    if (res.ok) { setSelectedUnitId(null); applyOrFetch(res.data?.state) }
   }
 
   // ─── Diplomacy ──────────────────────────────────────────────────────────────
@@ -430,19 +439,19 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const handleProposePact = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'proposePact', targetId })
     addLog(res.ok ? `🤝 Pacto proposto aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleBreakPact = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'breakPact', targetId })
     addLog(res.ok ? `💔 Pacto com os ${civOf(targetId)} rompido` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleProposePeace = async (targetId: string) => {
     const res = await submitAction(gameId, { type: 'proposePeace', targetId })
     addLog(res.ok ? `🕊️ Paz proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok) applyOrFetch(res.data?.state)
   }
 
   const handleDeclareWar = async (targetId: string) => {
@@ -450,7 +459,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const res = await submitAction(gameId, { type: 'declareWar', targetId })
     setDiplomacyLoading(false)
     addLog(res.ok ? `⚔️ Você declarou guerra aos ${civOf(targetId)}!` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setWarTarget(null); void fetchGame() }
+    if (res.ok) { setWarTarget(null); applyOrFetch(res.data?.state) }
   }
 
   const handleProposeTrade = async (targetId: string, offer: Resources, request: Resources) => {
@@ -458,15 +467,21 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const res = await submitAction(gameId, { type: 'proposeTrade', targetId, offer, request })
     setDiplomacyLoading(false)
     addLog(res.ok ? `📦 Troca proposta aos ${civOf(targetId)}` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setTradeTarget(null); void fetchGame() }
+    if (res.ok) { setTradeTarget(null); applyOrFetch(res.data?.state) }
   }
 
   const handleRespondDiplomacy = async (proposalId: string, accept: boolean) => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'respondToDiplomacy', proposalId, accept })
     if (res.ok) {
-      const postState = await fetchGame()
-      if (postState) for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
+      const postState = res.data?.state ?? null
+      if (postState) {
+        setGameState(postState)
+        for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
+      } else {
+        const fetched = await fetchGame()
+        if (fetched) for (const line of diffDiplomacyForLog(preState, fetched)) addLog(line)
+      }
     } else {
       addLog(`✗ ${errorLabel(res.error)}`)
     }
@@ -490,7 +505,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) {
       setFoundingUnitId(null)
       setSelectedUnitId(null)
-      await fetchGame()
+      applyOrFetch(res.data?.state)
       setSelectedCityId(cityId)
       void triggerXp('city_founded', `${gameId}:city:${cityId}`, 8)
     }
@@ -500,7 +515,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const unitId = crypto.randomUUID()
     const res = await submitAction(gameId, { type: 'trainUnit', cityId, unitType, unitId })
     addLog(res.ok ? `${unitLabel(unitType)} treinada com sucesso!` : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) void fetchGame()
+    if (res.ok) applyOrFetch(res.data?.state)
   }
 
   if (loading) {

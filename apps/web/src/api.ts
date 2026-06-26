@@ -37,7 +37,7 @@ async function post<T>(path: string, body: unknown): Promise<ApiResult<T>> {
 }
 
 export const submitAction = (gameId: string, action: GameAction) =>
-  post<{ ok: boolean }>('/submit-action', { gameId, action })
+  post<{ state: GameState }>('/submit-action', { gameId, action })
 
 export const resolveDispute = (gameId: string, disputeId: string) =>
   post<{ ok: boolean; state?: GameState }>('/resolve-dispute', { gameId, disputeId })
