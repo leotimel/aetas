@@ -19,17 +19,22 @@
   --color-aetas-green: #1a3d1a;
 
   /* Fundos warm-dark */
-  --color-aetas-bg:      #0e0c09;
-  --color-aetas-surface: #17140f;
-  --color-aetas-raised:  #211d16;
-  --color-aetas-panel:   #2b261e;
+  --color-aetas-bg:      #110d07;
+  --color-aetas-surface: #1c1509;
+  --color-aetas-raised:  #271a0d;
+  --color-aetas-panel:   #312010;
 
   /* Bordas */
-  --color-aetas-border:        #38301f;
-  --color-aetas-border-strong: #4d4230;
+  --color-aetas-border:        #3d2910;
+  --color-aetas-border-strong: #52350f;
 
   /* Hierarquia de texto — warm cream */
   --color-aetas-text:  #e8dcc8;
   --color-aetas-muted: #9d8c75;
   --color-aetas-dim:   #6b5d48;
+
+  /* Novos tokens UI romana */
+  --color-aetas-stone:     #bfaa87;
+  --color-aetas-bronze:    #7a4f1e;
+  --color-aetas-parchment: #c8a552;
 }
