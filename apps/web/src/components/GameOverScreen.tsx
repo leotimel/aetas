@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { CIVILIZATIONS, scoreAll, type PlayerScore } from '@aetas/game-engine'
@@ -23,18 +23,19 @@ function civFlag(players: GameState['players'], playerId: string): string {
 function buildShareText(
   gameState: GameState,
   scores: Record<string, PlayerScore>,
-  title: string,
 ): string {
   const ranked = [...gameState.players]
     .sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0))
 
-  const lines = [title]
+  const lines = [`🏛 Aetas · Turno ${gameState.turnNumber}/${gameState.maxTurns}`]
   ranked.forEach((p, i) => {
     const medal = i === 0 ? '🏆' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`
+    const flag  = civFlag(gameState.players, p.id)
     const name  = civName(gameState.players, p.id)
     const total = scores[p.id]?.total ?? 0
-    lines.push(`${medal} ${name}: ${total}pts`)
+    lines.push(`${medal} ${flag} ${name} ${total}pts`)
   })
+  lines.push('playaetas.vercel.app')
   return lines.join('\n')
 }
 
@@ -76,7 +77,8 @@ const RANK_ORD   = ['1º', '2º', '3º', '4º', '5º', '6º', '7º', '8º']
 
 export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, onBack }: Props) {
   const { t } = useTranslation()
-  const scores = useMemo(() => scoreAll(gameState), [gameState])
+  const scores  = useMemo(() => scoreAll(gameState), [gameState])
+  const [copied, setCopied] = useState(false)
 
   const ranked = useMemo(() => {
     const active     = gameState.players.filter(p => !p.isEliminated)
@@ -91,9 +93,15 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
   const iWon      = winner === myEnginePlayerId
 
   const handleShare = () => {
-    const title = t('gameover.title', { max: gameState.maxTurns })
-    const text = buildShareText(gameState, scores, title)
-    navigator.clipboard.writeText(text).catch(() => {/* silent */})
+    const text = buildShareText(gameState, scores)
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => {/* user cancelled or unsupported */})
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {/* silent */})
+    }
   }
 
   return (
@@ -178,7 +186,7 @@ export default function GameOverScreen({ gameState, myEnginePlayerId, xpGain, on
               onClick={handleShare}
               className="flex-1 py-2.5 rounded-xl bg-aetas-raised border border-aetas-border text-aetas-muted text-sm font-medium hover:bg-aetas-panel transition-colors"
             >
-              {t('gameover.share')}
+              {copied ? t('gameover.copied') : t('gameover.share')}
             </button>
             <button
               disabled
