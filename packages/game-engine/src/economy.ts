@@ -165,7 +165,8 @@ export function computeCityProduction(
   }
 
   if (tiles.length > 0) {
-    const terr = computeCityTerritoryBonus(city, allCities, tiles)
+    const territoryRadius = city.level >= 3 ? 3 : 2
+    const terr = computeCityTerritoryBonus(city, allCities, tiles, territoryRadius)
     base.gold       += terr.gold
     base.food       += terr.food
     base.production += terr.production
@@ -185,9 +186,16 @@ export function growthThreshold(population: number): number {
   return population * FOOD_PER_POPULATION_GROWTH
 }
 
+function popToLevel(pop: number): number {
+  if (pop >= 4) return 3
+  if (pop >= 2) return 2
+  return 1
+}
+
 /**
  * Adds food income to a city's food storage and triggers a population increase
- * if the growth threshold is reached.
+ * if the growth threshold is reached. Also promotes city level when population
+ * crosses the popToLevel thresholds (pop ≥ 2 → lv2, pop ≥ 4 → lv3).
  * Returns a new City — does not mutate the input.
  */
 export function applyGrowth(city: City, foodIncome: number): City {
@@ -195,11 +203,21 @@ export function applyGrowth(city: City, foodIncome: number): City {
   const threshold = growthThreshold(city.population)
 
   if (newFoodStored >= threshold) {
-    return {
+    const grown: City = {
       ...city,
       population: city.population + 1,
       foodStored: newFoodStored - threshold,
     }
+    const newLevel = popToLevel(grown.population)
+    if (newLevel > grown.level) {
+      const newMaxHp = cityMaxHp(newLevel)
+      const hp = Math.min(
+        newMaxHp,
+        (grown.hp ?? cityMaxHp(grown.level)) + (newMaxHp - cityMaxHp(grown.level)),
+      )
+      return { ...grown, level: newLevel, maxHp: newMaxHp, hp }
+    }
+    return grown
   }
   return { ...city, foodStored: newFoodStored }
 }

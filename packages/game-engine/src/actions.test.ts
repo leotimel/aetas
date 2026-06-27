@@ -523,6 +523,21 @@ describe('validateAction — constructBuilding', () => {
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
     expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: true })
   })
+
+  it('rejects 2nd building of same specialization when city.level < 2 (E8)', () => {
+    // Barracks already built; Wall is the 2nd Military building — requires level 2
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), buildings: [BuildingType.Barracks], level: 1 }
+    const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Wall }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'city level too low' })
+  })
+
+  it('accepts 2nd building when city.level >= 2 (E8)', () => {
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), buildings: [BuildingType.Barracks], level: 2 }
+    const state = makeState({ players: [playerWithProd('p0', 50), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Wall }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: true })
+  })
 })
 
 describe('applyAction — constructBuilding', () => {

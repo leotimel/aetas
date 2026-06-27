@@ -194,6 +194,34 @@ describe('applyGrowth', () => {
     expect(city.population).toBe(1)
     expect(city.foodStored).toBe(18)
   })
+
+  // ── Level-up on growth (E8) ──────────────────────────────────────────────
+  it('pop 1→2 triggers level-up to 2: level=2, maxHp=15, hp gains the diff', () => {
+    // growthThreshold(1)=20; city starts with hp=10 (maxHp for lv1)
+    const city = makeCity({ population: 1, level: 1, hp: 10, foodStored: 0 })
+    const result = applyGrowth(city, 20) // exact threshold
+    expect(result.population).toBe(2)
+    expect(result.level).toBe(2)
+    expect(result.maxHp).toBe(15)
+    expect(result.hp).toBe(15) // 10 + (15 - 10) = 15
+  })
+
+  it('pop 3→4 triggers level-up to 3: level=3, maxHp=20', () => {
+    // growthThreshold(3)=60
+    const city = makeCity({ population: 3, level: 2, hp: 15, foodStored: 0 })
+    const result = applyGrowth(city, 60)
+    expect(result.population).toBe(4)
+    expect(result.level).toBe(3)
+    expect(result.maxHp).toBe(20)
+  })
+
+  it('no level-up when popToLevel does not change (pop 2→3, already level 2)', () => {
+    // growthThreshold(2)=40
+    const city = makeCity({ population: 2, level: 2, hp: 15, foodStored: 0 })
+    const result = applyGrowth(city, 40)
+    expect(result.population).toBe(3)
+    expect(result.level).toBe(2) // no change
+  })
 })
 
 // ─── Suite 4: população ao longo de N turnos ─────────────────────────────────
@@ -224,6 +252,9 @@ describe('população ao longo de N turnos — curva de crescimento', () => {
   })
 
   it('Scientific city grows faster than Military city (more food)', () => {
+    // Scientific has 2× food multiplier vs Military's 0.75×. With level-up (E8),
+    // Military catches up by turn 20 due to LEVEL_BONUS_PER_LEVEL. Compare at
+    // turn 15 where Scientific is already at pop=3 but Military is still at pop=2.
     const runFor = (spec: CitySpecialization, turns: number): number => {
       let city = makeCity({ specialization: spec, population: 1 })
       for (let t = 0; t < turns; t++) {
@@ -231,8 +262,8 @@ describe('população ao longo de N turnos — curva de crescimento', () => {
       }
       return city.population
     }
-    expect(runFor(CitySpecialization.Scientific, 20))
-      .toBeGreaterThan(runFor(CitySpecialization.Military, 20))
+    expect(runFor(CitySpecialization.Scientific, 15))
+      .toBeGreaterThan(runFor(CitySpecialization.Military, 15))
   })
 
   it('foodStored resets (partially) on each population growth', () => {

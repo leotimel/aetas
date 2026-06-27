@@ -176,6 +176,13 @@ export function validateAction(
         return { valid: false, reason: 'construction already in progress' }
       }
 
+      const builtForSpec = (city.buildings ?? []).filter(b =>
+        getBuildingDef(b).specialization === buildingDef.specialization
+      )
+      if (builtForSpec.length >= 1 && city.level < 2) {
+        return { valid: false, reason: 'city level too low' }
+      }
+
       const player = getPlayerById(state, playerId)!
       if (player.resources.production < buildingDef.productionCost) {
         return { valid: false, reason: 'insufficient production' }

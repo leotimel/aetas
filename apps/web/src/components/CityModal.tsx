@@ -135,6 +135,28 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             <StatBox label={t('city.food')} value={city.foodStored} />
           </div>
 
+          {/* Level progress */}
+          {isMyCity && city.level < 3 && (() => {
+            const threshold = city.level === 1 ? 2 : 4
+            const nextLevel = city.level + 1
+            const pct = Math.min(100, Math.round((city.population / threshold) * 100))
+            return (
+              <div className="bg-aetas-raised rounded-xl p-3 mb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-aetas-dim">
+                    {t('city.levelProgress', { pop: city.population, threshold, next: nextLevel })}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-aetas-panel rounded-full overflow-hidden">
+                  <div className="h-full bg-aetas-gold rounded-full transition-all" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })()}
+          {isMyCity && city.level === 3 && (
+            <div className="text-center text-xs text-aetas-gold mb-4">{t('city.maxLevel')}</div>
+          )}
+
           {/* My resources (only shown for my cities) */}
           {isMyCity && myResources && (
             <div className="bg-aetas-raised rounded-xl p-3 mb-4">
@@ -213,24 +235,34 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             {isMyCity && onConstructBuilding && buildingsForSpec
               .filter(def => !builtSet.has(def.type) && constructing?.buildingType !== def.type)
               .map(def => {
+                const builtForSpec = [...builtSet].filter(b =>
+                  BUILDING_CATALOG.get(b)!.specialization === def.specialization
+                )
+                const levelLocked = builtForSpec.length >= 1 && city.level < 2
                 const canAffordProd = (myResources?.production ?? 0) >= def.productionCost
                 const canAffordGold = (myResources?.gold ?? 0) >= def.goldCost
                 const canAfford = canAffordProd && canAffordGold
                 return (
                   <div key={def.type} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
                     <div className="flex-1 min-w-0">
-                      <span className="text-aetas-text text-sm font-medium">{def.name}</span>
+                      <span className={`text-sm font-medium ${levelLocked ? 'text-aetas-dim' : 'text-aetas-text'}`}>{def.name}</span>
                       <span className="text-aetas-dim text-xs ml-2">{effectLabel(def.effect)}</span>
                       <span className="text-aetas-border-strong text-xs ml-1">· {def.constructionTurns}t</span>
                     </div>
-                    <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost} 💰 {def.goldCost}</span>
-                    <button
-                      onClick={() => onConstructBuilding(city.id, def.type)}
-                      disabled={!canAfford || constructing != null}
-                      className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold/70 hover:bg-aetas-gold text-aetas-bg"
-                    >
-                      {t('city.buildBtn')}
-                    </button>
+                    {levelLocked ? (
+                      <span className="text-xs text-aetas-dim opacity-60 whitespace-nowrap">{t('city.requiresLevel2')}</span>
+                    ) : (
+                      <>
+                        <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost} 💰 {def.goldCost}</span>
+                        <button
+                          onClick={() => onConstructBuilding(city.id, def.type)}
+                          disabled={!canAfford || constructing != null}
+                          className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold/70 hover:bg-aetas-gold text-aetas-bg"
+                        >
+                          {t('city.buildBtn')}
+                        </button>
+                      </>
+                    )}
                   </div>
                 )
               })

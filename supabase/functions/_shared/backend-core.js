@@ -545,7 +545,8 @@ function computeCityProduction(city, allCities = [], tiles = []) {
     production: Math.round(city.population * BASE_PRODUCTION_PER_POP * m.production * lv)
   };
   if (tiles.length > 0) {
-    const terr = computeCityTerritoryBonus(city, allCities, tiles);
+    const territoryRadius = city.level >= 3 ? 3 : 2;
+    const terr = computeCityTerritoryBonus(city, allCities, tiles, territoryRadius);
     base.gold += terr.gold;
     base.food += terr.food;
     base.production += terr.production;
@@ -555,15 +556,30 @@ function computeCityProduction(city, allCities = [], tiles = []) {
 function growthThreshold(population) {
   return population * FOOD_PER_POPULATION_GROWTH;
 }
+function popToLevel(pop) {
+  if (pop >= 4) return 3;
+  if (pop >= 2) return 2;
+  return 1;
+}
 function applyGrowth(city, foodIncome) {
   const newFoodStored = city.foodStored + foodIncome;
   const threshold = growthThreshold(city.population);
   if (newFoodStored >= threshold) {
-    return {
+    const grown = {
       ...city,
       population: city.population + 1,
       foodStored: newFoodStored - threshold
     };
+    const newLevel = popToLevel(grown.population);
+    if (newLevel > grown.level) {
+      const newMaxHp = cityMaxHp(newLevel);
+      const hp = Math.min(
+        newMaxHp,
+        (grown.hp ?? cityMaxHp(grown.level)) + (newMaxHp - cityMaxHp(grown.level))
+      );
+      return { ...grown, level: newLevel, maxHp: newMaxHp, hp };
+    }
+    return grown;
   }
   return { ...city, foodStored: newFoodStored };
 }
@@ -1710,6 +1726,12 @@ function validateAction(state, playerId, action, _now) {
       }
       if (city.construction != null) {
         return { valid: false, reason: "construction already in progress" };
+      }
+      const builtForSpec = (city.buildings ?? []).filter(
+        (b) => getBuildingDef(b).specialization === buildingDef.specialization
+      );
+      if (builtForSpec.length >= 1 && city.level < 2) {
+        return { valid: false, reason: "city level too low" };
       }
       const player = getPlayerById(state, playerId);
       if (player.resources.production < buildingDef.productionCost) {
