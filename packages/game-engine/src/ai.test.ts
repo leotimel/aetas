@@ -3,7 +3,7 @@ import { decideSubstituteTurn, decideOpponentTurn, isFavorableAttack } from './a
 import { validateAction, applyAction, type GameAction } from './actions.js'
 import { createCombatDispute } from './combat.js'
 import { hexDistance, hexesInRadius } from './map.js'
-import { TurnState, Era, TerrainType, DiplomaticProposalStatus } from './types.js'
+import { TurnState, Era, TerrainType, DiplomaticProposalStatus, CitySpecialization, BuildingType } from './types.js'
 import type {
   Unit,
   UnitStats,
@@ -11,6 +11,7 @@ import type {
   GameMap,
   HexCoord,
   Player,
+  City,
   CombatDispute,
 } from './types.js'
 
@@ -33,14 +34,37 @@ function makeUnit(
   }
 }
 
-function makePlayer(id: string, isEliminated = false): Player {
+function makePlayer(id: string, isEliminated = false, resources = { gold: 0, food: 0, production: 0 }): Player {
   return {
     id,
     displayName: id,
-    civilizationId: 'rome',
-    resources: { gold: 0, food: 0, production: 0 },
+    civilizationId: 'romans',
+    resources,
     isEliminated,
     isAIControlled: true,
+  }
+}
+
+function makeCity(
+  id: string,
+  ownerId: string,
+  position: HexCoord,
+  opts: Partial<City> = {},
+): City {
+  return {
+    id,
+    name: id,
+    position,
+    ownerId,
+    population: 1,
+    specialization: CitySpecialization.Military,
+    level: 1,
+    foodStored: 0,
+    buildings: [],
+    construction: null,
+    hp: 10,
+    maxHp: 10,
+    ...opts,
   }
 }
 
@@ -328,6 +352,75 @@ describe('decideOpponentTurn — diplomacy', () => {
     expect(response, 'AI must respond to the pending pact').toBeDefined()
     expect(response!.accept).toBe(true)
     assertEndsWithSingleEndTurn(actions)
+  })
+})
+
+// ─── Economy & siege in decideOpponentTurn ───────────────────────────────────
+
+describe('decideOpponentTurn — economy & siege', () => {
+  const RICH = { gold: 100, food: 100, production: 100 }
+
+  it('trains a reinforcement when it has a city and enough production', () => {
+    const players = [makePlayer('p0', false, RICH), makePlayer('p1')]
+    const city = makeCity('p0-city', 'p0', { q: 0, r: 0 })
+    // No unit on the city hex (validator rejects training onto an occupied hex).
+    const state: GameState = { ...makeState({ players }), cities: [city] }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    const train = actions.find(a => a.type === 'trainUnit') as
+      Extract<GameAction, { type: 'trainUnit' }> | undefined
+    expect(train, 'AI should train a reinforcement').toBeDefined()
+    expect(train!.cityId).toBe('p0-city')
+    expect(train!.unitType).not.toBe('settler')
+    assertEndsWithSingleEndTurn(actions)
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('does not train past the unit cap', () => {
+    // cap = max(3, ceil(maxTurns/2)) = 5 for maxTurns 10; give p0 five units.
+    const units = Array.from({ length: 5 }, (_, i) => makeUnit(`p0-u${i}`, 'p0', { q: i + 2, r: 0 }))
+    const players = [makePlayer('p0', false, RICH), makePlayer('p1')]
+    const city = makeCity('p0-city', 'p0', { q: 0, r: 0 })
+    const state: GameState = { ...makeState({ players, units }), cities: [city] }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    expect(actions.some(a => a.type === 'trainUnit')).toBe(false)
+  })
+
+  it('constructs the cheapest building matching the city specialization', () => {
+    const players = [makePlayer('p0', false, RICH), makePlayer('p1')]
+    const city = makeCity('p0-city', 'p0', { q: 0, r: 0 }, { specialization: CitySpecialization.Military })
+    const state: GameState = { ...makeState({ players }), cities: [city] }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    const build = actions.find(a => a.type === 'constructBuilding') as
+      Extract<GameAction, { type: 'constructBuilding' }> | undefined
+    expect(build, 'AI should construct a building').toBeDefined()
+    // Barracks (8) is the cheapest Military building.
+    expect(build!.buildingType).toBe(BuildingType.Barracks)
+    assertEndsWithSingleEndTurn(actions)
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('besieges an adjacent enemy city when it is weak', () => {
+    const u = makeUnit('p0-u', 'p0', { q: 0, r: 0 }, { attack: 20 })
+    const players = [makePlayer('p0'), makePlayer('p1')]
+    const enemyCity = makeCity('p1-city', 'p1', { q: 1, r: 0 }, { hp: 3, maxHp: 10 })
+    const state: GameState = { ...makeState({ players, units: [u] }), cities: [enemyCity] }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    const siege = actions.find(a => a.type === 'attackCity') as
+      Extract<GameAction, { type: 'attackCity' }> | undefined
+    expect(siege, 'AI should attack the weak adjacent city').toBeDefined()
+    expect(siege!.cityId).toBe('p1-city')
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('is deterministic with cities and production', () => {
+    const players = [makePlayer('p0', false, RICH), makePlayer('p1')]
+    const city = makeCity('p0-city', 'p0', { q: 0, r: 0 })
+    const state = deepFreeze({ ...makeState({ players }), cities: [city] })
+    expect(decideOpponentTurn(state, 'p0', NOW)).toEqual(decideOpponentTurn(state, 'p0', NOW))
   })
 })
 

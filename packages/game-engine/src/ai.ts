@@ -5,6 +5,8 @@ import { resolveCombat, terrainAt } from './combat.js'
 import { hexDistance, hexNeighbors, hexKey } from './map.js'
 import { haveMadeContact, relationBetween } from './diplomacy.js'
 import { validateAction, applyAction, type GameAction } from './actions.js'
+import { unitsForCiv } from './civilizations.js'
+import { getBuildingsBySpecialization } from './buildings.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Two AIs with DIFFERENT purposes. Both produce a sequence of GameActions ending
@@ -277,11 +279,148 @@ function planMovement(
 }
 
 /**
- * Active opponent AI. Defends, advances units toward the nearest visible enemy
- * (or explores toward the centre when blind), then attacks adjacent enemies when
- * favorable, then ends the turn. Returns [] if it is not legally this player's
- * turn. `hard=true` skips the +2 active-defense assumption when evaluating attacks
- * (the AI becomes more aggressive — it takes fights Normal would skip).
+ * Besieges adjacent enemy cities. For each of the AI's not-yet-attacked units (by id),
+ * attacks the first adjacent enemy city that is "worth it": either already low on HP
+ * (<= 40% max) or surrounded by 2+ of the AI's units. One attack per unit (attackCity
+ * sets hasAttacked). Runs AFTER the unit combat loop, so a unit that already initiated
+ * combat this turn is skipped automatically. Only emits pre-validated actions.
+ */
+function planCityAttack(
+  state: GameState,
+  playerId: string,
+  now: number,
+): { state: GameState; actions: GameAction[] } {
+  let s = state
+  const actions: GameAction[] = []
+
+  const myUnits = s.units.filter(u => u.ownerId === playerId).slice().sort(byId)
+  for (const unit of myUnits) {
+    const current = s.units.find(u => u.id === unit.id)
+    if (!current || current.hasAttacked) continue
+
+    const targets = s.cities
+      .filter(c => c.ownerId !== playerId && hexDistance(current.position, c.position) === 1)
+      .slice()
+      .sort(byId)
+
+    for (const city of targets) {
+      const maxHp = city.maxHp ?? 10
+      const hp = city.hp ?? maxHp
+      const adjMine = s.units.filter(
+        u => u.ownerId === playerId && hexDistance(u.position, city.position) === 1,
+      ).length
+      const worth = hp <= maxHp * 0.4 || adjMine >= 2
+      if (!worth) continue
+
+      const action: GameAction = { type: 'attackCity', unitId: current.id, cityId: city.id }
+      if (validateAction(s, playerId, action, now).valid) {
+        actions.push(action)
+        const applied = applyAction(s, playerId, action, now)
+        if (applied.ok) s = applied.state
+        break // one attack per unit
+      }
+    }
+  }
+
+  return { state: s, actions }
+}
+
+/**
+ * Trains one reinforcement per turn (anti-snowball) when the AI is below a unit cap
+ * and can afford the cheapest non-settler unit available to its civilization in the
+ * current era. The unit type is DERIVED from `unitsForCiv` (not hardcoded), so civs
+ * whose special unit replaces the Warrior still train correctly. Deterministic unitId
+ * from the city id + turn number. Only emits pre-validated actions.
+ */
+function planUnitTraining(
+  state: GameState,
+  playerId: string,
+  now: number,
+): { state: GameState; actions: GameAction[] } {
+  let s = state
+  const actions: GameAction[] = []
+
+  const cap = Math.max(3, Math.ceil(s.maxTurns / 2))
+  const myUnitCount = s.units.filter(u => u.ownerId === playerId).length
+  if (myUnitCount >= cap) return { state: s, actions }
+
+  const player = s.players.find(p => p.id === playerId)
+  if (!player) return { state: s, actions }
+
+  // Cheapest non-founder unit the civ can train this era, that the AI can afford.
+  // unitsForCiv throws on an unknown civ id; guard so a bad legacy row can't crash
+  // the whole AI turn (same defensive pattern as getCivEconomyMultipliers).
+  let affordable
+  try {
+    affordable = unitsForCiv(player.civilizationId, s.era)
+      .filter(d => !d.canFoundCity)
+      .slice()
+      .sort((a, b) => a.productionCost - b.productionCost || a.type.localeCompare(b.type))
+      .find(d => d.productionCost <= player.resources.production)
+  } catch {
+    return { state: s, actions }
+  }
+  if (!affordable) return { state: s, actions }
+
+  const myCities = s.cities.filter(c => c.ownerId === playerId).slice().sort(byId)
+  for (const city of myCities) {
+    const unitId = `ai-u-${city.id.slice(0, 8)}-t${s.turnNumber}`
+    const action: GameAction = { type: 'trainUnit', cityId: city.id, unitType: affordable.type, unitId }
+    if (validateAction(s, playerId, action, now).valid) {
+      actions.push(action)
+      const applied = applyAction(s, playerId, action, now)
+      if (applied.ok) s = applied.state
+      break // one unit per turn
+    }
+  }
+
+  return { state: s, actions }
+}
+
+/**
+ * Starts construction of the cheapest building matching each city's specialization
+ * that isn't built yet and that the AI can afford. At most one building per city per
+ * turn. Only emits pre-validated actions.
+ */
+function planBuildingConstruction(
+  state: GameState,
+  playerId: string,
+  now: number,
+): { state: GameState; actions: GameAction[] } {
+  let s = state
+  const actions: GameAction[] = []
+
+  const myCities = s.cities.filter(c => c.ownerId === playerId).slice().sort(byId)
+  for (const city of myCities) {
+    const current = s.cities.find(c => c.id === city.id)
+    if (!current || current.construction != null) continue
+
+    const built = new Set(current.buildings ?? [])
+    const candidates = getBuildingsBySpecialization(current.specialization)
+      .filter(b => !built.has(b.type))
+      .slice()
+      .sort((a, b) => a.productionCost - b.productionCost || a.type.localeCompare(b.type))
+
+    for (const cand of candidates) {
+      const action: GameAction = { type: 'constructBuilding', cityId: current.id, buildingType: cand.type }
+      if (validateAction(s, playerId, action, now).valid) {
+        actions.push(action)
+        const applied = applyAction(s, playerId, action, now)
+        if (applied.ok) s = applied.state
+        break // one building per city per turn
+      }
+    }
+  }
+
+  return { state: s, actions }
+}
+
+/**
+ * Active opponent AI. Defends, answers diplomacy, advances units toward the nearest
+ * visible enemy (or explores when blind), attacks adjacent enemies, besieges weak
+ * cities, trains reinforcements, builds, initiates diplomacy, then ends the turn.
+ * Returns [] if it is not legally this player's turn. `hard=true` skips the +2
+ * active-defense assumption when evaluating attacks (more aggressive).
  */
 export function decideOpponentTurn(state: GameState, playerId: string, now: number, hard = false): GameAction[] {
   if (!canSubmitAction(state, playerId).valid) return []
@@ -317,6 +456,18 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
       }
     }
   }
+
+  const cityAttack = planCityAttack(s, playerId, now)
+  s = cityAttack.state
+  actions.push(...cityAttack.actions)
+
+  const training = planUnitTraining(s, playerId, now)
+  s = training.state
+  actions.push(...training.actions)
+
+  const building = planBuildingConstruction(s, playerId, now)
+  s = building.state
+  actions.push(...building.actions)
 
   const initiatives = planDiplomaticInitiatives(s, playerId, now)
   return [...actions, ...initiatives.actions, END_TURN]

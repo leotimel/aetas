@@ -2046,6 +2046,82 @@ function planMovement(state, playerId, now) {
   }
   return { state: s, actions };
 }
+function planCityAttack(state, playerId, now) {
+  let s = state;
+  const actions = [];
+  const myUnits = s.units.filter((u) => u.ownerId === playerId).slice().sort(byId);
+  for (const unit of myUnits) {
+    const current = s.units.find((u) => u.id === unit.id);
+    if (!current || current.hasAttacked) continue;
+    const targets = s.cities.filter((c) => c.ownerId !== playerId && hexDistance(current.position, c.position) === 1).slice().sort(byId);
+    for (const city of targets) {
+      const maxHp = city.maxHp ?? 10;
+      const hp = city.hp ?? maxHp;
+      const adjMine = s.units.filter(
+        (u) => u.ownerId === playerId && hexDistance(u.position, city.position) === 1
+      ).length;
+      const worth = hp <= maxHp * 0.4 || adjMine >= 2;
+      if (!worth) continue;
+      const action = { type: "attackCity", unitId: current.id, cityId: city.id };
+      if (validateAction(s, playerId, action, now).valid) {
+        actions.push(action);
+        const applied = applyAction(s, playerId, action, now);
+        if (applied.ok) s = applied.state;
+        break;
+      }
+    }
+  }
+  return { state: s, actions };
+}
+function planUnitTraining(state, playerId, now) {
+  let s = state;
+  const actions = [];
+  const cap = Math.max(3, Math.ceil(s.maxTurns / 2));
+  const myUnitCount = s.units.filter((u) => u.ownerId === playerId).length;
+  if (myUnitCount >= cap) return { state: s, actions };
+  const player = s.players.find((p) => p.id === playerId);
+  if (!player) return { state: s, actions };
+  let affordable;
+  try {
+    affordable = unitsForCiv(player.civilizationId, s.era).filter((d) => !d.canFoundCity).slice().sort((a, b) => a.productionCost - b.productionCost || a.type.localeCompare(b.type)).find((d) => d.productionCost <= player.resources.production);
+  } catch {
+    return { state: s, actions };
+  }
+  if (!affordable) return { state: s, actions };
+  const myCities = s.cities.filter((c) => c.ownerId === playerId).slice().sort(byId);
+  for (const city of myCities) {
+    const unitId = `ai-u-${city.id.slice(0, 8)}-t${s.turnNumber}`;
+    const action = { type: "trainUnit", cityId: city.id, unitType: affordable.type, unitId };
+    if (validateAction(s, playerId, action, now).valid) {
+      actions.push(action);
+      const applied = applyAction(s, playerId, action, now);
+      if (applied.ok) s = applied.state;
+      break;
+    }
+  }
+  return { state: s, actions };
+}
+function planBuildingConstruction(state, playerId, now) {
+  let s = state;
+  const actions = [];
+  const myCities = s.cities.filter((c) => c.ownerId === playerId).slice().sort(byId);
+  for (const city of myCities) {
+    const current = s.cities.find((c) => c.id === city.id);
+    if (!current || current.construction != null) continue;
+    const built = new Set(current.buildings ?? []);
+    const candidates = getBuildingsBySpecialization(current.specialization).filter((b) => !built.has(b.type)).slice().sort((a, b) => a.productionCost - b.productionCost || a.type.localeCompare(b.type));
+    for (const cand of candidates) {
+      const action = { type: "constructBuilding", cityId: current.id, buildingType: cand.type };
+      if (validateAction(s, playerId, action, now).valid) {
+        actions.push(action);
+        const applied = applyAction(s, playerId, action, now);
+        if (applied.ok) s = applied.state;
+        break;
+      }
+    }
+  }
+  return { state: s, actions };
+}
 function decideOpponentTurn(state, playerId, now, hard = false) {
   if (!canSubmitAction(state, playerId).valid) return [];
   const defensive = planDefensiveResponses(state, playerId, now);
@@ -2072,6 +2148,15 @@ function decideOpponentTurn(state, playerId, now, hard = false) {
       }
     }
   }
+  const cityAttack = planCityAttack(s, playerId, now);
+  s = cityAttack.state;
+  actions.push(...cityAttack.actions);
+  const training = planUnitTraining(s, playerId, now);
+  s = training.state;
+  actions.push(...training.actions);
+  const building = planBuildingConstruction(s, playerId, now);
+  s = building.state;
+  actions.push(...building.actions);
   const initiatives = planDiplomaticInitiatives(s, playerId, now);
   return [...actions, ...initiatives.actions, END_TURN];
 }
