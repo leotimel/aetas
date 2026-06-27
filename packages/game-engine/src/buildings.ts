@@ -25,6 +25,8 @@ export interface BuildingDefinition {
   readonly specialization:    CitySpecialization
   /** Production resource paid upfront to start construction. */
   readonly productionCost:    number
+  /** Gold resource paid upfront to start construction (≈ productionCost × 0.5). */
+  readonly goldCost:          number
   /** Turns from start to completion. */
   readonly constructionTurns: number
   readonly effect:            BuildingEffect
@@ -40,6 +42,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Quartel',
     specialization:    CitySpecialization.Military,
     productionCost:    8,
+    goldCost:          4,
     constructionTurns: 3,
     effect:            { type: 'productionMultiplier', value: 1.5 },
     description:       'Aumenta a produção da cidade em 50%. Treina unidades mais rapidamente.',
@@ -49,6 +52,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Muralha',
     specialization:    CitySpecialization.Military,
     productionCost:    12,
+    goldCost:          6,
     constructionTurns: 4,
     effect:            { type: 'cityDefenseBonus', value: 5 },
     description:       'Concede +5 de defesa a todas as unidades dentro dos limites da cidade.',
@@ -59,6 +63,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Mercado',
     specialization:    CitySpecialization.Commercial,
     productionCost:    10,
+    goldCost:          5,
     constructionTurns: 2,
     effect:            { type: 'goldMultiplier', value: 1.5 },
     description:       'Aumenta a produção de ouro em 50%.',
@@ -68,6 +73,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Porto',
     specialization:    CitySpecialization.Commercial,
     productionCost:    15,
+    goldCost:          8,
     constructionTurns: 3,
     effect:            { type: 'foodMultiplier', value: 1.3 },
     description:       'Rede de pesca costeira — aumenta a produção de alimento em 30%.',
@@ -78,6 +84,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Biblioteca',
     specialization:    CitySpecialization.Scientific,
     productionCost:    10,
+    goldCost:          5,
     constructionTurns: 3,
     effect:            { type: 'eraProgressBonus', value: 1 },
     description:       'Gera 1 ponto de pesquisa por turno, acelerando a progressão de era.',
@@ -87,6 +94,7 @@ const CATALOG_ENTRIES: readonly BuildingDefinition[] = [
     name:              'Templo',
     specialization:    CitySpecialization.Scientific,
     productionCost:    10,
+    goldCost:          5,
     constructionTurns: 4,
     effect:            { type: 'scoreBonus', value: 10 },
     description:       'Concede +10 pontos de pontuação cultural ao final da partida.',

@@ -96,7 +96,10 @@
     "waiting": "Waiting…",
     "waitingTurn": "Waiting for turn…",
     "turnEnded": "Turn ended",
-    "unitMoved": "Unit moved"
+    "unitMoved": "Unit moved",
+    "fortify": "Fortify 🏰",
+    "fortifyDesc": "Spend gold to repair city HP (5 gold = +1 HP)",
+    "fortified": "City fortified!"
   },
   "combat": {
     "preview": "Combat Preview",

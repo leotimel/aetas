@@ -461,6 +461,12 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
+  const handleFortifyCity = async (cityId: string, goldAmount: number) => {
+    const res = await submitAction(gameId, { type: 'fortifyCity', cityId, goldAmount })
+    addLog(res.ok ? i18n.t('action.fortified') : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) applyOrFetch(res.data?.state)
+  }
+
   const handleAttackCity = async (unitId: string, cityId: string) => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'attackCity', unitId, cityId })
@@ -759,6 +765,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             onClose={() => setSelectedCityId(null)}
             onConstructBuilding={(c, b) => { void handleConstructBuilding(c, b) }}
             onTrainUnit={(c, u) => { void handleTrainUnit(c, u) }}
+            onFortifyCity={(c, g) => { void handleFortifyCity(c, g) }}
           />
         ) : null
       })()}

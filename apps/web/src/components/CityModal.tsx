@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
-import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS } from '@aetas/game-engine'
+import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp } from '@aetas/game-engine'
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
 import i18n from '../i18n.ts'
 
@@ -59,9 +59,10 @@ interface Props {
   onClose: () => void
   onTrainUnit?: (cityId: string, unitType: string) => void
   onConstructBuilding?: (cityId: string, buildingType: BuildingType) => void
+  onFortifyCity?: (cityId: string, goldAmount: number) => void
 }
 
-export default function CityModal({ city, gameState, myEnginePlayerId, onClose, onTrainUnit, onConstructBuilding }: Props) {
+export default function CityModal({ city, gameState, myEnginePlayerId, onClose, onTrainUnit, onConstructBuilding, onFortifyCity }: Props) {
   const { t } = useTranslation()
 
   const isMyCity = city.ownerId === myEnginePlayerId
@@ -146,6 +147,23 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             </div>
           )}
 
+          {/* Fortify city (own damaged cities only) */}
+          {isMyCity && onFortifyCity && (city.hp ?? cityMaxHp(city.level)) < cityMaxHp(city.level) && (
+            <div className="bg-aetas-raised rounded-xl p-3 mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-aetas-text">{t('action.fortify')}</p>
+                <p className="text-xs text-aetas-dim">{t('action.fortifyDesc')}</p>
+              </div>
+              <button
+                onClick={() => onFortifyCity(city.id, 20)}
+                disabled={(myResources?.gold ?? 0) < 20}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-blue-700/70 hover:bg-blue-600 text-white whitespace-nowrap"
+              >
+                🏰 20💰 → +4 HP
+              </button>
+            </div>
+          )}
+
           {/* Specialization */}
           <div>
             <p className="text-xs text-aetas-dim mb-2">
@@ -195,7 +213,9 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             {isMyCity && onConstructBuilding && buildingsForSpec
               .filter(def => !builtSet.has(def.type) && constructing?.buildingType !== def.type)
               .map(def => {
-                const canAfford = (myResources?.production ?? 0) >= def.productionCost
+                const canAffordProd = (myResources?.production ?? 0) >= def.productionCost
+                const canAffordGold = (myResources?.gold ?? 0) >= def.goldCost
+                const canAfford = canAffordProd && canAffordGold
                 return (
                   <div key={def.type} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
                     <div className="flex-1 min-w-0">
@@ -203,7 +223,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                       <span className="text-aetas-dim text-xs ml-2">{effectLabel(def.effect)}</span>
                       <span className="text-aetas-border-strong text-xs ml-1">· {def.constructionTurns}t</span>
                     </div>
-                    <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost}</span>
+                    <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost} 💰 {def.goldCost}</span>
                     <button
                       onClick={() => onConstructBuilding(city.id, def.type)}
                       disabled={!canAfford || constructing != null}

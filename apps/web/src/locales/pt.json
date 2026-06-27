@@ -96,7 +96,10 @@
     "waiting": "Aguardando…",
     "waitingTurn": "Aguardando turno…",
     "turnEnded": "Turno encerrado",
-    "unitMoved": "Unidade movida"
+    "unitMoved": "Unidade movida",
+    "fortify": "Fortificar 🏰",
+    "fortifyDesc": "Gaste ouro para reparar HP da cidade (5 ouro = +1 HP)",
+    "fortified": "Cidade fortificada!"
   },
   "combat": {
     "preview": "Prévia de Combate",

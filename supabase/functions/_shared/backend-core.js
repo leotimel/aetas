@@ -331,6 +331,7 @@ var CATALOG_ENTRIES = [
     name: "Quartel",
     specialization: "military" /* Military */,
     productionCost: 8,
+    goldCost: 4,
     constructionTurns: 3,
     effect: { type: "productionMultiplier", value: 1.5 },
     description: "Aumenta a produ\xE7\xE3o da cidade em 50%. Treina unidades mais rapidamente."
@@ -340,6 +341,7 @@ var CATALOG_ENTRIES = [
     name: "Muralha",
     specialization: "military" /* Military */,
     productionCost: 12,
+    goldCost: 6,
     constructionTurns: 4,
     effect: { type: "cityDefenseBonus", value: 5 },
     description: "Concede +5 de defesa a todas as unidades dentro dos limites da cidade."
@@ -350,6 +352,7 @@ var CATALOG_ENTRIES = [
     name: "Mercado",
     specialization: "commercial" /* Commercial */,
     productionCost: 10,
+    goldCost: 5,
     constructionTurns: 2,
     effect: { type: "goldMultiplier", value: 1.5 },
     description: "Aumenta a produ\xE7\xE3o de ouro em 50%."
@@ -359,6 +362,7 @@ var CATALOG_ENTRIES = [
     name: "Porto",
     specialization: "commercial" /* Commercial */,
     productionCost: 15,
+    goldCost: 8,
     constructionTurns: 3,
     effect: { type: "foodMultiplier", value: 1.3 },
     description: "Rede de pesca costeira \u2014 aumenta a produ\xE7\xE3o de alimento em 30%."
@@ -369,6 +373,7 @@ var CATALOG_ENTRIES = [
     name: "Biblioteca",
     specialization: "scientific" /* Scientific */,
     productionCost: 10,
+    goldCost: 5,
     constructionTurns: 3,
     effect: { type: "eraProgressBonus", value: 1 },
     description: "Gera 1 ponto de pesquisa por turno, acelerando a progress\xE3o de era."
@@ -378,6 +383,7 @@ var CATALOG_ENTRIES = [
     name: "Templo",
     specialization: "scientific" /* Scientific */,
     productionCost: 10,
+    goldCost: 5,
     constructionTurns: 4,
     effect: { type: "scoreBonus", value: 10 },
     description: "Concede +10 pontos de pontua\xE7\xE3o cultural ao final da partida."
@@ -1709,6 +1715,9 @@ function validateAction(state, playerId, action, _now) {
       if (player.resources.production < buildingDef.productionCost) {
         return { valid: false, reason: "insufficient production" };
       }
+      if (player.resources.gold < buildingDef.goldCost) {
+        return { valid: false, reason: "insufficient gold" };
+      }
       return { valid: true };
     }
     case "moveUnit": {
@@ -1776,6 +1785,17 @@ function validateAction(state, playerId, action, _now) {
       if (proposal.targetId !== playerId) return { valid: false, reason: "only the proposal target can respond" };
       return { valid: true };
     }
+    case "fortifyCity": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      if (!city) return { valid: false, reason: "city not found" };
+      if (city.ownerId !== playerId) return { valid: false, reason: "not your city" };
+      if (action.goldAmount < 5) return { valid: false, reason: "minimum 5 gold" };
+      const player = getPlayerById(state, playerId);
+      if (player.resources.gold < action.goldAmount) return { valid: false, reason: "insufficient gold" };
+      const maxHp = cityMaxHp(city.level);
+      if ((city.hp ?? maxHp) >= maxHp) return { valid: false, reason: "city already at full hp" };
+      return { valid: true };
+    }
   }
 }
 function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
@@ -1838,7 +1858,8 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
           ...p,
           resources: {
             ...p.resources,
-            production: p.resources.production - buildingDef.productionCost
+            production: p.resources.production - buildingDef.productionCost,
+            gold: p.resources.gold - buildingDef.goldCost
           }
         }
       );
@@ -1919,6 +1940,26 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       return fromDiplomacy(breakNonAggressionPact(state, playerId, action.targetId));
     case "respondToDiplomacy":
       return fromDiplomacy(respondToProposal(state, playerId, action.proposalId, action.accept));
+    case "fortifyCity": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      const maxHp = cityMaxHp(city.level);
+      const currentHp = city.hp ?? maxHp;
+      const hpGain = Math.floor(action.goldAmount / 5);
+      const newHp = Math.min(maxHp, currentHp + hpGain);
+      return {
+        ok: true,
+        state: {
+          ...state,
+          cities: state.cities.map((c) => c.id === city.id ? { ...c, hp: newHp } : c),
+          players: state.players.map(
+            (p) => p.id !== playerId ? p : {
+              ...p,
+              resources: { ...p.resources, gold: p.resources.gold - action.goldAmount }
+            }
+          )
+        }
+      };
+    }
   }
 }
 function fromDiplomacy(res) {

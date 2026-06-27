@@ -466,7 +466,8 @@ describe('applyAction — attackCity balance (E6)', () => {
 // ─── constructBuilding ────────────────────────────────────────────────────────
 
 function playerWithProd(id: string, production: number): Player {
-  return { ...makePlayer(id), resources: { gold: 0, food: 0, production } }
+  // Ample gold by default so existing tests aren't blocked by the building goldCost (E7).
+  return { ...makePlayer(id), resources: { gold: 100, food: 0, production } }
 }
 
 describe('validateAction — constructBuilding', () => {
@@ -557,6 +558,89 @@ describe('applyAction — constructBuilding', () => {
     const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
     expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
     expect(state.cities.find(c => c.id === 'c1')!.construction).toBeUndefined()
+  })
+})
+
+// ─── constructBuilding: gold cost (E7) ────────────────────────────────────────
+
+describe('validateAction — constructBuilding gold gate (E7)', () => {
+  it('rejects when gold is insufficient (Barracks needs 4 gold)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 }) // Military
+    const p0 = { ...makePlayer('p0'), resources: { gold: 0, food: 0, production: 100 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient gold' })
+  })
+})
+
+describe('applyAction — constructBuilding deducts gold (E7)', () => {
+  it('deducts goldCost from the player (Barracks: prod 8, gold 4)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const p0 = { ...makePlayer('p0'), resources: { gold: 20, food: 0, production: 50 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'constructBuilding', cityId: 'c1', buildingType: BuildingType.Barracks }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const player = res.state.players.find(p => p.id === 'p0')!
+    expect(player.resources.production).toBe(42) // 50 - 8
+    expect(player.resources.gold).toBe(16)       // 20 - 4
+  })
+})
+
+// ─── fortifyCity (E7) ─────────────────────────────────────────────────────────
+
+describe('validateAction — fortifyCity (E7)', () => {
+  it('rejects when goldAmount < 5', () => {
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), hp: 5 }
+    const p0 = { ...makePlayer('p0'), resources: { gold: 20, food: 0, production: 0 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    expect(validateAction(state, 'p0', { type: 'fortifyCity', cityId: 'c1', goldAmount: 3 }, NOW))
+      .toEqual({ valid: false, reason: 'minimum 5 gold' })
+  })
+
+  it('rejects when player gold < goldAmount', () => {
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), hp: 5 }
+    const p0 = { ...makePlayer('p0'), resources: { gold: 4, food: 0, production: 0 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    expect(validateAction(state, 'p0', { type: 'fortifyCity', cityId: 'c1', goldAmount: 5 }, NOW))
+      .toEqual({ valid: false, reason: 'insufficient gold' })
+  })
+
+  it('rejects when city is already at full HP (level 1 maxHp=10)', () => {
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), hp: 10 }
+    const p0 = { ...makePlayer('p0'), resources: { gold: 20, food: 0, production: 0 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    expect(validateAction(state, 'p0', { type: 'fortifyCity', cityId: 'c1', goldAmount: 10 }, NOW))
+      .toEqual({ valid: false, reason: 'city already at full hp' })
+  })
+})
+
+describe('applyAction — fortifyCity (E7)', () => {
+  it('increases city HP by floor(goldAmount/5) and deducts gold', () => {
+    // City at hp=6; 20 gold → +4 HP → hp=10 (exactly maxHp=10)
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), hp: 6 }
+    const p0 = { ...makePlayer('p0'), resources: { gold: 30, food: 0, production: 0 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+
+    const res = applyAction(state, 'p0', { type: 'fortifyCity', cityId: 'c1', goldAmount: 20 }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.cities.find(c => c.id === 'c1')!.hp).toBe(10)       // 6 + 4
+    expect(res.state.players.find(p => p.id === 'p0')!.resources.gold).toBe(10) // 30 - 20
+  })
+
+  it('caps HP at cityMaxHp (cannot overheal)', () => {
+    // City at hp=8; 25 gold → floor(25/5)=5 HP gain → would be 13, capped at 10
+    const city: City = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), hp: 8 }
+    const p0 = { ...makePlayer('p0'), resources: { gold: 30, food: 0, production: 0 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+
+    const res = applyAction(state, 'p0', { type: 'fortifyCity', cityId: 'c1', goldAmount: 25 }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.cities.find(c => c.id === 'c1')!.hp).toBe(10) // capped at maxHp
   })
 })
 
