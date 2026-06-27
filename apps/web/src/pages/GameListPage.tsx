@@ -13,6 +13,13 @@ import {
   type MapSize,
 } from '@aetas/game-engine'
 
+interface GamePlayer {
+  id: string
+  displayName: string
+  civilizationId: string
+  isAIControlled: boolean
+}
+
 interface GameRow {
   game_id: string
   engine_player_id: string
@@ -25,6 +32,7 @@ interface GameRow {
     updated_at: string
     seed: string | null
     map_size: string | null
+    game_state: { players: GamePlayer[] } | null
   }
 }
 
@@ -61,7 +69,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   const fetchGames = async () => {
     const { data } = await supabase
       .from('game_players')
-      .select('game_id, engine_player_id, games(turn_number, current_player_id, is_finished, winner_id, max_turns, updated_at, seed, map_size)')
+      .select('game_id, engine_player_id, games(turn_number, current_player_id, is_finished, winner_id, max_turns, updated_at, seed, map_size, game_state)')
       .eq('user_id', userId)
       .eq('is_ai', false)
     setRows((data as GameRow[] | null) ?? [])
@@ -135,6 +143,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                       key={row.game_id}
                       row={row}
                       isMyTurn={true}
+                      players={row.games.game_state?.players ?? []}
                       onEnter={() => onEnterGame(row.game_id)}
                     />
                   ))}
@@ -151,6 +160,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                       key={row.game_id}
                       row={row}
                       isMyTurn={false}
+                      players={row.games.game_state?.players ?? []}
                       onEnter={() => onEnterGame(row.game_id)}
                     />
                   ))}
@@ -176,6 +186,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                         key={row.game_id}
                         row={row}
                         isMyTurn={false}
+                        players={row.games.game_state?.players ?? []}
                         onEnter={() => onEnterGame(row.game_id)}
                       />
                     ))}
@@ -238,14 +249,44 @@ function Section({ label, count, dim, children }: {
   )
 }
 
-function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean; onEnter: () => void }) {
+function buildOpponentLabel(players: GamePlayer[], selfId: string): string {
+  const opponents = players.filter(p => p.id !== selfId)
+  if (opponents.length === 0) return ''
+
+  // Detect duplicate civilizationIds to add a numeric suffix
+  const civCounts: Record<string, number> = {}
+  const civSeen:   Record<string, number> = {}
+  for (const p of opponents) {
+    civCounts[p.civilizationId] = (civCounts[p.civilizationId] ?? 0) + 1
+  }
+
+  const names = opponents.map(p => {
+    const civ   = CIVILIZATIONS.find(c => c.id === p.civilizationId)
+    const civName = civ?.name ?? p.civilizationId
+
+    // Fallback when displayName is still a UUID (old games without D2)
+    const isUuid = /^[0-9a-f-]{36}$/.test(p.displayName)
+    const base = isUuid ? civName : p.displayName
+
+    if ((civCounts[p.civilizationId] ?? 0) > 1) {
+      civSeen[p.civilizationId] = (civSeen[p.civilizationId] ?? 0) + 1
+      return `${base} ${civSeen[p.civilizationId]}`
+    }
+    return p.isAIControlled ? `${base} (AI)` : base
+  })
+
+  const label = `vs ${names.join(' · ')}`
+  return label.length > 36 ? label.slice(0, 35) + '…' : label
+}
+
+function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn: boolean; players: GamePlayer[]; onEnter: () => void }) {
   const { t } = useTranslation()
   const { games: g } = row
-  const shortId    = row.game_id.slice(0, 8)
   const updatedAgo = relativeTime(g.updated_at)
   const isUrgent   = isMyTurn && g.turn_number > g.max_turns * 0.8
   const turnPct    = Math.min(100, Math.round((g.turn_number / g.max_turns) * 100))
   const iWon       = g.is_finished && g.winner_id === row.engine_player_id
+  const opponentLabel = buildOpponentLabel(players, row.engine_player_id)
 
   const gameMap = useMemo(() => {
     if (!g.seed) return null
@@ -283,8 +324,10 @@ function GameCard({ row, isMyTurn, onEnter }: { row: GameRow; isMyTurn: boolean;
         {/* Info column */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1 mb-0.5">
-            <span className="text-aetas-muted font-mono text-xs font-medium">{shortId}…</span>
-            <span className="text-aetas-dim text-xs flex-shrink-0">{updatedAgo}</span>
+            <span className="text-aetas-muted text-xs font-medium truncate">
+              {opponentLabel || row.game_id.slice(0, 8) + '…'}
+            </span>
+            <span className="text-aetas-dim text-xs flex-shrink-0 ml-1">{updatedAgo}</span>
           </div>
 
           <div className="text-xs text-aetas-dim">
