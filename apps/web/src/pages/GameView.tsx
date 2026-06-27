@@ -696,6 +696,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         <ResourceBar
           resources={myPlayer.resources}
           income={myIncome}
+          unitCount={gameState.units.filter(u => u.ownerId === enginePlayerId).length}
         />
       )}
 

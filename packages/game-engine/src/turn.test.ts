@@ -42,6 +42,18 @@ function makeCity(id: string, ownerId: string): City {
   }
 }
 
+function makeUnit(id: string, ownerId: string): import('./types.js').Unit {
+  return {
+    id,
+    unitType: 'warrior',
+    position: { q: 0, r: 0 },
+    stats: { attack: 10, defense: 5, hp: 10, maxHp: 10, movement: 2 },
+    ownerId,
+    hasMoved: false,
+    hasAttacked: false,
+  }
+}
+
 function makeDispute(
   id: string,
   expiresAt: number,
@@ -148,6 +160,45 @@ describe('endTurn — happy path', () => {
     const next = expectOk(endTurn(state, 'p3', 0))
     expect(next.currentPlayerId).toBe('p0')
     expect(next.turnNumber).toBe(2)
+  })
+})
+
+// ─── Unit maintenance (gold sink) ─────────────────────────────────────────────
+
+describe('endTurn — unit maintenance', () => {
+  it('deducts 1 gold per living unit owned by the actor', () => {
+    const base = makeState({ playerCount: 2, withCities: false })
+    const state: GameState = {
+      ...base,
+      players: base.players.map(p =>
+        p.id === 'p0' ? { ...p, resources: { gold: 10, food: 0, production: 0 } } : p,
+      ),
+      units: [makeUnit('u1', 'p0'), makeUnit('u2', 'p0')],
+    }
+    const next = expectOk(endTurn(state, 'p0', 0))
+    // No city income; 2 units → 10 - 2 = 8.
+    expect(getPlayerById(next, 'p0')!.resources.gold).toBe(8)
+    // Funded → no maintenance flag.
+    expect(next.units.every(u => !u.isUnderMaintenance)).toBe(true)
+  })
+
+  it('flags the actor’s units as under maintenance when gold cannot cover it, then clears next turn', () => {
+    const base = makeState({ playerCount: 2, withCities: false })
+    const state: GameState = {
+      ...base,
+      players: base.players.map(p =>
+        p.id === 'p0' ? { ...p, resources: { gold: 1, food: 0, production: 0 } } : p,
+      ),
+      units: [makeUnit('u1', 'p0'), makeUnit('u2', 'p0')],
+    }
+    const afterP0 = expectOk(endTurn(state, 'p0', 0))
+    expect(getPlayerById(afterP0, 'p0')!.resources.gold).toBe(0) // floored, no debt
+    expect(afterP0.units.every(u => u.ownerId !== 'p0' || u.isUnderMaintenance)).toBe(true)
+
+    // p1 ends their turn → it becomes p0's turn again → p0's flag clears.
+    const afterP1 = expectOk(endTurn(afterP0, 'p1', 0))
+    expect(afterP1.currentPlayerId).toBe('p0')
+    expect(afterP1.units.every(u => !u.isUnderMaintenance)).toBe(true)
   })
 })
 

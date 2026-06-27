@@ -9,6 +9,7 @@ import {
   BASE_PRODUCTION_PER_POP,
   FOOD_PER_POPULATION_GROWTH,
   LEVEL_BONUS_PER_LEVEL,
+  applyUnitMaintenance,
 } from './economy.js'
 import { computeCityTerritoryBonus } from './economy.js'
 import { CitySpecialization, TerrainType } from './types.js'
@@ -118,9 +119,10 @@ describe('computeCityProduction — Scientific', () => {
 })
 
 describe('computeCityProduction — level scaling', () => {
-  it('level 2 produces more than level 1 (Commercial, pop 2)', () => {
-    const lv1 = makeCity({ population: 2, level: 1 })
-    const lv2 = makeCity({ population: 2, level: 2 })
+  it('level 2 produces more than level 1 (Commercial, pop 4)', () => {
+    // pop 4 keeps the level delta above the rounding granularity for all rates.
+    const lv1 = makeCity({ population: 4, level: 1 })
+    const lv2 = makeCity({ population: 4, level: 2 })
     const p1 = computeCityProduction(lv1)
     const p2 = computeCityProduction(lv2)
     expect(p2.gold).toBeGreaterThan(p1.gold)
@@ -309,6 +311,30 @@ describe('processTurnEconomy', () => {
     const start: Resources = { gold: 7, food: 3, production: 5 }
     const { updatedResources } = processTurnEconomy([], start)
     expect(updatedResources).toEqual(start)
+  })
+})
+
+// ─── Suite 5b: applyUnitMaintenance — gold sink ──────────────────────────────
+
+describe('applyUnitMaintenance', () => {
+  it('deducts 1 gold per unit, no deficit', () => {
+    expect(applyUnitMaintenance(5, 2)).toEqual({ gold: 3, underMaintenance: false })
+  })
+  it('floors gold at 0 and flags the deficit when underfunded', () => {
+    expect(applyUnitMaintenance(1, 2)).toEqual({ gold: 0, underMaintenance: true })
+  })
+  it('no units → no cost, no deficit', () => {
+    expect(applyUnitMaintenance(0, 0)).toEqual({ gold: 0, underMaintenance: false })
+  })
+  it('exactly covering maintenance is not a deficit', () => {
+    expect(applyUnitMaintenance(2, 2)).toEqual({ gold: 0, underMaintenance: false })
+  })
+})
+
+describe('computeCityProduction — production floor', () => {
+  it('Commercial city pop=1 still produces at least 1 production (not rounded to 0)', () => {
+    const city = makeCity({ specialization: CitySpecialization.Commercial, population: 1 })
+    expect(computeCityProduction(city).production).toBeGreaterThanOrEqual(1)
   })
 })
 

@@ -36,7 +36,7 @@ const CATALOG_ENTRIES: readonly UnitDefinition[] = [
     type:           UnitType.Warrior,
     name:           'Guerreiro',
     eraRequired:    Era.Ancient,
-    productionCost: 20,
+    productionCost: 10,
     stats:          { attack: 10, defense: 5, maxHp: 10, movement: 2 },
     canFoundCity:   false,
     description:    'Infantaria básica. Corpo-a-corpo confiável na era antiga.',

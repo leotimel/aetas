@@ -24,7 +24,8 @@
   "resource": {
     "gold": "Gold",
     "food": "Food",
-    "production": "Production"
+    "production": "Production",
+    "maintenance": "Unit maintenance"
   },
   "game": {
     "loading": "Loading game…",

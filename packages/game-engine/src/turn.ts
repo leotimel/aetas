@@ -2,7 +2,7 @@ import { TurnState, CombatDisputeStatus, Era } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
 import { updateFogOfWar } from './map.js'
 import { determineWinner as computeWinner } from './scoring.js'
-import { processTurnEconomy } from './economy.js'
+import { processTurnEconomy, applyUnitMaintenance } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
 import { getCityEraProgressBonus } from './buildings.js'
 
@@ -133,6 +133,8 @@ export function endTurn(
   let combatDisputes = state.combatDisputes.map(d => ({ ...d }))
 
   // Step 2 — economy for the actor only (civ bonus applied to income, not stockpile).
+  // Then unit maintenance (a flat gold cost) is deducted AFTER the income multiplier.
+  let actorUnderMaintenance = false
   const actor = players.find(p => p.id === actorId)
   if (actor) {
     const actorCities = cities.filter(c => c.ownerId === actorId)
@@ -146,6 +148,10 @@ export function endTurn(
       food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food),
       production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production),
     }
+    const actorUnitCount = state.units.filter(u => u.ownerId === actorId).length
+    const maint = applyUnitMaintenance(actor.resources.gold, actorUnitCount)
+    actor.resources = { ...actor.resources, gold: maint.gold }
+    actorUnderMaintenance = maint.underMaintenance
   }
 
   // Step 3 — resolve expired disputes (deterministic order by id).
@@ -199,9 +205,11 @@ export function endTurn(
 
   // Step 6 — advance to the next active player + reset their units + regen their cities.
   const nextId = nextActivePlayerId(players, actorId)
-  const units = state.units.map(u =>
-    u.ownerId === nextId ? { ...u, hasMoved: false, hasAttacked: false } : u,
-  )
+  const units = state.units.map(u => {
+    if (u.ownerId === actorId) return { ...u, isUnderMaintenance: actorUnderMaintenance }
+    if (u.ownerId === nextId)  return { ...u, hasMoved: false, hasAttacked: false, isUnderMaintenance: false }
+    return u
+  })
   const nextCities = working.cities.map(c =>
     c.ownerId === nextId
       ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 }

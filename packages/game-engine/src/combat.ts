@@ -88,7 +88,8 @@ export function resolveCombat(
   const defenderDefense =
     defender.stats.defense +
     terrainDefenseBonus(opts.defenderTerrain) +
-    (activeDefense ? ACTIVE_DEFENSE_BONUS : 0)
+    (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) -
+    (defender.isUnderMaintenance ? 1 : 0)
   const attackMult = opts.attackerCivMultiplier ?? 1
   const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense)
   const defenderHp = defender.stats.hp - damageToDefender
@@ -107,7 +108,7 @@ export function resolveCombat(
   }
 
   // Defender survives → counterattacks.
-  const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain)
+  const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain) - (attacker.isUnderMaintenance ? 1 : 0)
   const defMult = opts.defenderCivMultiplier ?? 1
   const damageToAttacker = Math.max(MIN_DAMAGE, Math.floor(defender.stats.attack * defMult) - attackerDefense)
   const attackerHp = attacker.stats.hp - damageToAttacker

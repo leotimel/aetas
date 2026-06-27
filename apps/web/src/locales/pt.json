@@ -24,7 +24,8 @@
   "resource": {
     "gold": "Ouro",
     "food": "Comida",
-    "production": "Produção"
+    "production": "Produção",
+    "maintenance": "Manutenção de unidades"
   },
   "game": {
     "loading": "Carregando partida…",

@@ -5,9 +5,25 @@ import { hexesInRadius, hexDistance, hexKey } from './map.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const BASE_GOLD_PER_POP = 1
+export const BASE_GOLD_PER_POP = 1.5
 export const BASE_FOOD_PER_POP = 2
-export const BASE_PRODUCTION_PER_POP = 1
+export const BASE_PRODUCTION_PER_POP = 1.5
+
+/** Gold each living unit costs its owner per turn (the gold sink). */
+export const UNIT_MAINTENANCE_GOLD = 1
+
+/**
+ * Deducts unit maintenance from a player's gold. Does NOT allow debt: gold floors
+ * at 0, but the returned `underMaintenance` flag signals the deficit so callers can
+ * apply the combat penalty. Pure.
+ */
+export function applyUnitMaintenance(
+  gold: number,
+  unitCount: number,
+): { gold: number; underMaintenance: boolean } {
+  const after = gold - unitCount * UNIT_MAINTENANCE_GOLD
+  return { gold: Math.max(0, after), underMaintenance: after < 0 }
+}
 
 /** Each city level above 1 adds this fraction to all resource output. */
 export const LEVEL_BONUS_PER_LEVEL = 0.2

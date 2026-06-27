@@ -465,9 +465,14 @@ function getCityScoreBonus(buildings) {
 }
 
 // ../game-engine/src/economy.ts
-var BASE_GOLD_PER_POP = 1;
+var BASE_GOLD_PER_POP = 1.5;
 var BASE_FOOD_PER_POP = 2;
-var BASE_PRODUCTION_PER_POP = 1;
+var BASE_PRODUCTION_PER_POP = 1.5;
+var UNIT_MAINTENANCE_GOLD = 1;
+function applyUnitMaintenance(gold, unitCount) {
+  const after = gold - unitCount * UNIT_MAINTENANCE_GOLD;
+  return { gold: Math.max(0, after), underMaintenance: after < 0 };
+}
 var LEVEL_BONUS_PER_LEVEL = 0.2;
 var FOOD_PER_POPULATION_GROWTH = 20;
 var SPECIALIZATION_MULTIPLIERS = {
@@ -626,7 +631,7 @@ var CATALOG_ENTRIES2 = [
     type: "warrior" /* Warrior */,
     name: "Guerreiro",
     eraRequired: "ancient" /* Ancient */,
-    productionCost: 20,
+    productionCost: 10,
     stats: { attack: 10, defense: 5, maxHp: 10, movement: 2 },
     canFoundCity: false,
     description: "Infantaria b\xE1sica. Corpo-a-corpo confi\xE1vel na era antiga."
@@ -1027,6 +1032,7 @@ function endTurn(state, playerId, now, hooks = {}) {
   let players = state.players.map((p) => ({ ...p }));
   let cities = state.cities.map((c) => ({ ...c }));
   let combatDisputes = state.combatDisputes.map((d) => ({ ...d }));
+  let actorUnderMaintenance = false;
   const actor = players.find((p) => p.id === actorId);
   if (actor) {
     const actorCities = cities.filter((c) => c.ownerId === actorId);
@@ -1040,6 +1046,10 @@ function endTurn(state, playerId, now, hooks = {}) {
       food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food),
       production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production)
     };
+    const actorUnitCount = state.units.filter((u) => u.ownerId === actorId).length;
+    const maint = applyUnitMaintenance(actor.resources.gold, actorUnitCount);
+    actor.resources = { ...actor.resources, gold: maint.gold };
+    actorUnderMaintenance = maint.underMaintenance;
   }
   combatDisputes.sort((a, b) => a.id.localeCompare(b.id));
   let working = { ...state, players, cities, combatDisputes };
@@ -1081,9 +1091,11 @@ function endTurn(state, playerId, now, hooks = {}) {
     };
   }
   const nextId = nextActivePlayerId(players, actorId);
-  const units = state.units.map(
-    (u) => u.ownerId === nextId ? { ...u, hasMoved: false, hasAttacked: false } : u
-  );
+  const units = state.units.map((u) => {
+    if (u.ownerId === actorId) return { ...u, isUnderMaintenance: actorUnderMaintenance };
+    if (u.ownerId === nextId) return { ...u, hasMoved: false, hasAttacked: false, isUnderMaintenance: false };
+    return u;
+  });
   const nextCities = working.cities.map(
     (c) => c.ownerId === nextId ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 } : c
   );
@@ -1160,7 +1172,7 @@ function resolveCombat(attacker, defender, opts) {
       winnerUnitId: attacker.stats.hp > 0 ? attacker.id : null
     };
   }
-  const defenderDefense = defender.stats.defense + terrainDefenseBonus(opts.defenderTerrain) + (activeDefense ? ACTIVE_DEFENSE_BONUS : 0);
+  const defenderDefense = defender.stats.defense + terrainDefenseBonus(opts.defenderTerrain) + (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) - (defender.isUnderMaintenance ? 1 : 0);
   const attackMult = opts.attackerCivMultiplier ?? 1;
   const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense);
   const defenderHp = defender.stats.hp - damageToDefender;
@@ -1175,7 +1187,7 @@ function resolveCombat(attacker, defender, opts) {
       winnerUnitId: attacker.id
     };
   }
-  const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain);
+  const attackerDefense = attacker.stats.defense + terrainDefenseBonus(attackerTerrain) - (attacker.isUnderMaintenance ? 1 : 0);
   const defMult = opts.defenderCivMultiplier ?? 1;
   const damageToAttacker = Math.max(MIN_DAMAGE, Math.floor(defender.stats.attack * defMult) - attackerDefense);
   const attackerHp = attacker.stats.hp - damageToAttacker;
@@ -2359,6 +2371,7 @@ export {
   TerrainType,
   TurnState,
   UNIT_CATALOG,
+  UNIT_MAINTENANCE_GOLD,
   UNIT_VISION_RADIUS,
   UnitType,
   XP_DAILY_BASE,
@@ -2369,6 +2382,7 @@ export {
   applyAction,
   applyBuildingBonuses,
   applyGrowth,
+  applyUnitMaintenance,
   breakNonAggressionPact,
   canBuildBuilding,
   canSubmitAction,

@@ -1,12 +1,16 @@
 import { useTranslation } from 'react-i18next'
 import type { Resources } from '@aetas/game-engine'
 
+/** Mirrors UNIT_MAINTENANCE_GOLD in the engine (gold per unit per turn). */
+const MAINTENANCE_PER_UNIT = 1
+
 interface Props {
   resources: Resources
   income:    Resources
+  unitCount: number
 }
 
-export default function ResourceBar({ resources, income }: Props) {
+export default function ResourceBar({ resources, income, unitCount }: Props) {
   const { t } = useTranslation()
 
   const ITEMS = [
@@ -14,6 +18,8 @@ export default function ResourceBar({ resources, income }: Props) {
     { key: 'food'       as const, icon: '🌾', label: t('resource.food') },
     { key: 'production' as const, icon: '⚙',  label: t('resource.production') },
   ]
+
+  const maintenance = unitCount * MAINTENANCE_PER_UNIT
 
   return (
     <div className="flex items-center justify-center gap-6 px-3 py-2 bg-aetas-raised border-b border-aetas-border text-xs flex-shrink-0">
@@ -29,6 +35,15 @@ export default function ResourceBar({ resources, income }: Props) {
           </div>
         )
       })}
+
+      {unitCount > 0 && (
+        <div className="flex items-center gap-1.5" title={t('resource.maintenance')}>
+          <span className="text-base leading-none">🗡</span>
+          <span className={resources.gold < maintenance ? 'text-red-400' : 'text-aetas-dim'}>
+            {unitCount} · -{maintenance}g
+          </span>
+        </div>
+      )}
     </div>
   )
 }

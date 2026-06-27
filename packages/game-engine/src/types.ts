@@ -159,6 +159,9 @@ export interface Unit {
   hasAttacked:        boolean
   /** True only for Settler units; allows founding a new city. */
   canFoundCity?:      boolean
+  /** Set at the end of the owner's turn when gold did not cover maintenance; grants
+   *  -1 defense until the owner's next turn begins. Cleared in endTurn Step 6. */
+  isUnderMaintenance?: boolean
 }
 
 // ─── Buildings ────────────────────────────────────────────────────────────────
