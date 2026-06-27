@@ -317,8 +317,8 @@ describe('processTurnEconomy', () => {
 // ─── Suite 5b: applyUnitMaintenance — gold sink ──────────────────────────────
 
 describe('applyUnitMaintenance', () => {
-  it('deducts 1 gold per unit, no deficit', () => {
-    expect(applyUnitMaintenance(5, 2)).toEqual({ gold: 3, underMaintenance: false })
+  it('deducts 2 gold per unit, no deficit', () => {
+    expect(applyUnitMaintenance(10, 2)).toEqual({ gold: 6, underMaintenance: false })
   })
   it('floors gold at 0 and flags the deficit when underfunded', () => {
     expect(applyUnitMaintenance(1, 2)).toEqual({ gold: 0, underMaintenance: true })
@@ -327,7 +327,7 @@ describe('applyUnitMaintenance', () => {
     expect(applyUnitMaintenance(0, 0)).toEqual({ gold: 0, underMaintenance: false })
   })
   it('exactly covering maintenance is not a deficit', () => {
-    expect(applyUnitMaintenance(2, 2)).toEqual({ gold: 0, underMaintenance: false })
+    expect(applyUnitMaintenance(4, 2)).toEqual({ gold: 0, underMaintenance: false })
   })
 })
 

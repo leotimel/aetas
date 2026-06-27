@@ -10,7 +10,17 @@ export const BASE_FOOD_PER_POP = 2
 export const BASE_PRODUCTION_PER_POP = 1.5
 
 /** Gold each living unit costs its owner per turn (the gold sink). */
-export const UNIT_MAINTENANCE_GOLD = 1
+export const UNIT_MAINTENANCE_GOLD = 2
+
+/** City HP máximo escalado por nível: nível 1=10, 2=15, 3=20. Pure. */
+export function cityMaxHp(level: number): number {
+  return 10 + (level - 1) * 5
+}
+
+/** Defesa de cidade contra siege (attackCity): 3 + nível. Pure. */
+export function cityDefense(level: number): number {
+  return 3 + level
+}
 
 /**
  * Deducts unit maintenance from a player's gold. Does NOT allow debt: gold floors

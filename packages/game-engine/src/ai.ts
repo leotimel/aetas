@@ -7,6 +7,7 @@ import { haveMadeContact, relationBetween } from './diplomacy.js'
 import { validateAction, applyAction, type GameAction } from './actions.js'
 import { unitsForCiv } from './civilizations.js'
 import { getBuildingsBySpecialization } from './buildings.js'
+import { cityMaxHp } from './economy.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Two AIs with DIFFERENT purposes. Both produce a sequence of GameActions ending
@@ -304,12 +305,12 @@ function planCityAttack(
       .sort(byId)
 
     for (const city of targets) {
-      const maxHp = city.maxHp ?? 10
+      const maxHp = cityMaxHp(city.level)
       const hp = city.hp ?? maxHp
       const adjMine = s.units.filter(
         u => u.ownerId === playerId && hexDistance(u.position, city.position) === 1,
       ).length
-      const worth = hp <= maxHp * 0.4 || adjMine >= 2
+      const worth = hp <= maxHp * 0.7 || adjMine >= 1
       if (!worth) continue
 
       const action: GameAction = { type: 'attackCity', unitId: current.id, cityId: city.id }

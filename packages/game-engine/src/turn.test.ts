@@ -166,7 +166,7 @@ describe('endTurn — happy path', () => {
 // ─── Unit maintenance (gold sink) ─────────────────────────────────────────────
 
 describe('endTurn — unit maintenance', () => {
-  it('deducts 1 gold per living unit owned by the actor', () => {
+  it('deducts 2 gold per living unit owned by the actor', () => {
     const base = makeState({ playerCount: 2, withCities: false })
     const state: GameState = {
       ...base,
@@ -176,8 +176,8 @@ describe('endTurn — unit maintenance', () => {
       units: [makeUnit('u1', 'p0'), makeUnit('u2', 'p0')],
     }
     const next = expectOk(endTurn(state, 'p0', 0))
-    // No city income; 2 units → 10 - 2 = 8.
-    expect(getPlayerById(next, 'p0')!.resources.gold).toBe(8)
+    // No city income; 2 units × 2 gold → 10 - 4 = 6.
+    expect(getPlayerById(next, 'p0')!.resources.gold).toBe(6)
     // Funded → no maintenance flag.
     expect(next.units.every(u => !u.isUnderMaintenance)).toBe(true)
   })

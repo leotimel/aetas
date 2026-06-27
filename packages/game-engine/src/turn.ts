@@ -2,7 +2,7 @@ import { TurnState, CombatDisputeStatus, Era } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
 import { updateFogOfWar } from './map.js'
 import { determineWinner as computeWinner } from './scoring.js'
-import { processTurnEconomy, applyUnitMaintenance } from './economy.js'
+import { processTurnEconomy, applyUnitMaintenance, cityMaxHp } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
 import { getCityEraProgressBonus } from './buildings.js'
 
@@ -212,7 +212,7 @@ export function endTurn(
   })
   const nextCities = working.cities.map(c =>
     c.ownerId === nextId
-      ? { ...c, hp: Math.min(c.maxHp ?? 10, (c.hp ?? 10) + 1), maxHp: c.maxHp ?? 10 }
+      ? { ...c, hp: Math.min(cityMaxHp(c.level), (c.hp ?? cityMaxHp(c.level)) + 1), maxHp: cityMaxHp(c.level) }
       : c,
   )
 

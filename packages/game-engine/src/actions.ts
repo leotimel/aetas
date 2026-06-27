@@ -20,6 +20,8 @@ import { hexDistance, hexKey, updateFogOfWar } from './map.js'
 import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
 import { getBuildingDef, startConstruction } from './buildings.js'
+import { cityMaxHp, cityDefense } from './economy.js'
+import { eliminatePlayersWithNoCities } from './scoring.js'
 
 // ─── Action model ─────────────────────────────────────────────────────────────
 
@@ -137,6 +139,17 @@ export function validateAction(
       if (player.resources.production < unitDef.productionCost) {
         return { valid: false, reason: 'insufficient production' }
       }
+
+      const foodCost = Math.ceil(unitDef.productionCost / 2)
+      const goldCost = Math.ceil(unitDef.productionCost / 3)
+      if (player.resources.food < foodCost) return { valid: false, reason: 'insufficient food' }
+      if (player.resources.gold < goldCost) return { valid: false, reason: 'insufficient gold' }
+
+      const totalPop = state.cities
+        .filter(c => c.ownerId === playerId)
+        .reduce((s, c) => s + c.population, 0)
+      const currentUnits = state.units.filter(u => u.ownerId === playerId).length
+      if (currentUnits >= totalPop) return { valid: false, reason: 'insufficient population' }
 
       const alreadyThere = state.units.some(
         u => u.ownerId === playerId && hexKey(u.position) === hexKey(city.position),
@@ -302,12 +315,16 @@ export function applyAction(
       const allUnits = unitsForCiv(player.civilizationId, state.era)
       const unitDef = allUnits.find(u => u.type === action.unitType)!
       const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position)
+      const foodCost = Math.ceil(unitDef.productionCost / 2)
+      const goldCost = Math.ceil(unitDef.productionCost / 3)
       const updatedPlayers = state.players.map(p =>
         p.id !== playerId ? p : {
           ...p,
           resources: {
             ...p.resources,
             production: p.resources.production - unitDef.productionCost,
+            food:       p.resources.food       - foodCost,
+            gold:       p.resources.gold       - goldCost,
           },
         },
       )
@@ -373,8 +390,8 @@ export function applyAction(
         foodStored:     0,
         buildings:      [],
         construction:   null,
-        hp:             10,
-        maxHp:          10,
+        hp:             cityMaxHp(1),
+        maxHp:          cityMaxHp(1),
       }
       const units = state.units.filter(u => u.id !== action.unitId)
       return { ok: true, state: { ...state, units, cities: [...state.cities, newCity] } }
@@ -383,23 +400,24 @@ export function applyAction(
     case 'attackCity': {
       const unit = findUnit(state, action.unitId)!
       const city = state.cities.find(c => c.id === action.cityId)!
-      const cityMaxHp = city.maxHp ?? 10
-      const cityHp    = city.hp ?? cityMaxHp
-      const cityDef   = 2 + city.level
+      const cityMaxHpVal = cityMaxHp(city.level)
+      const cityHp    = city.hp ?? cityMaxHpVal
+      const cityDef   = cityDefense(city.level)
       const dmg       = Math.max(1, unit.stats.attack + (unit.stats.cityAttackBonus ?? 0) - cityDef)
       const newHp     = Math.max(0, cityHp - dmg)
       const captured  = newHp <= 0
       const updatedCity = captured
-        ? { ...city, ownerId: playerId, hp: cityMaxHp, maxHp: cityMaxHp }
-        : { ...city, hp: newHp, maxHp: cityMaxHp }
-      return {
-        ok: true,
-        state: {
-          ...state,
-          cities: state.cities.map(c => c.id === city.id ? updatedCity : c),
-          units:  state.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
-        },
+        ? { ...city, ownerId: playerId, hp: cityMaxHpVal, maxHp: cityMaxHpVal }
+        : { ...city, hp: newHp, maxHp: cityMaxHpVal }
+      const nextState: GameState = {
+        ...state,
+        cities: state.cities.map(c => c.id === city.id ? updatedCity : c),
+        units:  state.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
       }
+      // Capturing a city may leave its former owner with zero cities → eliminate
+      // them immediately (marks isEliminated and removes their units). endTurn's
+      // Step 5a then ends the game when only one active player remains.
+      return { ok: true, state: captured ? eliminatePlayersWithNoCities(nextState) : nextState }
     }
 
     case 'proposePact':

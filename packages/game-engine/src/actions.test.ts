@@ -275,7 +275,9 @@ describe('purity', () => {
 // ─── trainUnit ────────────────────────────────────────────────────────────────
 
 function romanPlayer(id: string, production: number): Player {
-  return { ...makePlayer(id), civilizationId: 'romans', resources: { gold: 0, food: 0, production } }
+  // Ample food/gold by default so production-focused tests aren't blocked by the
+  // food+gold training cost (E6). Tests that probe those limits set them explicitly.
+  return { ...makePlayer(id), civilizationId: 'romans', resources: { gold: 100, food: 100, production } }
 }
 
 describe('validateAction — trainUnit', () => {
@@ -379,6 +381,85 @@ describe('applyAction — trainUnit', () => {
     expect(state.units).toHaveLength(0)
     const p0 = state.players.find(p => p.id === 'p0')!
     expect(p0.resources.production).toBe(100)
+  })
+})
+
+// ─── trainUnit: food + gold cost + population cap (E6) ─────────────────────────
+
+describe('validateAction — trainUnit economy gates (E6)', () => {
+  it('rejects when food is insufficient (archer needs ceil(25/2)=13)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const p0 = { ...romanPlayer('p0', 100), resources: { gold: 100, food: 0, production: 100 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient food' })
+  })
+
+  it('rejects when gold is insufficient (archer needs ceil(25/3)=9)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const p0 = { ...romanPlayer('p0', 100), resources: { gold: 0, food: 100, production: 100 } }
+    const state = makeState({ players: [p0, makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient gold' })
+  })
+
+  it('rejects when current units >= total population', () => {
+    // City pop 1 + 1 existing unit (away from the city hex) → cap reached.
+    const city = { ...makeCity('c1', 'p0', { q: 0, r: 0 }), population: 1 }
+    const existing = makeUnit('u-old', 'p0', { q: 4, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city], units: [existing] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u1' }
+    expect(validateAction(state, 'p0', action, NOW)).toEqual({ valid: false, reason: 'insufficient population' })
+  })
+})
+
+describe('applyAction — trainUnit deducts food and gold (E6)', () => {
+  it('deducts ceil(cost/2) food and ceil(cost/3) gold (archer cost 25)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 100), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'u2' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const p0 = res.state.players.find(p => p.id === 'p0')!
+    expect(p0.resources.production).toBe(75)  // 100 - 25
+    expect(p0.resources.food).toBe(87)        // 100 - 13
+    expect(p0.resources.gold).toBe(91)        // 100 - 9
+  })
+})
+
+// ─── attackCity: HP scaling + auto-elimination (E6) ───────────────────────────
+
+describe('applyAction — attackCity balance (E6)', () => {
+  it('capturing the last city eliminates the former owner and removes their units', () => {
+    const city = makeCity('c1', 'p1', { q: 1, r: 0 })          // p1's only city, level 1 (hp 10, def 4)
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 20 }) // 20-4=16 dmg ≥ 10 → capture
+    const victimUnit = makeUnit('v', 'p1', { q: 5, r: 0 })
+    const state = makeState({ cities: [city], units: [attacker, victimUnit] })
+    const action: GameAction = { type: 'attackCity', unitId: 'a', cityId: 'c1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.cities.find(c => c.id === 'c1')!.ownerId).toBe('p0')
+    expect(res.state.players.find(p => p.id === 'p1')!.isEliminated).toBe(true)
+    expect(res.state.units.some(u => u.ownerId === 'p1')).toBe(false) // p1 units removed
+  })
+
+  it('a level-2 city is not captured in one hit by an attack-18 unit', () => {
+    const city = { ...makeCity('c1', 'p1', { q: 1, r: 0 }), level: 2 } // hp 15, def 5
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 18 })
+    const state = makeState({ cities: [city], units: [attacker] })
+    const action: GameAction = { type: 'attackCity', unitId: 'a', cityId: 'c1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const c1 = res.state.cities.find(c => c.id === 'c1')!
+    expect(c1.ownerId).toBe('p1')   // not captured
+    expect(c1.hp).toBe(2)            // 15 - (18 - 5) = 2
+    expect(res.state.players.find(p => p.id === 'p1')!.isEliminated).toBe(false)
   })
 })
 
