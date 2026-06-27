@@ -82,6 +82,8 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   const activeGames   = rows.filter(r => !r.games.is_finished && r.games.current_player_id !== r.engine_player_id)
   const finishedGames = rows.filter(r => r.games.is_finished)
 
+  const handleAbandoned = (gameId: string) => setRows(prev => prev.filter(r => r.game_id !== gameId))
+
   const signOut = () => void supabase.auth.signOut()
 
   const toggleLang = () => {
@@ -145,6 +147,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                       isMyTurn={true}
                       players={row.games.game_state?.players ?? []}
                       onEnter={() => onEnterGame(row.game_id)}
+                      onAbandoned={handleAbandoned}
                     />
                   ))}
                 </div>
@@ -162,6 +165,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                       isMyTurn={false}
                       players={row.games.game_state?.players ?? []}
                       onEnter={() => onEnterGame(row.game_id)}
+                      onAbandoned={handleAbandoned}
                     />
                   ))}
                 </div>
@@ -188,6 +192,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                         isMyTurn={false}
                         players={row.games.game_state?.players ?? []}
                         onEnter={() => onEnterGame(row.game_id)}
+                        onAbandoned={handleAbandoned}
                       />
                     ))}
                   </div>
@@ -279,7 +284,13 @@ function buildOpponentLabel(players: GamePlayer[], selfId: string): string {
   return label.length > 36 ? label.slice(0, 35) + '…' : label
 }
 
-function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn: boolean; players: GamePlayer[]; onEnter: () => void }) {
+function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
+  row: GameRow
+  isMyTurn: boolean
+  players: GamePlayer[]
+  onEnter: () => void
+  onAbandoned: (gameId: string) => void
+}) {
   const { t } = useTranslation()
   const { games: g } = row
   const updatedAgo  = relativeTime(g.updated_at)
@@ -289,6 +300,18 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
   const opponentLabel = buildOpponentLabel(players, row.engine_player_id)
   const myPlayer    = players.find(p => p.id === row.engine_player_id)
   const myCivColor  = CIVILIZATIONS.find(c => c.id === myPlayer?.civilizationId)?.color ?? '#c9a84c'
+  const isMultiplayer = players.filter(p => !p.isAIControlled).length >= 2
+
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [abandoning,  setAbandoning]  = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+
+  const handleAbandon = async () => {
+    setAbandoning(true); setError(null)
+    const { error: fnError } = await supabase.functions.invoke('abandon-game', { body: { gameId: row.game_id } })
+    if (fnError) { setError(fnError.message ?? 'Erro ao abandonar'); setAbandoning(false) }
+    else { setShowConfirm(false); onAbandoned(row.game_id) }
+  }
 
   const gameMap = useMemo(() => {
     if (!g.seed) return null
@@ -296,6 +319,7 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
   }, [g.seed, g.map_size])
 
   return (
+    <>
     <div className={`relative bg-aetas-surface border rounded-lg p-3 transition-colors ${
       isMyTurn
         ? 'border-aetas-gold/40 hover:border-aetas-gold/70'
@@ -335,7 +359,16 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
             <span className="text-aetas-muted text-xs font-medium truncate">
               {opponentLabel || row.game_id.slice(0, 8) + '…'}
             </span>
-            <span className="text-aetas-muted text-xs flex-shrink-0 ml-1">{updatedAgo}</span>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <span className="text-aetas-muted text-xs">{updatedAgo}</span>
+              {!g.is_finished && (
+                <button
+                  onClick={e => { e.stopPropagation(); setShowConfirm(true) }}
+                  className="text-aetas-border-strong hover:text-aetas-muted text-sm px-1 leading-none"
+                  title={t('list.abandon')}
+                >⋯</button>
+              )}
+            </div>
           </div>
 
           <div className="text-xs text-aetas-dim">
@@ -372,6 +405,41 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
         </div>
       </div>
     </div>
+
+    {showConfirm && (
+      <div
+        className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+        onClick={() => { if (!abandoning) setShowConfirm(false) }}
+      >
+        <div
+          className="bg-aetas-surface border border-aetas-border rounded-xl p-5 max-w-sm w-full"
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="text-aetas-text text-sm mb-1 font-semibold">{t('list.abandon')}</p>
+          <p className="text-aetas-muted text-xs mb-4">
+            {isMultiplayer ? t('list.abandonConfirmMulti') : t('list.abandonConfirmSolo')}
+          </p>
+          {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setShowConfirm(false); setError(null) }}
+              disabled={abandoning}
+              className="flex-1 py-2 rounded-lg border border-aetas-border text-aetas-muted text-sm hover:bg-aetas-raised transition-colors disabled:opacity-50"
+            >
+              {t('list.abandonCancel')}
+            </button>
+            <button
+              onClick={handleAbandon}
+              disabled={abandoning}
+              className="flex-1 py-2 rounded-lg bg-red-900/50 border border-red-800/50 text-red-300 text-sm hover:bg-red-900/70 transition-colors disabled:opacity-50"
+            >
+              {abandoning ? '…' : t('list.abandonConfirmBtn')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 

@@ -265,7 +265,12 @@
     "daysAgo": "há {{d}}d",
     "profile": "Perfil",
     "refresh": "Atualizar",
-    "logout": "Sair"
+    "logout": "Sair",
+    "abandon": "Abandonar partida 🏳",
+    "abandonConfirmSolo": "Tem certeza? A partida será encerrada.",
+    "abandonConfirmMulti": "Tem certeza? Você será eliminado e o jogo continuará sem você.",
+    "abandonConfirmBtn": "Confirmar",
+    "abandonCancel": "Cancelar"
   },
   "newgame": {
     "title": "Nova Partida",

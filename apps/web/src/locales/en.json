@@ -265,7 +265,12 @@
     "daysAgo": "{{d}}d ago",
     "profile": "Profile",
     "refresh": "Refresh",
-    "logout": "Logout"
+    "logout": "Logout",
+    "abandon": "Abandon game 🏳",
+    "abandonConfirmSolo": "Are you sure? The game will end.",
+    "abandonConfirmMulti": "Are you sure? You'll be eliminated and the game continues without you.",
+    "abandonConfirmBtn": "Confirm",
+    "abandonCancel": "Cancel"
   },
   "newgame": {
     "title": "New Game",
