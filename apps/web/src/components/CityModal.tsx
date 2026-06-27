@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next'
 import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
 import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp } from '@aetas/game-engine'
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
+import { SealButton } from './ui/SealButton'
+import { RomanDivider } from './ui/RomanDivider'
 import i18n from '../i18n.ts'
 
 const PLAYER_COLORS = [
@@ -103,27 +105,25 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
 
       {/* Sheet — slides up from bottom; max-height + scroll on mobile */}
       <div className="fixed inset-x-0 bottom-0 z-40 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-96">
-        <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-2xl md:rounded-2xl shadow-2xl shadow-black/60
+        <div className="bg-aetas-surface border border-aetas-border-strong rounded-t-sm md:rounded-sm shadow-2xl shadow-black/60
                         flex flex-col max-h-[85dvh] md:max-h-[90vh]">
           {/* Sticky header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-aetas-border/50">
-            <div className="flex items-center gap-3">
-              <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: ownerColor }} />
-              <div>
-                <h2 className="text-aetas-text font-bold text-base">{city.name}</h2>
-                <p className="text-aetas-dim text-xs">
-                  {ownerCivName ?? ownerPlayer?.id.slice(0, 8) ?? '?'}
-                  {city.ownerId === myEnginePlayerId && ` ${t('ui.you')}`}
-                  {ownerPlayer?.isAIControlled && ' 🤖'}
-                </p>
+          <div className="bg-aetas-panel flex-shrink-0 px-5 pt-4 pb-0" style={{ borderBottom: '1px solid rgba(201,168,76,0.3)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: ownerColor }} />
+                <div>
+                  <h2 className="font-display text-lg text-aetas-gold font-semibold tracking-wide leading-tight">{city.name}</h2>
+                  <p className="text-aetas-muted text-xs uppercase tracking-widest">
+                    {ownerCivName ?? ownerPlayer?.id.slice(0, 8) ?? '?'}
+                    {city.ownerId === myEnginePlayerId && ` · ${t('ui.you')}`}
+                    {ownerPlayer?.isAIControlled && ' · AI'}
+                  </p>
+                </div>
               </div>
+              <SealButton variant="red" size="sm" onClick={onClose}>✕</SealButton>
             </div>
-            <button
-              onClick={onClose}
-              className="w-11 h-11 flex items-center justify-center rounded-full bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors flex-shrink-0"
-            >
-              ✕
-            </button>
+            <RomanDivider />
           </div>
           {/* Scrollable body */}
           <div className="overflow-y-auto flex-1 px-5 pb-5 pt-4">
@@ -141,14 +141,14 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             const nextLevel = city.level + 1
             const pct = Math.min(100, Math.round((city.population / threshold) * 100))
             return (
-              <div className="bg-aetas-raised rounded-xl p-3 mb-4">
+              <div className="bg-aetas-panel rounded-sm p-3 mb-4" style={{ border: '1px solid var(--color-aetas-border)' }}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs text-aetas-dim">
+                  <span className="font-display text-[10px] text-aetas-gold/80">
                     {t('city.levelProgress', { pop: city.population, threshold, next: nextLevel })}
                   </span>
                 </div>
-                <div className="h-1.5 bg-aetas-panel rounded-full overflow-hidden">
-                  <div className="h-full bg-aetas-gold rounded-full transition-all" style={{ width: `${pct}%` }} />
+                <div className="h-1.5 rounded-sm overflow-hidden" style={{ background: 'rgba(122,79,30,0.3)' }}>
+                  <div className="h-full bg-aetas-gold transition-all" style={{ width: `${pct}%` }} />
                 </div>
               </div>
             )
@@ -159,12 +159,17 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
 
           {/* My resources (only shown for my cities) */}
           {isMyCity && myResources && (
-            <div className="bg-aetas-raised rounded-xl p-3 mb-4">
-              <p className="text-xs text-aetas-dim mb-2">{t('city.playerResources')}</p>
-              <div className="flex gap-4">
-                <ResourcePill icon="💰" label={t('city.gold')} value={myResources.gold} />
-                <ResourcePill icon="🌾" label={t('city.food')} value={myResources.food} />
-                <ResourcePill icon="⚙️" label={t('city.production')} value={myResources.production} />
+            <div className="bg-aetas-panel rounded-sm p-3 mb-4" style={{ border: '1px solid var(--color-aetas-border)' }}>
+              <div className="mb-2">
+                <RomanDivider />
+                <p className="font-display text-[10px] uppercase tracking-widest text-aetas-gold/70 text-center mt-1">
+                  {t('city.playerResources')}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <ResourcePill icon="gold" label={t('city.gold')} value={myResources.gold} />
+                <ResourcePill icon="food" label={t('city.food')} value={myResources.food} />
+                <ResourcePill icon="production" label={t('city.production')} value={myResources.production} />
               </div>
             </div>
           )}
@@ -254,13 +259,14 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                     ) : (
                       <>
                         <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost} 💰 {def.goldCost}</span>
-                        <button
+                        <SealButton
+                          variant="gold"
+                          size="sm"
                           onClick={() => onConstructBuilding(city.id, def.type)}
                           disabled={!canAfford || constructing != null}
-                          className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold/70 hover:bg-aetas-gold text-aetas-bg"
                         >
                           {t('city.buildBtn')}
-                        </button>
+                        </SealButton>
                       </>
                     )}
                   </div>
@@ -298,13 +304,14 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                           </span>
                         </div>
                         <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost}</span>
-                        <button
+                        <SealButton
+                          variant="red"
+                          size="sm"
                           onClick={() => onTrainUnit(city.id, def.type)}
                           disabled={!canAfford || hexOccupied}
-                          className="px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-amber-700/70 hover:bg-amber-600 text-white"
                         >
                           {t('city.trainBtn')}
-                        </button>
+                        </SealButton>
                       </div>
                     )
                   })
@@ -344,17 +351,41 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
 
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-aetas-raised rounded-lg p-2.5 text-center">
-      <p className="text-aetas-text font-bold text-lg">{value}</p>
-      <p className="text-aetas-dim text-xs mt-0.5">{label}</p>
+    <div className="rounded-sm p-2.5 text-center"
+      style={{ background: 'rgba(191,170,135,0.12)', border: '1px solid rgba(191,170,135,0.25)' }}>
+      <p className="font-display text-aetas-gold font-semibold text-xl leading-none">{value}</p>
+      <p className="text-aetas-dim uppercase tracking-widest text-[10px] mt-1">{label}</p>
     </div>
   )
 }
 
+const RESOURCE_ICONS: Record<string, JSX.Element> = {
+  gold: (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
+      <circle cx="10" cy="10" r="7" />
+      <text x="10" y="14" textAnchor="middle" fontSize="8" fontFamily="Cinzel,Georgia,serif" fill="var(--color-aetas-gold)" stroke="none">G</text>
+    </svg>
+  ),
+  food: (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
+      <rect x="4" y="9" width="12" height="8" rx="1" opacity="0.7" />
+      <line x1="4" y1="12" x2="16" y2="12" opacity="0.5" />
+      <line x1="7" y1="9" x2="5" y2="4" /><line x1="10" y1="9" x2="10" y2="3" /><line x1="13" y1="9" x2="15" y2="4" />
+    </svg>
+  ),
+  production: (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
+      <rect x="5" y="6" width="10" height="5" rx="0.5" opacity="0.7" />
+      <polygon points="6,11 14,11 13,16 7,16" fill="none" opacity="0.7" />
+      <line x1="10" y1="3" x2="10" y2="6" />
+    </svg>
+  ),
+}
+
 function ResourcePill({ icon, label, value }: { icon: string; label: string; value: number }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span>{icon}</span>
+    <div className="flex items-center gap-1.5 bg-aetas-raised rounded-sm px-2 py-1">
+      {RESOURCE_ICONS[icon] ?? <span>{icon}</span>}
       <div>
         <p className="text-aetas-text text-sm font-medium">{value}</p>
         <p className="text-aetas-dim text-xs">{label}</p>

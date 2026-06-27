@@ -86,11 +86,12 @@ export default function ActionSheet({
               <button
                 onClick={onEndTurn}
                 disabled={!isMyTurn}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                className={`flex-1 py-2.5 rounded-sm font-display text-sm tracking-widest uppercase transition-colors ${
                   isMyTurn
-                    ? 'bg-aetas-gold text-aetas-bg hover:bg-aetas-gold-light active:bg-aetas-gold-dark'
-                    : 'bg-aetas-raised text-aetas-dim cursor-not-allowed'
+                    ? 'text-aetas-gold hover:bg-aetas-raised'
+                    : 'text-aetas-dim cursor-not-allowed'
                 }`}
+                style={isMyTurn ? { border: '1px solid rgba(201,168,76,0.45)', background: 'var(--color-aetas-panel)' } : undefined}
               >
                 {isMyTurn ? t('action.endTurnMobile') : t('action.waiting')}
               </button>
@@ -144,11 +145,12 @@ export default function ActionSheet({
           <button
             onClick={onEndTurn}
             disabled={!isMyTurn}
-            className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${
+            className={`w-full py-3 rounded-sm font-display text-sm tracking-widest uppercase text-center transition-colors ${
               isMyTurn
-                ? 'bg-aetas-gold text-aetas-bg hover:bg-aetas-gold-light active:bg-aetas-gold-dark'
-                : 'bg-aetas-raised text-aetas-dim cursor-not-allowed opacity-50'
+                ? 'text-aetas-gold hover:bg-aetas-raised'
+                : 'text-aetas-dim cursor-not-allowed opacity-50'
             }`}
+            style={isMyTurn ? { border: '1px solid rgba(201,168,76,0.45)', background: 'var(--color-aetas-panel)' } : undefined}
           >
             {isMyTurn ? t('action.endTurn') : t('action.waitingTurn')}
           </button>
