@@ -57,13 +57,24 @@ Deno.serve(async (req) => {
   const slot = openSlots?.[0]
   if (!slot) return json({ error: 'no open slots in this game' }, 409)
 
-  // Claim the slot
-  const { error: updateErr } = await svc
-    .from('game_players')
-    .update({ user_id: userId })
-    .eq('id', slot.id)
+  // Claim the slot and fetch joiner's display_name in parallel
+  const [{ error: updateErr }, { data: upRow }] = await Promise.all([
+    svc.from('game_players').update({ user_id: userId }).eq('id', slot.id),
+    svc.from('user_profiles').select('display_name').eq('id', userId).maybeSingle(),
+  ])
 
   if (updateErr) return json({ error: updateErr.message }, 500)
+
+  // Patch game_state.players[].displayName for this seat
+  const joinerName = (upRow?.display_name as string | null) ?? 'Player'
+  const { data: gameRow } = await svc.from('games').select('game_state').eq('id', gameId).single()
+  if (gameRow?.game_state) {
+    const gs = gameRow.game_state as { players: { id: string; displayName: string }[] }
+    const updatedPlayers = gs.players.map((p: { id: string; displayName: string }) =>
+      p.id === slot.engine_player_id ? { ...p, displayName: joinerName } : p,
+    )
+    await svc.from('games').update({ game_state: { ...gs, players: updatedPlayers } }).eq('id', gameId)
+  }
 
   // Count remaining open human slots
   const { count } = await svc

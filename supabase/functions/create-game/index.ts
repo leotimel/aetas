@@ -64,9 +64,13 @@ Deno.serve(async (req) => {
 
   const svc = serviceClient()
 
-  // Fetch creator's preferred civ
-  const { data: profile } = await svc.from('profiles').select('selected_civ').eq('user_id', userId).single()
-  const myCiv = body.myCiv ?? (profile?.selected_civ as string | null) ?? 'romans'
+  // Fetch creator's preferred civ and display_name from OAuth profile
+  const [{ data: profile }, { data: upRow }] = await Promise.all([
+    svc.from('profiles').select('selected_civ').eq('user_id', userId).single(),
+    svc.from('user_profiles').select('display_name').eq('id', userId).maybeSingle(),
+  ])
+  const myCiv       = body.myCiv ?? (profile?.selected_civ as string | null) ?? 'romans'
+  const displayName = (upRow?.display_name as string | null) ?? 'Player'
 
   const gameMap = generateMap(radius, seed, playerCount)
   const gameId  = crypto.randomUUID()
@@ -97,7 +101,7 @@ Deno.serve(async (req) => {
   // Slot 0: creator (always human)
   players.push({
     id: userId,
-    displayName: 'You',
+    displayName,
     civilizationId: myCiv,
     resources: { gold: 10, food: 10, production: 10 },
     isEliminated: false,

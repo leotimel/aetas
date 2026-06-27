@@ -55,7 +55,7 @@ export default function PlayerBar({ gameState, myEnginePlayerId, onScoreClick }:
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? 'animate-pulse' : ''}`} style={{ backgroundColor: color }} />
             {civ && <span title={civ.name}>{civ.flag}</span>}
             <span className={`${player.isEliminated ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
-              {civ?.name ?? player.id.slice(0, 6)}
+              {player.displayName ?? civ?.name ?? player.id.slice(0, 6)}
             </span>
             {isMe && <span className="text-aetas-dim">{t('ui.you')}</span>}
             {player.isAIControlled && <span>🤖</span>}

@@ -26,9 +26,13 @@ Deno.serve(async (req) => {
 
   const svc = serviceClient()
 
-  // Fetch user's selected civ (upsert profile if missing)
-  const { data: profile } = await svc.from('profiles').select('selected_civ').eq('user_id', userId).single()
+  // Fetch user's selected civ and display_name from OAuth profile
+  const [{ data: profile }, { data: upRow }] = await Promise.all([
+    svc.from('profiles').select('selected_civ').eq('user_id', userId).single(),
+    svc.from('user_profiles').select('display_name').eq('id', userId).maybeSingle(),
+  ])
   const selectedCiv = (profile?.selected_civ as string | null) ?? 'romans'
+  const displayName = (upRow?.display_name as string | null) ?? 'Player'
 
   // Idempotency: check if user already has today's daily game
   const { data: existing } = await svc
@@ -111,7 +115,7 @@ Deno.serve(async (req) => {
     players: [
       {
         id: userId,
-        displayName: 'You',
+        displayName,
         civilizationId: selectedCiv,
         resources: { gold: 10, food: 10, production: 10 },
         isEliminated: false,

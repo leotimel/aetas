@@ -605,7 +605,20 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           {t('ui.backToList')}
         </button>
 
-        <span className="text-aetas-dim font-mono text-xs">{gameId.slice(0, 8)}…</span>
+        <span className="text-aetas-dim text-xs truncate max-w-[160px]" title={gameId}>
+          {(() => {
+            const opponents = gameState.players.filter(p => p.id !== enginePlayerId)
+            if (opponents.length === 0) return gameId.slice(0, 8) + '…'
+            const names = opponents.map(p => {
+              const civ = CIVILIZATIONS.find(c => c.id === p.civilizationId)
+              return p.displayName !== p.id.slice(0, 8)
+                ? p.displayName
+                : (civ?.name ?? p.id.slice(0, 6))
+            }).join(' · ')
+            const label = `vs ${names}`
+            return label.length > 28 ? label.slice(0, 27) + '…' : label
+          })()}
+        </span>
 
         <span className="text-aetas-dim text-xs">
           {t('game.turnStatus', { n: gameState.turnNumber, max: gameState.maxTurns })}
