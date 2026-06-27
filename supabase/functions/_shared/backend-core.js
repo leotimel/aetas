@@ -1997,11 +1997,62 @@ function decideSubstituteTurn(state, playerId, now) {
   const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now);
   return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN];
 }
+var MAP_CENTER = { q: 0, r: 0 };
+function planMovement(state, playerId, now) {
+  let s = state;
+  const actions = [];
+  const fog = s.fogOfWar.find((f) => f.playerId === playerId);
+  const visibleKeys = fog ? new Set(fog.visibleHexes.map(hexKey)) : null;
+  const isVisible = (pos) => visibleKeys === null || visibleKeys.has(hexKey(pos));
+  const myUnits = s.units.filter((u) => u.ownerId === playerId).slice().sort(byId);
+  for (const unit of myUnits) {
+    const current = s.units.find((u) => u.id === unit.id);
+    if (!current || current.hasMoved) continue;
+    const targets = [
+      ...s.units.filter((u) => u.ownerId !== playerId && isVisible(u.position)),
+      ...s.cities.filter((c) => c.ownerId !== playerId && isVisible(c.position))
+    ].slice().sort(byId).map((t) => t.position);
+    let targetPos = MAP_CENTER;
+    let best = Infinity;
+    for (const pos of targets) {
+      const d = hexDistance(current.position, pos);
+      if (d < best) {
+        best = d;
+        targetPos = pos;
+      }
+    }
+    const distToTarget = hexDistance(current.position, targetPos);
+    if (distToTarget === 0) continue;
+    const candidates = hexNeighbors(current.position).slice().sort((a, b) => hexKey(a).localeCompare(hexKey(b)));
+    let stepTo = null;
+    let stepDist = distToTarget;
+    for (const n of candidates) {
+      const tile = s.map.tiles.find((t) => hexKey(t.coord) === hexKey(n));
+      if (!tile || tile.terrainType === "water" /* Water */) continue;
+      if (s.units.some((u) => hexKey(u.position) === hexKey(n))) continue;
+      const d = hexDistance(n, targetPos);
+      if (d < stepDist) {
+        stepDist = d;
+        stepTo = n;
+      }
+    }
+    if (!stepTo) continue;
+    const action = { type: "moveUnit", unitId: current.id, targetCoord: stepTo };
+    if (validateAction(s, playerId, action, now).valid) {
+      actions.push(action);
+      const applied = applyAction(s, playerId, action, now);
+      if (applied.ok) s = applied.state;
+    }
+  }
+  return { state: s, actions };
+}
 function decideOpponentTurn(state, playerId, now, hard = false) {
   if (!canSubmitAction(state, playerId).valid) return [];
   const defensive = planDefensiveResponses(state, playerId, now);
-  let s = defensive.state;
-  const actions = [...defensive.actions];
+  const diplomatic = planDiplomaticResponses(defensive.state, playerId, now);
+  const movement = planMovement(diplomatic.state, playerId, now);
+  let s = movement.state;
+  const actions = [...defensive.actions, ...diplomatic.actions, ...movement.actions];
   const myUnits = s.units.filter((u) => u.ownerId === playerId).slice().sort(byId);
   for (const unit of myUnits) {
     const current = s.units.find((u) => u.id === unit.id);
@@ -2021,7 +2072,8 @@ function decideOpponentTurn(state, playerId, now, hard = false) {
       }
     }
   }
-  return [...actions, END_TURN];
+  const initiatives = planDiplomaticInitiatives(s, playerId, now);
+  return [...actions, ...initiatives.actions, END_TURN];
 }
 
 // ../game-engine/src/civs.ts

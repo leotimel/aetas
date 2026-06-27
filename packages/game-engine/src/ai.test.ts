@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { decideSubstituteTurn, decideOpponentTurn, isFavorableAttack } from './ai.js'
 import { validateAction, applyAction, type GameAction } from './actions.js'
 import { createCombatDispute } from './combat.js'
-import { TurnState, Era } from './types.js'
+import { hexDistance, hexesInRadius } from './map.js'
+import { TurnState, Era, TerrainType, DiplomaticProposalStatus } from './types.js'
 import type {
   Unit,
   UnitStats,
@@ -44,6 +45,18 @@ function makePlayer(id: string, isEliminated = false): Player {
 }
 
 const MAP: GameMap = { tiles: [], radius: 5, seed: 's', startPositions: [] }
+
+/** A fully-traversable map of the given radius (all Plains) for movement tests. */
+function plainsMap(radius: number): GameMap {
+  return {
+    tiles: hexesInRadius({ q: 0, r: 0 }, radius).map(coord => ({ coord, terrainType: TerrainType.Plains })),
+    radius,
+    seed: 's',
+    startPositions: [],
+  }
+}
+
+type MoveAction = Extract<GameAction, { type: 'moveUnit' }>
 
 function makeState(opts: {
   units?: Unit[]
@@ -245,6 +258,76 @@ describe('decideOpponentTurn — active but not suicidal', () => {
     const final = replayLegal(state, 'p0', actions)
     expect(final.currentPlayerId).toBe('p1') // advanced once
     expect(final.combatDisputes.some(d => d.attackerUnitId === 'p0-u')).toBe(true) // attack landed
+  })
+})
+
+describe('decideOpponentTurn — movement toward targets', () => {
+  it('moves a unit one hex closer to the nearest visible enemy', () => {
+    const u = makeUnit('p0-u', 'p0', { q: 0, r: 0 })
+    const enemy = makeUnit('p1-e', 'p1', { q: 3, r: 0 })
+    const state = { ...makeState({ units: [u, enemy] }), map: plainsMap(5) }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    const move = actions.find(a => a.type === 'moveUnit') as MoveAction | undefined
+    expect(move, 'AI should emit a moveUnit').toBeDefined()
+    // Strictly closer to the enemy at (3,0): from distance 3 down to 2.
+    expect(hexDistance(move!.targetCoord, { q: 3, r: 0 })).toBeLessThan(3)
+    assertEndsWithSingleEndTurn(actions)
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('explores toward the map centre when it sees no enemy', () => {
+    const u = makeUnit('p0-u', 'p0', { q: 3, r: 0 })
+    const state = { ...makeState({ units: [u] }), map: plainsMap(5) }
+
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    const move = actions.find(a => a.type === 'moveUnit') as MoveAction | undefined
+    expect(move, 'blind AI should still advance toward the centre').toBeDefined()
+    expect(hexDistance(move!.targetCoord, { q: 0, r: 0 })).toBeLessThan(3)
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('does not move into an occupied or off-map hex (stays legal)', () => {
+    // Enemy sits on the only strictly-closer neighbour → the AI must not collide.
+    const u = makeUnit('p0-u', 'p0', { q: 0, r: 0 })
+    const enemy = makeUnit('p1-e', 'p1', { q: 1, r: 0 })
+    const state = { ...makeState({ units: [u, enemy] }), map: plainsMap(5) }
+    const actions = decideOpponentTurn(state, 'p0', NOW)
+    expect(actions.every(a => a.type !== 'moveUnit' || (a as MoveAction).targetCoord.q !== 1 || (a as MoveAction).targetCoord.r !== 0)).toBe(true)
+    replayLegal(state, 'p0', actions)
+  })
+
+  it('is deterministic with a real map', () => {
+    const u = makeUnit('p0-u', 'p0', { q: 0, r: 0 })
+    const enemy = makeUnit('p1-e', 'p1', { q: 3, r: 0 })
+    const state = deepFreeze({ ...makeState({ units: [u, enemy] }), map: plainsMap(5) })
+    expect(decideOpponentTurn(state, 'p0', NOW)).toEqual(decideOpponentTurn(state, 'p0', NOW))
+  })
+})
+
+// ─── Diplomacy in decideOpponentTurn ─────────────────────────────────────────
+
+describe('decideOpponentTurn — diplomacy', () => {
+  it('responds to a pending pact proposal (accept=true)', () => {
+    const state: GameState = {
+      ...makeState({ currentPlayerId: 'p1' }),
+      diplomaticProposals: [
+        {
+          id: 'prop1',
+          proposerId: 'p0',
+          targetId: 'p1',
+          status: DiplomaticProposalStatus.Pending,
+          kind: 'pact' as const,
+          createdAtTurn: 1,
+        },
+      ],
+    }
+    const actions = decideOpponentTurn(state, 'p1', NOW)
+    const response = actions.find(a => a.type === 'respondToDiplomacy') as
+      Extract<GameAction, { type: 'respondToDiplomacy' }> | undefined
+    expect(response, 'AI must respond to the pending pact').toBeDefined()
+    expect(response!.accept).toBe(true)
+    assertEndsWithSingleEndTurn(actions)
   })
 })
 

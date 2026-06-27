@@ -1,8 +1,8 @@
-import { CombatDisputeStatus } from './types.js'
-import type { GameState, Unit, Player, Resources } from './types.js'
+import { CombatDisputeStatus, TerrainType } from './types.js'
+import type { GameState, Unit, Player, Resources, HexCoord } from './types.js'
 import { canSubmitAction } from './turn.js'
 import { resolveCombat, terrainAt } from './combat.js'
-import { hexDistance } from './map.js'
+import { hexDistance, hexNeighbors, hexKey } from './map.js'
 import { haveMadeContact, relationBetween } from './diplomacy.js'
 import { validateAction, applyAction, type GameAction } from './actions.js'
 
@@ -200,18 +200,97 @@ export function decideSubstituteTurn(state: GameState, playerId: string, now: nu
   return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN]
 }
 
+const MAP_CENTER: HexCoord = { q: 0, r: 0 }
+
 /**
- * Active opponent AI. Defends, then attacks adjacent enemies when favorable,
- * then ends the turn. Returns [] if it is not legally this player's turn.
- * `hard=true` skips the +2 active-defense assumption when evaluating attacks
+ * Advances each of the AI's not-yet-moved units one hex toward the nearest enemy
+ * it can see (unit or city), or toward the map centre when it sees no enemy (so
+ * it explores instead of standing still). Only single-hex steps — no pathfinding —
+ * which keeps the result deterministic and always within movement range. Folds
+ * each `moveUnit` onto the working state; only emits pre-validated actions.
+ *
+ * Vision uses the player's fog of war: enemies on non-visible hexes are ignored.
+ * When the player has no fog entry (some unit tests), everything counts as visible.
+ */
+function planMovement(
+  state: GameState,
+  playerId: string,
+  now: number,
+): { state: GameState; actions: GameAction[] } {
+  let s = state
+  const actions: GameAction[] = []
+
+  const fog = s.fogOfWar.find(f => f.playerId === playerId)
+  const visibleKeys = fog ? new Set(fog.visibleHexes.map(hexKey)) : null
+  const isVisible = (pos: HexCoord): boolean => visibleKeys === null || visibleKeys.has(hexKey(pos))
+
+  const myUnits = s.units.filter(u => u.ownerId === playerId).slice().sort(byId)
+  for (const unit of myUnits) {
+    // Re-read from the working state (an earlier move/defense may have changed it).
+    const current = s.units.find(u => u.id === unit.id)
+    if (!current || current.hasMoved) continue
+
+    // Nearest visible enemy unit or city; fall back to the map centre when blind.
+    const targets: HexCoord[] = [
+      ...s.units.filter(u => u.ownerId !== playerId && isVisible(u.position)),
+      ...s.cities.filter(c => c.ownerId !== playerId && isVisible(c.position)),
+    ]
+      .slice()
+      .sort(byId)
+      .map(t => t.position)
+
+    let targetPos = MAP_CENTER
+    let best = Infinity
+    for (const pos of targets) {
+      const d = hexDistance(current.position, pos)
+      if (d < best) { best = d; targetPos = pos }
+    }
+
+    const distToTarget = hexDistance(current.position, targetPos)
+    if (distToTarget === 0) continue // already on it (e.g. sitting on the centre)
+
+    // Pick the adjacent hex that gets closest to the target and is legal to enter.
+    const candidates = hexNeighbors(current.position)
+      .slice()
+      .sort((a, b) => hexKey(a).localeCompare(hexKey(b)))
+
+    let stepTo: HexCoord | null = null
+    let stepDist = distToTarget // must strictly improve to move
+    for (const n of candidates) {
+      const tile = s.map.tiles.find(t => hexKey(t.coord) === hexKey(n))
+      if (!tile || tile.terrainType === TerrainType.Water) continue
+      if (s.units.some(u => hexKey(u.position) === hexKey(n))) continue
+      const d = hexDistance(n, targetPos)
+      if (d < stepDist) { stepDist = d; stepTo = n }
+    }
+    if (!stepTo) continue
+
+    const action: GameAction = { type: 'moveUnit', unitId: current.id, targetCoord: stepTo }
+    if (validateAction(s, playerId, action, now).valid) {
+      actions.push(action)
+      const applied = applyAction(s, playerId, action, now)
+      if (applied.ok) s = applied.state
+    }
+  }
+
+  return { state: s, actions }
+}
+
+/**
+ * Active opponent AI. Defends, advances units toward the nearest visible enemy
+ * (or explores toward the centre when blind), then attacks adjacent enemies when
+ * favorable, then ends the turn. Returns [] if it is not legally this player's
+ * turn. `hard=true` skips the +2 active-defense assumption when evaluating attacks
  * (the AI becomes more aggressive — it takes fights Normal would skip).
  */
 export function decideOpponentTurn(state: GameState, playerId: string, now: number, hard = false): GameAction[] {
   if (!canSubmitAction(state, playerId).valid) return []
 
-  const defensive = planDefensiveResponses(state, playerId, now)
-  let s = defensive.state
-  const actions = [...defensive.actions]
+  const defensive  = planDefensiveResponses(state, playerId, now)
+  const diplomatic = planDiplomaticResponses(defensive.state, playerId, now)
+  const movement   = planMovement(diplomatic.state, playerId, now)
+  let s = movement.state
+  const actions = [...defensive.actions, ...diplomatic.actions, ...movement.actions]
 
   const myUnits = s.units.filter(u => u.ownerId === playerId).slice().sort(byId)
   for (const unit of myUnits) {
@@ -239,5 +318,6 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
     }
   }
 
-  return [...actions, END_TURN]
+  const initiatives = planDiplomaticInitiatives(s, playerId, now)
+  return [...actions, ...initiatives.actions, END_TURN]
 }
