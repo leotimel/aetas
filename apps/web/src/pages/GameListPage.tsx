@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 import DailyCard from '../components/DailyCard.tsx'
 import MapPreviewMini from '../components/MapPreviewMini.tsx'
+import { AetasLogo } from '../components/ui/AetasLogo'
+import { RomanDivider } from '../components/ui/RomanDivider'
+import { SealButton } from '../components/ui/SealButton'
 import i18n from '../i18n.ts'
 import {
   CIVILIZATIONS,
@@ -48,20 +51,18 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   const [rows,         setRows]         = useState<GameRow[]>([])
   const [loading,      setLoading]      = useState(true)
   const [xp,           setXp]           = useState<number>(0)
-  const [selectedCiv,  setSelectedCiv]  = useState<string>('romans')
   const [showFinished, setShowFinished] = useState(false)
 
   useEffect(() => {
     void supabase
       .from('profiles')
-      .select('xp, selected_civ')
+      .select('xp')
       .eq('user_id', userId)
       .single()
       .then(({ data }) => {
         if (data) {
-          const d = data as { xp: number; selected_civ: string }
+          const d = data as { xp: number }
           setXp(d.xp)
-          setSelectedCiv(d.selected_civ ?? 'romans')
         }
       })
   }, [userId])
@@ -93,14 +94,23 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   }
 
   return (
-    <div className="min-h-screen bg-aetas-bg text-aetas-text">
+    <div className="min-h-screen bg-aetas-bg text-aetas-text relative">
+      {/* Colosseum background silhouette */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 h-[30vh] overflow-hidden" aria-hidden="true">
+        <ColosseumSilhouette />
+      </div>
+
       {/* Header */}
-      <header className="border-b border-aetas-border px-4 pt-3 pb-2 max-w-2xl mx-auto w-full bg-gradient-to-r from-aetas-gold/5 to-transparent">
+      <header className="border-b border-aetas-gold/20 px-4 pt-3 pb-2 max-w-2xl mx-auto w-full">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CivAvatar civId={selectedCiv} onClick={onOpenProfile} />
-            <h1 className="font-display text-xl font-semibold text-aetas-gold">Aetas</h1>
-          </div>
+          <button
+            onClick={onOpenProfile}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            title={t('profile.title')}
+          >
+            <AetasLogo size={36} />
+            <span className="font-display text-2xl font-semibold text-aetas-gold tracking-widest">AETAS</span>
+          </button>
           <div className="flex items-center gap-2">
             <button
               onClick={toggleLang}
@@ -122,6 +132,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
         </div>
         <XpMiniBar xp={xp} />
       </header>
+      <div className="max-w-2xl mx-auto w-full h-px bg-gradient-to-r from-transparent via-aetas-gold/30 to-transparent" />
 
       <main className="max-w-2xl mx-auto px-4 pt-6 pb-24 space-y-6">
         <DailyCard userId={userId} onEnterGame={onEnterGame} />
@@ -204,34 +215,16 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
       </main>
 
       {/* FAB */}
-      <div className="fixed bottom-6 right-4 left-4 max-w-2xl mx-auto flex justify-end">
-        <button
-          onClick={onNewGame}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-aetas-gold text-aetas-bg font-bold text-sm shadow-lg shadow-black/40 hover:bg-aetas-gold-light active:bg-aetas-gold-dark transition-colors"
-        >
-          {t('list.newGame')}
-        </button>
+      <div className="fixed bottom-6 right-6 z-30">
+        <SealButton variant="gold" size="lg" onClick={onNewGame}>
+          <span className="font-display text-center leading-tight text-xs">+<br />New<br />Game</span>
+        </SealButton>
       </div>
     </div>
   )
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function CivAvatar({ civId, onClick }: { civId: string; onClick: () => void }) {
-  const { t } = useTranslation()
-  const civ = CIVILIZATIONS.find(c => c.id === civId)
-  return (
-    <button
-      onClick={onClick}
-      title={t('profile.title')}
-      className="w-8 h-8 rounded-full text-sm font-bold text-white flex items-center justify-center flex-shrink-0 transition-opacity hover:opacity-80"
-      style={{ backgroundColor: civ?.color ?? '#92400e' }}
-    >
-      {civ?.name[0] ?? 'A'}
-    </button>
-  )
-}
 
 function Section({ label, count, dim, children }: {
   label: string
@@ -241,13 +234,18 @@ function Section({ label, count, dim, children }: {
 }) {
   return (
     <div className={dim ? 'opacity-70' : ''}>
-      <div className="flex items-center gap-2 border-l-2 border-aetas-gold pl-3 mb-3">
-        <p className="text-xs uppercase tracking-wider text-aetas-dim font-semibold">{label}</p>
-        {count > 0 && (
-          <span className="text-xs px-1.5 py-0.5 rounded-full bg-aetas-gold text-aetas-bg font-semibold">
-            {count}
+      <div className="mb-3">
+        <RomanDivider className="mb-2" />
+        <div className="flex items-center gap-2 px-1">
+          <span className="font-display text-xs uppercase tracking-widest text-aetas-gold/80">
+            {label}
           </span>
-        )}
+          {count > 0 && (
+            <SealButton variant="gold" size="sm" className="pointer-events-none cursor-default text-[10px]">
+              {count}
+            </SealButton>
+          )}
+        </div>
       </div>
       {children}
     </div>
@@ -320,33 +318,42 @@ function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
 
   return (
     <>
-    <div className={`relative bg-aetas-surface border rounded-lg p-3 transition-colors ${
-      isMyTurn
-        ? 'border-aetas-gold/40 hover:border-aetas-gold/70'
-        : 'border-aetas-border hover:border-aetas-border-strong'
-    }`}>
-      {/* Left border accent — always shown in civ color */}
+    <div
+      className="relative bg-aetas-surface rounded-sm p-3 transition-colors"
+      style={{
+        border: '1px solid var(--color-aetas-border)',
+        outline: isMyTurn ? '1px solid rgba(201,168,76,0.25)' : '1px solid rgba(201,168,76,0.10)',
+        outlineOffset: '-3px',
+      }}
+    >
+      {/* Left border accent */}
       <div
-        className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg ${isUrgent ? 'animate-pulse' : ''}`}
+        className={`absolute left-0 top-0 bottom-0 w-[3px] ${isUrgent ? 'animate-pulse' : ''}`}
         style={{ backgroundColor: myCivColor }}
       />
       {isMyTurn && (
-        <span className="absolute -top-2 left-3 px-1.5 py-0.5 rounded-full bg-aetas-gold text-aetas-bg text-[10px] font-bold leading-none">
+        <span className="absolute -top-2 left-3 px-1.5 py-0.5 rounded-sm bg-aetas-gold text-aetas-bg text-[10px] font-bold leading-none">
           {t('list.play')}
         </span>
       )}
 
       <div className="flex gap-3 items-start pl-1">
-        {/* Map thumbnail 64×52 */}
-        <div className="flex-shrink-0 rounded-lg overflow-hidden">
+        {/* Map thumbnail — hexagonal clip-path */}
+        <div
+          className="flex-shrink-0 overflow-hidden"
+          style={{
+            clipPath: 'polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)',
+            width: 52,
+            height: 60,
+          }}
+        >
           {gameMap ? (
-            <MapPreviewMini tiles={gameMap.tiles} radius={gameMap.radius} width={64} height={52} />
+            <MapPreviewMini tiles={gameMap.tiles} radius={gameMap.radius} width={52} height={60} />
           ) : (
             <div
-              className="rounded-lg"
               style={{
-                width: 64,
-                height: 52,
+                width: 52,
+                height: 60,
                 background: 'repeating-linear-gradient(45deg, var(--color-aetas-raised) 0px, var(--color-aetas-panel) 4px, var(--color-aetas-raised) 8px)',
               }}
             />
@@ -391,16 +398,18 @@ function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
           </div>
 
           {!g.is_finished && (
-            <button
-              onClick={onEnter}
-              className={`mt-2 px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
-                isMyTurn
-                  ? 'bg-aetas-gold text-aetas-bg hover:brightness-110'
-                  : 'bg-aetas-raised text-aetas-muted hover:bg-aetas-panel'
-              }`}
-            >
-              {isMyTurn ? t('list.play') : t('list.view')}
-            </button>
+            isMyTurn ? (
+              <SealButton variant="gold" size="sm" onClick={onEnter} className="mt-2">
+                ▶
+              </SealButton>
+            ) : (
+              <button
+                onClick={onEnter}
+                className="mt-2 px-3 py-1 rounded-sm text-xs font-semibold bg-aetas-raised text-aetas-muted hover:bg-aetas-panel transition-colors"
+              >
+                {t('list.view')}
+              </button>
+            )
           )}
         </div>
       </div>
@@ -475,4 +484,38 @@ function relativeTime(iso: string): string {
   const h = Math.floor(m / 60)
   if (h < 24) return i18n.t('list.hoursAgo', { h })
   return i18n.t('list.daysAgo', { d: Math.floor(h / 24) })
+}
+
+function ColosseumSilhouette() {
+  type Floor = { y: number; h: number; n: number; s: number; p: number }
+  const floors: Floor[] = [
+    { y: 163, h: 40, n: 10, s: 36, p: 7 },
+    { y: 119, h: 32, n: 8,  s: 45, p: 6 },
+    { y: 83,  h: 25, n: 6,  s: 60, p: 6 },
+  ]
+  return (
+    <svg width="100%" height="100%" viewBox="0 0 400 200" preserveAspectRatio="xMidYMax meet">
+      <g fill="var(--color-aetas-text)" opacity="0.07">
+        {/* Ground base */}
+        <rect x="0" y="165" width="400" height="35" />
+        {floors.map(({ y, h, n, s, p }, fi) => {
+          const totalW = n * s + p
+          const startX = (400 - totalW) / 2
+          const topY = y - h
+          return (
+            <g key={fi}>
+              {/* Top cornice band */}
+              <rect x={startX} y={topY} width={totalW} height={5} />
+              {/* Bottom sill rail */}
+              <rect x={startX} y={y - 5} width={totalW} height={5} />
+              {/* Pillars (N+1 to close the arcade) */}
+              {Array.from({ length: n + 1 }, (_, i) => (
+                <rect key={i} x={startX + i * s} y={topY + 5} width={p} height={h - 10} />
+              ))}
+            </g>
+          )
+        })}
+      </g>
+    </svg>
+  )
 }

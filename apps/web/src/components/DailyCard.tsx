@@ -141,9 +141,10 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   // Loading
   if (daily === 'none') {
     return (
-      <div className="bg-aetas-surface border border-aetas-border rounded-2xl p-4 mb-4 animate-pulse">
-        <div className="h-4 bg-aetas-raised rounded w-1/3 mb-2" />
-        <div className="h-3 bg-aetas-raised rounded w-1/2" />
+      <div className="bg-aetas-surface rounded-sm p-4 mb-4 animate-pulse"
+        style={{ border: '1px solid var(--color-aetas-border)', borderTop: '3px solid var(--color-aetas-parchment)' }}>
+        <div className="h-4 bg-aetas-raised rounded-sm w-1/3 mb-2" />
+        <div className="h-3 bg-aetas-raised rounded-sm w-1/2" />
       </div>
     )
   }
@@ -157,19 +158,45 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
       : t('game.turnStatus', { n: daily.turnNumber, max: daily.maxTurns })
 
   return (
-    <div className={`min-h-28 border rounded-2xl p-4 mb-4 ${
-      !daily ? 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
-      : daily.isFinished
-        ? isWon
-          ? 'bg-amber-950/40 border-amber-800/60'
-          : 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
-        : 'bg-gradient-to-br from-aetas-surface to-aetas-raised border-aetas-gold/30'
-    }`}>
+    <div
+      className={`relative min-h-28 rounded-sm p-4 mb-4 ${
+        isWon ? 'bg-amber-950/40' : 'bg-gradient-to-br from-aetas-surface to-aetas-raised'
+      }`}
+      style={{
+        border: '1px solid var(--color-aetas-border)',
+        outline: '1px solid rgba(201,168,76,0.12)',
+        outlineOffset: '-3px',
+        borderTop: '3px solid var(--color-aetas-parchment)',
+      }}
+    >
+      {/* Victory badge */}
+      {isWon && (
+        <div className="absolute -top-px right-4 z-10" style={{ transform: 'rotate(-2deg)' }}>
+          <span className="font-display text-[9px] font-semibold text-white uppercase tracking-wider px-2 py-0.5 bg-aetas-red rounded-none">
+            Victory
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-lg">{daily && daily.isFinished ? (isWon ? '🏆' : '🎮') : '🗓️'}</span>
+            {daily && daily.isFinished ? (
+              isWon ? (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 2h8v6a4 4 0 0 1-8 0V2z" /><path d="M5 4H3a2 2 0 0 0 0 4h2" /><path d="M13 4h2a2 2 0 0 0 0 4h-2" /><line x1="9" y1="12" x2="9" y2="15" /><line x1="6" y1="15" x2="12" y2="15" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="var(--color-aetas-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="12" height="12" rx="1" /><line x1="9" y1="6" x2="9" y2="9" /><circle cx="9" cy="12" r="0.5" fill="var(--color-aetas-muted)" />
+                </svg>
+              )
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="2" y="3" width="14" height="13" rx="1" /><line x1="6" y1="1" x2="6" y2="5" /><line x1="12" y1="1" x2="12" y2="5" /><line x1="2" y1="8" x2="16" y2="8" />
+              </svg>
+            )}
             <h2 className="text-aetas-text font-semibold text-sm">{t('daily.title')}</h2>
             <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today, i18n.language)}</span>
             {!!daily && typeof daily !== 'string' && (
@@ -183,7 +210,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
         {/* Status badge */}
         {daily && (
-          <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 font-medium ${
+          <span className={`text-xs px-2 py-1 rounded-sm flex-shrink-0 font-medium ${
             daily.isFinished
               ? isWon ? 'bg-amber-900/60 text-amber-300' : 'bg-aetas-raised text-aetas-muted'
               : 'bg-aetas-gold/20 text-aetas-gold'
@@ -195,7 +222,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
       {/* Score (when finished) */}
       {daily && daily.isFinished && finalScore && (
-        <div className="mt-3 flex items-center gap-4 bg-aetas-raised/60 rounded-xl px-3 py-2">
+        <div className="mt-3 flex items-center gap-4 bg-aetas-raised/60 rounded-sm px-3 py-2">
           <ScorePill icon="🏙️" label="Terr." value={finalScore.territory} />
           <ScorePill icon="👥" label="Pop." value={finalScore.population} />
           <ScorePill icon="🔬" label="Dev." value={finalScore.development} />
@@ -212,7 +239,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
           <button
             onClick={() => void handleStart()}
             disabled={starting}
-            className="flex-1 py-2.5 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light disabled:opacity-60 transition-colors"
+            className="flex-1 py-2.5 rounded-sm bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light disabled:opacity-60 transition-colors"
           >
             {starting ? (
               <span className="flex items-center justify-center gap-2">
@@ -226,7 +253,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {!daily.isFinished && (
               <button
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
-                className="flex-1 py-2.5 rounded-xl bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light transition-colors"
+                className="flex-1 py-2.5 rounded-sm bg-aetas-gold text-aetas-bg text-sm font-bold hover:bg-aetas-gold-light transition-colors"
               >
                 {t('daily.continue')}
               </button>
@@ -234,7 +261,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {daily.isFinished && (
               <button
                 onClick={handleShare}
-                className="flex-1 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm font-semibold hover:bg-aetas-panel transition-colors"
+                className="flex-1 py-2.5 rounded-sm bg-aetas-raised text-aetas-muted text-sm font-semibold hover:bg-aetas-panel transition-colors"
               >
                 {copied ? t('daily.shareCopied') : t('daily.share')}
               </button>
@@ -242,7 +269,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             {daily.isFinished && (
               <button
                 onClick={() => onEnterGame((daily as DailyGame).gameId)}
-                className="px-4 py-2.5 rounded-xl bg-aetas-raised text-aetas-muted text-sm hover:bg-aetas-panel transition-colors"
+                className="px-4 py-2.5 rounded-sm bg-aetas-raised text-aetas-muted text-sm hover:bg-aetas-panel transition-colors"
               >
                 {t('daily.view')}
               </button>
