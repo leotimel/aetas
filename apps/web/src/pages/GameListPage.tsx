@@ -282,11 +282,13 @@ function buildOpponentLabel(players: GamePlayer[], selfId: string): string {
 function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn: boolean; players: GamePlayer[]; onEnter: () => void }) {
   const { t } = useTranslation()
   const { games: g } = row
-  const updatedAgo = relativeTime(g.updated_at)
-  const isUrgent   = isMyTurn && g.turn_number > g.max_turns * 0.8
-  const turnPct    = Math.min(100, Math.round((g.turn_number / g.max_turns) * 100))
-  const iWon       = g.is_finished && g.winner_id === row.engine_player_id
+  const updatedAgo  = relativeTime(g.updated_at)
+  const isUrgent    = isMyTurn && g.turn_number > g.max_turns * 0.8
+  const turnPct     = Math.min(100, Math.round((g.turn_number / g.max_turns) * 100))
+  const iWon        = g.is_finished && g.winner_id === row.engine_player_id
   const opponentLabel = buildOpponentLabel(players, row.engine_player_id)
+  const myPlayer    = players.find(p => p.id === row.engine_player_id)
+  const myCivColor  = CIVILIZATIONS.find(c => c.id === myPlayer?.civilizationId)?.color ?? '#c9a84c'
 
   const gameMap = useMemo(() => {
     if (!g.seed) return null
@@ -299,9 +301,15 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
         ? 'border-aetas-gold/40 hover:border-aetas-gold/70'
         : 'border-aetas-border hover:border-aetas-border-strong'
     }`}>
-      {/* Left border accent */}
+      {/* Left border accent — always shown in civ color */}
+      <div
+        className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg ${isUrgent ? 'animate-pulse' : ''}`}
+        style={{ backgroundColor: myCivColor }}
+      />
       {isMyTurn && (
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg bg-emerald-500/60 ${isUrgent ? 'animate-pulse' : ''}`} />
+        <span className="absolute -top-2 left-3 px-1.5 py-0.5 rounded-full bg-aetas-gold text-aetas-bg text-[10px] font-bold leading-none">
+          {t('list.play')}
+        </span>
       )}
 
       <div className="flex gap-3 items-start pl-1">
@@ -327,7 +335,7 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
             <span className="text-aetas-muted text-xs font-medium truncate">
               {opponentLabel || row.game_id.slice(0, 8) + '…'}
             </span>
-            <span className="text-aetas-dim text-xs flex-shrink-0 ml-1">{updatedAgo}</span>
+            <span className="text-aetas-muted text-xs flex-shrink-0 ml-1">{updatedAgo}</span>
           </div>
 
           <div className="text-xs text-aetas-dim">
@@ -342,10 +350,10 @@ function GameCard({ row, isMyTurn, players, onEnter }: { row: GameRow; isMyTurn:
           </div>
 
           {/* Turn progress bar */}
-          <div className="mt-1.5 h-0.5 bg-aetas-raised rounded-full overflow-hidden">
+          <div className="mt-1.5 h-1 bg-aetas-raised rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full ${isMyTurn ? 'bg-aetas-gold' : 'bg-aetas-muted/40'}`}
-              style={{ width: `${turnPct}%` }}
+              className="h-full rounded-full transition-all"
+              style={{ width: `${turnPct}%`, backgroundColor: isMyTurn ? myCivColor : 'rgba(100,110,120,0.4)' }}
             />
           </div>
 

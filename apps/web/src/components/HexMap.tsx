@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { GameState, HexCoord } from '@aetas/game-engine'
-import { hexKey, hexDistance, UnitType, Era, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, CIVILIZATIONS } from '@aetas/game-engine'
+import { hexKey, hexDistance, hexNeighbors, UnitType, Era, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, CIVILIZATIONS } from '@aetas/game-engine'
 import TerrainPatterns from '../assets/terrain-patterns.tsx'
 import { UNIT_SPRITES, CitySprite, CapitalSprite } from '../assets/units/index'
 
@@ -53,6 +53,13 @@ function hexPolygonPoints(cx: number, cy: number, r: number): string {
     const angle = (Math.PI / 180) * (60 * i - 30)
     return `${(cx + r * Math.cos(angle)).toFixed(1)},${(cy + r * Math.sin(angle)).toFixed(1)}`
   }).join(' ')
+}
+
+function hexVerticesArr(cx: number, cy: number, r: number): { x: number; y: number }[] {
+  return Array.from({ length: 6 }, (_, i) => {
+    const angle = (Math.PI / 180) * (60 * i - 30)
+    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) }
+  })
 }
 
 type DyingUnit = { id: string; x: number; y: number; color: string; unitType: string }
@@ -443,6 +450,34 @@ export default function HexMap({
             </g>
           )
         })}
+
+        {/* Layer: Territory border lines — drawn on edges between different owners */}
+        <g pointerEvents="none">
+          {map.tiles.flatMap(tile => {
+            const key = hexKey(tile.coord)
+            const isVis = godMode || visibleSet.has(key)
+            if (!isVis) return []
+            const ownerId = territoryMap.get(key)
+            if (!ownerId) return []
+            const [px, py] = hexToPixel(tile.coord.q, tile.coord.r)
+            const color = playerColorMap.get(ownerId) ?? '#888'
+            const verts = hexVerticesArr(px, py, HEX_SIZE - 1)
+            const nbrs = hexNeighbors(tile.coord)
+            return Array.from({ length: 6 }, (_, i) => {
+              const nbr = nbrs[(6 - i) % 6]
+              const nbrKey = hexKey(nbr)
+              if (!(godMode || visibleSet.has(nbrKey))) return null
+              if (territoryMap.get(nbrKey) === ownerId) return null
+              const v0 = verts[i], v1 = verts[(i + 1) % 6]
+              return (
+                <line key={`${key}-b${i}`}
+                  x1={v0.x} y1={v0.y} x2={v1.x} y2={v1.y}
+                  stroke={color} strokeWidth={2} strokeOpacity={0.75} strokeLinecap="round"
+                />
+              )
+            }).filter((el): el is React.ReactElement => el !== null)
+          })}
+        </g>
 
         {/* Layer: Cities — spring-in on city founded */}
         {cities.map(city => {

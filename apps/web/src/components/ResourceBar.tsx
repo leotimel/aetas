@@ -3,7 +3,7 @@ import type { Resources } from '@aetas/game-engine'
 
 interface Props {
   resources: Resources
-  income: Resources
+  income:    Resources
 }
 
 export default function ResourceBar({ resources, income }: Props) {
@@ -16,14 +16,19 @@ export default function ResourceBar({ resources, income }: Props) {
   ]
 
   return (
-    <div className="flex items-center justify-center gap-5 px-3 py-1.5 bg-aetas-raised border-b border-aetas-border text-xs flex-shrink-0">
-      {ITEMS.map(({ key, icon, label }) => (
-        <div key={key} className="flex items-center gap-1" title={label}>
-          <span>{icon}</span>
-          <span className="text-aetas-text font-medium">{resources[key]}</span>
-          <span className="text-emerald-400">(+{income[key]})</span>
-        </div>
-      ))}
+    <div className="flex items-center justify-center gap-6 px-3 py-2 bg-aetas-raised border-b border-aetas-border text-xs flex-shrink-0">
+      {ITEMS.map(({ key, icon, label }) => {
+        const inc = income[key]
+        return (
+          <div key={key} className="flex items-center gap-1.5" title={label}>
+            <span className="text-base leading-none">{icon}</span>
+            <span className="text-aetas-text font-semibold">{resources[key]}</span>
+            <span className={inc >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+              {inc >= 0 ? `+${inc}` : `${inc}`}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -33,6 +33,12 @@ const ERA_NAME_KEY: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'
   [Era.Medieval]:  'era.medieval',
 }
 
+const ERA_BG_COLOR: Record<Era, string> = {
+  [Era.Ancient]:   'rgba(180, 100, 30, 0.04)',
+  [Era.Classical]: 'rgba(70, 130, 180, 0.04)',
+  [Era.Medieval]:  'rgba(100, 110, 120, 0.04)',
+}
+
 function civName(players: GameState['players'] | null | undefined, playerId: string): string {
   if (!players) return playerId.slice(0, 6)
   const player = players.find(p => p.id === playerId)
@@ -597,7 +603,10 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   return (
     <div className="flex flex-col h-screen bg-aetas-bg text-aetas-text overflow-hidden">
       {/* ── Top bar ── */}
-      <header className="flex items-center gap-2 px-3 py-2 bg-aetas-surface border-b border-aetas-border flex-shrink-0 flex-wrap">
+      <header
+        className="flex items-center gap-2 px-3 py-2 bg-aetas-surface border-b border-aetas-border flex-shrink-0 flex-wrap"
+        style={{ background: `linear-gradient(to right, ${ERA_BG_COLOR[gameState.era]}, transparent), var(--color-aetas-surface)` }}
+      >
         <button
           onClick={onBack}
           className="text-aetas-muted hover:text-aetas-text transition-colors text-sm"
@@ -641,10 +650,11 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setDiplomacyOpenSignal(s => s + 1)}
-            className="relative w-10 h-10 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
+            className="relative h-10 px-2 sm:px-3 flex items-center gap-1 justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
             title={t('game.diplomacyTitle')}
           >
             ⚖️
+            <span className="hidden sm:inline text-xs">{t('game.diplomacyTitle')}</span>
             {incomingProposals > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold">
                 {incomingProposals}
@@ -664,10 +674,11 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           )}
           <button
             onClick={() => void fetchGame()}
-            className="w-10 h-10 flex items-center justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
+            className="h-10 px-2 sm:px-3 flex items-center gap-1 justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
             title={t('game.refreshTitle')}
           >
             ↺
+            <span className="hidden sm:inline text-xs">{t('game.refreshTitle')}</span>
           </button>
         </div>
       </header>
