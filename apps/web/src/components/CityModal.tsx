@@ -290,7 +290,12 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
               {available.length === 0
                 ? <p className="text-xs text-aetas-dim">{t('city.noUnits')}</p>
                 : available.map(def => {
-                    const canAfford = (myResources?.production ?? 0) >= def.productionCost
+                    const foodCost = Math.ceil(def.productionCost / 2)
+                    const goldCost = Math.ceil(def.productionCost / 3)
+                    const canAfford =
+                      (myResources?.production ?? 0) >= def.productionCost &&
+                      (myResources?.food ?? 0) >= foodCost &&
+                      (myResources?.gold ?? 0) >= goldCost
                     return (
                       <div
                         key={def.type}
@@ -302,7 +307,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                             ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp} 💨{def.stats.movement}
                           </span>
                         </div>
-                        <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost}</span>
+                        <span className="text-aetas-muted text-xs whitespace-nowrap">⚙{def.productionCost} 🌾{foodCost} 💰{goldCost}</span>
                         <button
                           onClick={() => onTrainUnit(city.id, def.type)}
                           disabled={!canAfford || hexOccupied}

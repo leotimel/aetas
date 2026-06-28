@@ -30,7 +30,7 @@ function ResourceSlider({
 }: { icon: string; label: string; value: number; max: number; onChange: (v: number) => void }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-16 text-aetas-dim text-[11px] flex items-center gap-1">{icon} {label}</span>
+      <span className="flex-shrink-0 text-aetas-dim text-[11px] flex items-center gap-1 whitespace-nowrap">{icon} {label}</span>
       <input
         type="range"
         min={0}
