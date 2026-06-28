@@ -205,8 +205,8 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
                 <rect x="2" y="3" width="14" height="13" rx="1" /><line x1="6" y1="1" x2="6" y2="5" /><line x1="12" y1="1" x2="12" y2="5" /><line x1="2" y1="8" x2="16" y2="8" />
               </svg>
             )}
-            <h2 className="text-aetas-text font-semibold text-sm">{t('daily.title')}</h2>
-            <span className="text-aetas-dim text-xs font-mono">{formatDateLabel(today, i18n.language)}</span>
+            <h2 className="font-display text-aetas-gold font-semibold text-sm tracking-wide">{t('daily.title')}</h2>
+            <span className="text-aetas-dim text-xs">{formatDateLabel(today, i18n.language)}</span>
             {!!daily && typeof daily !== 'string' && (
               <span className="text-emerald-400 text-xs font-medium">{t('daily.played')}</span>
             )}

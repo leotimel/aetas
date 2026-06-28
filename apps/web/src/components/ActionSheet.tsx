@@ -150,8 +150,8 @@ export default function ActionSheet({
               onClick={onEndTurn}
               disabled={!isMyTurn}
             >
-              <span className="font-display text-center leading-tight text-[10px] uppercase tracking-widest">
-                END<br/>TURN
+              <span className="font-display text-center text-[11px] uppercase tracking-[0.2em] leading-none">
+                END TURN
               </span>
             </SealButton>
             {!isMyTurn && (

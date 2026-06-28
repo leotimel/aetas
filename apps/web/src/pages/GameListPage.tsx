@@ -94,16 +94,17 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   }
 
   return (
-    <div className="min-h-screen bg-aetas-bg text-aetas-text relative">
+    <div className="min-h-screen text-aetas-text relative">
       {/* Roman scene background image */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true" style={{ zIndex: -1 }}>
+        <div className="absolute inset-0 bg-aetas-bg" />
         <img
           src="/assets/menu-bg.webp"
           alt=""
           className="absolute inset-0 w-full h-full object-cover object-bottom"
-          style={{ opacity: 0.18 }}
+          style={{ opacity: 0.20 }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-aetas-bg via-aetas-bg/70 to-aetas-bg/30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-aetas-bg via-aetas-bg/80 to-aetas-bg/50" />
       </div>
 
       {/* Header */}
@@ -223,7 +224,7 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
       {/* FAB */}
       <div className="fixed bottom-6 right-6 z-30">
         <SealButton variant="gold" size="lg" onClick={onNewGame}>
-          <span className="font-display text-center leading-tight text-xs">+<br />New<br />Game</span>
+          <span className="font-display text-center text-[10px] uppercase tracking-widest leading-snug">+ New<br/>Game</span>
         </SealButton>
       </div>
     </div>
