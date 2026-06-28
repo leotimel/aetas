@@ -653,6 +653,15 @@ export default function GameView({ gameId, userId, onBack }: Props) {
               : t('game.theirTurn', { player: civName(gameState.players, gameState.currentPlayerId) })}
         </span>
 
+        {/* Mobile: player scores badge */}
+        <button
+          onClick={() => setShowScoreModal(true)}
+          className="md:hidden flex items-center gap-1 text-xs text-aetas-muted bg-aetas-raised rounded-full px-2 py-1 hover:text-aetas-text transition-colors"
+          title="Pontuações"
+        >
+          👥 {gameState.players.length}
+        </button>
+
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setDiplomacyOpenSignal(s => s + 1)}
@@ -706,8 +715,8 @@ export default function GameView({ gameId, userId, onBack }: Props) {
         />
       )}
 
-      {/* ── Player bar ── */}
-      <div className="flex-shrink-0 border-b border-aetas-border">
+      {/* ── Player bar (desktop only — mobile uses score badge in header) ── */}
+      <div className="hidden md:block flex-shrink-0 border-b border-aetas-border">
         <PlayerBar
           gameState={gameState}
           myEnginePlayerId={enginePlayerId}
@@ -723,7 +732,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           style={{
             backgroundImage: 'url(/assets/game-bg.webp)',
             backgroundSize: 'cover',
-            backgroundPosition: 'center center',
+            backgroundPosition: 'center 30%',
           }}
         >
           <div className="absolute inset-0 bg-aetas-bg/60 pointer-events-none" />
