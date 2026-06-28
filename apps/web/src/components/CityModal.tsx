@@ -297,21 +297,21 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                       (myResources?.food ?? 0) >= foodCost &&
                       (myResources?.gold ?? 0) >= goldCost
                     return (
-                      <div key={def.type} className="py-1.5 border-b border-aetas-border/50 last:border-0">
-                        <div className="flex items-center gap-2">
-                          <span className="flex-1 text-aetas-text text-sm font-medium">{def.name}</span>
-                          <span className="text-aetas-muted text-xs whitespace-nowrap">⚙{def.productionCost} 🌾{foodCost} 💰{goldCost}</span>
-                          <button
-                            onClick={() => onTrainUnit(city.id, def.type)}
-                            disabled={!canAfford || hexOccupied}
-                            className="px-2.5 py-1 rounded-sm text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-red text-white hover:brightness-110"
-                          >
-                            {t('city.trainBtn')}
-                          </button>
+                      <div key={def.type} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-aetas-text text-sm font-medium">{def.name}</p>
+                          <p className="text-aetas-dim text-[11px] mt-0.5">
+                            ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp} 💨{def.stats.movement}
+                          </p>
                         </div>
-                        <p className="text-aetas-dim text-[11px] mt-0.5">
-                          ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp} 💨{def.stats.movement}
-                        </p>
+                        <span className="flex-shrink-0 text-aetas-muted text-xs whitespace-nowrap">⚙{def.productionCost} 🌾{foodCost} 💰{goldCost}</span>
+                        <button
+                          onClick={() => onTrainUnit(city.id, def.type)}
+                          disabled={!canAfford || hexOccupied}
+                          className="flex-shrink-0 px-2.5 py-1 rounded-sm text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-red text-white hover:brightness-110"
+                        >
+                          {t('city.trainBtn')}
+                        </button>
                       </div>
                     )
                   })
