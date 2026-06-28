@@ -95,9 +95,15 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
 
   return (
     <div className="min-h-screen bg-aetas-bg text-aetas-text relative">
-      {/* Colosseum background silhouette */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 h-[30vh] overflow-hidden" aria-hidden="true">
-        <ColosseumSilhouette />
+      {/* Roman scene background image */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden" aria-hidden="true">
+        <img
+          src="/assets/menu-bg.webp"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover object-bottom"
+          style={{ opacity: 0.18 }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-aetas-bg via-aetas-bg/70 to-aetas-bg/30" />
       </div>
 
       {/* Header */}
@@ -486,36 +492,3 @@ function relativeTime(iso: string): string {
   return i18n.t('list.daysAgo', { d: Math.floor(h / 24) })
 }
 
-function ColosseumSilhouette() {
-  type Floor = { y: number; h: number; n: number; s: number; p: number }
-  const floors: Floor[] = [
-    { y: 163, h: 40, n: 10, s: 36, p: 7 },
-    { y: 119, h: 32, n: 8,  s: 45, p: 6 },
-    { y: 83,  h: 25, n: 6,  s: 60, p: 6 },
-  ]
-  return (
-    <svg width="100%" height="100%" viewBox="0 0 400 200" preserveAspectRatio="xMidYMax meet">
-      <g fill="var(--color-aetas-text)" opacity="0.07">
-        {/* Ground base */}
-        <rect x="0" y="165" width="400" height="35" />
-        {floors.map(({ y, h, n, s, p }, fi) => {
-          const totalW = n * s + p
-          const startX = (400 - totalW) / 2
-          const topY = y - h
-          return (
-            <g key={fi}>
-              {/* Top cornice band */}
-              <rect x={startX} y={topY} width={totalW} height={5} />
-              {/* Bottom sill rail */}
-              <rect x={startX} y={y - 5} width={totalW} height={5} />
-              {/* Pillars (N+1 to close the arcade) */}
-              {Array.from({ length: n + 1 }, (_, i) => (
-                <rect key={i} x={startX + i * s} y={topY + 5} width={p} height={h - 10} />
-              ))}
-            </g>
-          )
-        })}
-      </g>
-    </svg>
-  )
-}
