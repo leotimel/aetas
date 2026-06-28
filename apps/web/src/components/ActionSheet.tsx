@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { SealButton } from './ui/SealButton'
 import type { GameState, Unit } from '@aetas/game-engine'
 import { CombatDisputeStatus, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, UnitType, hexDistance, hexKey } from '@aetas/game-engine'
 import DiplomacyPanel from './DiplomacyPanel.tsx'
@@ -142,18 +143,23 @@ export default function ActionSheet({
       {/* ── Desktop: right sidebar ── */}
       <div className="hidden md:flex flex-col w-72 flex-shrink-0 border-l border-aetas-border bg-aetas-surface overflow-y-auto">
         <div className="p-3 flex flex-col gap-2">
-          <button
-            onClick={onEndTurn}
-            disabled={!isMyTurn}
-            className={`w-full py-3 rounded-sm font-display text-sm tracking-widest uppercase text-center transition-colors ${
-              isMyTurn
-                ? 'text-aetas-gold hover:bg-aetas-raised'
-                : 'text-aetas-dim cursor-not-allowed opacity-50'
-            }`}
-            style={isMyTurn ? { border: '1px solid rgba(201,168,76,0.45)', background: 'var(--color-aetas-panel)' } : undefined}
-          >
-            {isMyTurn ? t('action.endTurn') : t('action.waitingTurn')}
-          </button>
+          <div className="flex flex-col items-center gap-2 py-2">
+            <SealButton
+              variant="gold"
+              size="lg"
+              onClick={onEndTurn}
+              disabled={!isMyTurn}
+            >
+              <span className="font-display text-center leading-tight text-[10px] uppercase tracking-widest">
+                END<br/>TURN
+              </span>
+            </SealButton>
+            {!isMyTurn && (
+              <p className="text-center text-aetas-dim text-xs">
+                {t('action.waitingTurn')}
+              </p>
+            )}
+          </div>
 
           <ExpandedContent
             selectedUnit={selectedUnit}

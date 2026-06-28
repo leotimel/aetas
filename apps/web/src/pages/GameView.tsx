@@ -718,7 +718,15 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       {/* ── Main area ── */}
       <div className="flex flex-1 min-h-0">
         {/* Hex map */}
-        <div className="relative flex-1 min-h-0 bg-aetas-bg">
+        <div
+          className="relative flex-1 min-h-0"
+          style={{
+            backgroundImage: 'url(/assets/game-bg.webp)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center center',
+          }}
+        >
+          <div className="absolute inset-0 bg-aetas-bg/60 pointer-events-none" />
           <HexMap
             gameState={gameState}
             myEnginePlayerId={enginePlayerId}
