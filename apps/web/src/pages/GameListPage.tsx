@@ -102,9 +102,9 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           src="/assets/menu-bg.webp"
           alt=""
           className="absolute inset-0 w-full h-full object-cover object-bottom"
-          style={{ opacity: 0.20 }}
+          style={{ opacity: 0.40 }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-aetas-bg via-aetas-bg/80 to-aetas-bg/50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-aetas-bg/95 via-aetas-bg/60 to-aetas-bg/25" />
       </div>
 
       {/* Header */}
