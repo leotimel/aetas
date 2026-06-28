@@ -405,9 +405,12 @@ function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
 
           {!g.is_finished && (
             isMyTurn ? (
-              <SealButton variant="gold" size="sm" onClick={onEnter} className="mt-2">
-                ▶
-              </SealButton>
+              <button
+                onClick={onEnter}
+                className="mt-2 px-3 py-1.5 rounded-sm bg-aetas-gold text-aetas-bg text-xs font-semibold hover:brightness-110 transition-colors"
+              >
+                Play →
+              </button>
             ) : (
               <button
                 onClick={onEnter}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
 import { rankPlayers } from '@aetas/game-engine'
@@ -167,8 +167,16 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
         outline: '1px solid rgba(201,168,76,0.12)',
         outlineOffset: '-3px',
         borderTop: '3px solid var(--color-aetas-parchment)',
+        boxShadow: 'inset 0 1px 0 rgba(201,168,76,0.15), 0 4px 24px rgba(0,0,0,0.6)',
       }}
     >
+      {/* Corner ornaments */}
+      {['top-0 left-0', 'top-0 right-0 rotate-90', 'bottom-0 right-0 rotate-180', 'bottom-0 left-0 -rotate-90'].map((pos, i) => (
+        <svg key={i} className={`absolute ${pos} w-4 h-4 pointer-events-none`} viewBox="0 0 16 16"
+          fill="none" stroke="var(--color-aetas-parchment)" strokeWidth="1.5">
+          <path d="M1 15 L1 1 L15 1" />
+        </svg>
+      ))}
       {/* Victory badge */}
       {isWon && (
         <div className="absolute -top-px right-4 z-10" style={{ transform: 'rotate(-2deg)' }}>
@@ -222,11 +230,22 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
       {/* Score (when finished) */}
       {daily && daily.isFinished && finalScore && (
-        <div className="mt-3 flex items-center gap-4 bg-aetas-raised/60 rounded-sm px-3 py-2">
-          <ScorePill icon="🏙️" label="Terr." value={finalScore.territory} />
-          <ScorePill icon="👥" label="Pop." value={finalScore.population} />
-          <ScorePill icon="🔬" label="Dev." value={finalScore.development} />
-          <div className="ml-auto text-right">
+        <div className="mt-3 flex items-center justify-between gap-2 bg-aetas-raised/60 rounded-sm px-3 py-2">
+          <div className="flex gap-4">
+            <CoinPill
+              icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="rgba(232,201,122,0.85)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2 L17 6 L17 14 L10 18 L3 14 L3 6 Z"/></svg>}
+              label="Terr." value={finalScore.territory}
+            />
+            <CoinPill
+              icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="rgba(232,201,122,0.85)" strokeWidth="1.5" strokeLinecap="round"><circle cx="10" cy="7" r="3"/><path d="M4 17 Q10 12 16 17"/></svg>}
+              label="Pop." value={finalScore.population}
+            />
+            <CoinPill
+              icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="rgba(232,201,122,0.85)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 16 L4 4 L12 4 L16 8 L16 16 Z"/><path d="M12 4 L12 8 L16 8"/></svg>}
+              label="Dev." value={finalScore.development}
+            />
+          </div>
+          <div className="text-right">
             <p className="text-aetas-gold font-bold text-base">{finalScore.total}</p>
             <p className="text-aetas-dim text-xs">pts</p>
           </div>
@@ -281,14 +300,19 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   )
 }
 
-function ScorePill({ icon, label, value }: { icon: string; label: string; value: number }) {
+function CoinPill({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-sm">{icon}</span>
-      <div>
-        <p className="text-aetas-text text-xs font-semibold">{value}</p>
-        <p className="text-aetas-dim text-xs">{label}</p>
+    <div className="flex flex-col items-center gap-1">
+      <div className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+        style={{
+          background: 'radial-gradient(circle at 35% 35%, #a87828 0%, #5a3a0a 100%)',
+          border: '2px solid rgba(201,168,76,0.50)',
+          boxShadow: 'inset 0 1px 0 rgba(232,201,122,0.25)',
+        }}>
+        {icon}
       </div>
+      <span className="font-display text-aetas-gold font-semibold text-base leading-none">{value}</span>
+      <span className="text-aetas-dim text-[10px] uppercase tracking-wider">{label}</span>
     </div>
   )
 }
