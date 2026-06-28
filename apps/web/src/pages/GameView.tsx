@@ -610,7 +610,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     <div className="flex flex-col h-screen bg-aetas-bg text-aetas-text overflow-hidden">
       {/* ── Top bar ── */}
       <header
-        className="flex items-center gap-2 px-3 py-2 bg-aetas-surface border-b border-aetas-border flex-shrink-0 flex-wrap"
+        className="flex items-center gap-2 px-3 py-2 bg-aetas-surface border-b border-aetas-border flex-shrink-0"
         style={{ background: `linear-gradient(to right, ${ERA_BG_COLOR[gameState.era]}, transparent), var(--color-aetas-surface)` }}
       >
         <button
@@ -620,7 +620,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           {t('ui.backToList')}
         </button>
 
-        <span className="text-aetas-dim text-xs truncate max-w-[160px]" title={gameId}>
+        <span className="flex-1 min-w-0 text-aetas-dim text-xs truncate" title={gameId}>
           {(() => {
             const opponents = gameState.players.filter(p => p.id !== enginePlayerId)
             if (opponents.length === 0) return gameId.slice(0, 8) + '…'
@@ -635,7 +635,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           })()}
         </span>
 
-        <span className="text-aetas-dim text-xs">
+        <span className="hidden sm:inline text-aetas-dim text-xs flex-shrink-0">
           {t('game.turnStatus', { n: gameState.turnNumber, max: gameState.maxTurns })}
         </span>
 
@@ -643,7 +643,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           {ERA_ICONS[gameState.era]} {t(ERA_NAME_KEY[gameState.era])}
         </span>
 
-        <span className={`text-xs font-semibold ml-1 ${isMyTurn ? 'text-aetas-gold' : 'text-aetas-dim'}`}>
+        <span className={`flex-shrink-0 text-xs font-semibold ${isMyTurn ? 'text-aetas-gold' : 'text-aetas-dim'}`}>
           {isFinished
             ? gameState.winner
               ? t('game.finished', { winner: civName(gameState.players, gameState.winner) })

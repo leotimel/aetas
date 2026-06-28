@@ -259,14 +259,13 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                     ) : (
                       <>
                         <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost} 💰 {def.goldCost}</span>
-                        <SealButton
-                          variant="gold"
-                          size="sm"
+                        <button
                           onClick={() => onConstructBuilding(city.id, def.type)}
                           disabled={!canAfford || constructing != null}
+                          className="px-2.5 py-1 rounded-sm text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold text-aetas-bg hover:brightness-110"
                         >
                           {t('city.buildBtn')}
-                        </SealButton>
+                        </button>
                       </>
                     )}
                   </div>
@@ -304,14 +303,13 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                           </span>
                         </div>
                         <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost}</span>
-                        <SealButton
-                          variant="red"
-                          size="sm"
+                        <button
                           onClick={() => onTrainUnit(city.id, def.type)}
                           disabled={!canAfford || hexOccupied}
+                          className="px-2.5 py-1 rounded-sm text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-red text-white hover:brightness-110"
                         >
                           {t('city.trainBtn')}
-                        </SealButton>
+                        </button>
                       </div>
                     )
                   })
