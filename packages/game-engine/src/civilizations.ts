@@ -56,7 +56,9 @@ const SPECIAL_UNITS: readonly SpecialUnitDefinition[] = [
     eraRequired:    Era.Ancient,
     productionCost: 30,
     replacesType:   UnitType.Warrior,
-    stats:          { attack: 9, defense: 12, maxHp: 14, movement: 2 },
+    // Nerf (BAL-2): hp 14→12 to honour the "≤35% stat-sum over base" cap
+    // (was 40% over Warrior). Defensive identity (def 12) kept intact.
+    stats:          { attack: 9, defense: 12, maxHp: 12, movement: 2 },
     canFoundCity:   false,
     description:    'Infantaria de formação cerrada. Defesa excepcional, ataque contido.',
   },
@@ -67,7 +69,9 @@ const SPECIAL_UNITS: readonly SpecialUnitDefinition[] = [
     eraRequired:    Era.Medieval,
     productionCost: 70,
     replacesType:   UnitType.Knight,
-    stats:          { attack: 24, defense: 8, maxHp: 14, movement: 3 },
+    // Nerf (BAL-2): atk 24→20, hp 14→12. With the +15% Viking combat bonus its
+    // effective attack stays a threat without one-shotting; sum now below Knight.
+    stats:          { attack: 20, defense: 8, maxHp: 12, movement: 3 },
     canFoundCity:   false,
     description:    'Guerreiro em transe de batalha. Ataque excepcional; sem escudo.',
   },

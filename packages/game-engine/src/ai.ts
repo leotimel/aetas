@@ -79,6 +79,23 @@ const END_TURN: GameAction = { type: 'endTurn' }
 const resourceTotal = (r: { gold: number; food: number; production: number }): number =>
   r.gold + r.food + r.production
 
+/** Turns a war declaration keeps marking its declarer as an aggressor. */
+const WARMONGER_WINDOW = 5
+
+/**
+ * Players who DECLARED a war within the last WARMONGER_WINDOW turns — the
+ * aggressors, not their victims (only `declarerId` counts). The AI distrusts
+ * them: it refuses their pact offers and won't ally with them, which pushes the
+ * remaining players into a de-facto coalition against a serial attacker.
+ */
+function warmongers(state: GameState): Set<string> {
+  const set = new Set<string>()
+  for (const war of state.wars ?? []) {
+    if (state.turnNumber - war.declaredAtTurn <= WARMONGER_WINDOW) set.add(war.declarerId)
+  }
+  return set
+}
+
 /**
  * Folds responses to incoming diplomatic proposals into the working state. The AI
  * accepts non-aggression pacts and peace offers (it prefers stability), and accepts
@@ -92,6 +109,7 @@ function planDiplomaticResponses(
 ): { state: GameState; actions: GameAction[] } {
   let s = state
   const actions: GameAction[] = []
+  const aggressors = warmongers(s)
   const pending = s.diplomaticProposals
     .filter(p => p.status === 'pending' && p.targetId === playerId)
     .slice()
@@ -99,9 +117,13 @@ function planDiplomaticResponses(
 
   for (const proposal of pending) {
     const kind = proposal.kind ?? (proposal.terms ? 'trade' : 'pact')
+    // Trade: accept only on a net gain. Pact: refuse recent aggressors (distrust).
+    // Peace and anything else: accept (ending a war is always welcome).
     const accept = kind === 'trade'
       ? !!proposal.terms && resourceTotal(proposal.terms.offer) >= resourceTotal(proposal.terms.request)
-      : true
+      : kind === 'pact'
+        ? !aggressors.has(proposal.proposerId)
+        : true
     const action: GameAction = { type: 'respondToDiplomacy', proposalId: proposal.id, accept }
     if (validateAction(s, playerId, action, now).valid) {
       actions.push(action)
@@ -149,6 +171,7 @@ function planDiplomaticInitiatives(
   const me = state.players.find(p => p.id === playerId)
   if (!me) return { state, actions: [] }
 
+  const aggressors = warmongers(state)
   const contacts = state.players
     .filter(p => p.id !== playerId && !p.isEliminated && haveMadeContact(state, playerId, p.id))
     .slice()
@@ -164,6 +187,9 @@ function planDiplomaticInitiatives(
     let candidate: GameAction | null = null
 
     if (relation === 'neutral') {
+      // Don't ally with a recent aggressor — by skipping them, pacts flow to the
+      // peaceful neighbours instead, forming a coalition against the warmonger.
+      if (aggressors.has(other.id)) continue
       const alreadyOfferedPact = state.diplomaticProposals.some(
         p => (p.kind ?? (p.terms ? 'trade' : 'pact')) === 'pact' &&
              p.proposerId === playerId && p.targetId === other.id,

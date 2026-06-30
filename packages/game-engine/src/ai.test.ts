@@ -355,6 +355,56 @@ describe('decideOpponentTurn — diplomacy', () => {
   })
 })
 
+// ─── Warmonger penalty (BAL-2) ───────────────────────────────────────────────
+
+describe('decideOpponentTurn — warmonger penalty', () => {
+  const pactFrom = (proposerId: string, targetId: string) => ({
+    id: `prop-${proposerId}`,
+    proposerId,
+    targetId,
+    status: DiplomaticProposalStatus.Pending,
+    kind: 'pact' as const,
+    createdAtTurn: 1,
+  })
+  const findResponse = (actions: GameAction[]) =>
+    actions.find(a => a.type === 'respondToDiplomacy') as
+      Extract<GameAction, { type: 'respondToDiplomacy' }> | undefined
+
+  it('refuses a pact from a player who declared war within the last 5 turns', () => {
+    const state: GameState = {
+      ...makeState({ currentPlayerId: 'p1', players: [makePlayer('p0'), makePlayer('p1'), makePlayer('p2')] }),
+      turnNumber: 3,
+      wars: [{ id: 'w', declarerId: 'p0', targetId: 'p2', declaredAtTurn: 2 }],
+      diplomaticProposals: [pactFrom('p0', 'p1')],
+    }
+    const response = findResponse(decideOpponentTurn(state, 'p1', NOW))
+    expect(response, 'AI must respond to the pact').toBeDefined()
+    expect(response!.accept).toBe(false)
+  })
+
+  it('accepts a pact when the aggressor’s war is older than the window', () => {
+    const state: GameState = {
+      ...makeState({ currentPlayerId: 'p1', players: [makePlayer('p0'), makePlayer('p1'), makePlayer('p2')] }),
+      turnNumber: 10,
+      wars: [{ id: 'w', declarerId: 'p0', targetId: 'p2', declaredAtTurn: 2 }], // 10-2=8 > 5
+      diplomaticProposals: [pactFrom('p0', 'p1')],
+    }
+    const response = findResponse(decideOpponentTurn(state, 'p1', NOW))
+    expect(response!.accept).toBe(true)
+  })
+
+  it('keys on the proposer: accepts a peaceful proposer even if a third party is a warmonger', () => {
+    const state: GameState = {
+      ...makeState({ currentPlayerId: 'p1', players: [makePlayer('p0'), makePlayer('p1'), makePlayer('p2')] }),
+      turnNumber: 3,
+      wars: [{ id: 'w', declarerId: 'p2', targetId: 'p0', declaredAtTurn: 2 }], // p2 is the aggressor
+      diplomaticProposals: [pactFrom('p0', 'p1')], // but p0 (peaceful) is proposing
+    }
+    const response = findResponse(decideOpponentTurn(state, 'p1', NOW))
+    expect(response!.accept).toBe(true)
+  })
+})
+
 // ─── Economy & siege in decideOpponentTurn ───────────────────────────────────
 
 describe('decideOpponentTurn — economy & siege', () => {
