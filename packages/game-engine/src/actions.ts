@@ -16,7 +16,7 @@ import {
   respondToProposal,
   type DiplomacyResult,
 } from './diplomacy.js'
-import { hexDistance, hexKey, updateFogOfWar } from './map.js'
+import { hexDistance, hexKey, territoryOwnerAt, updateFogOfWar } from './map.js'
 import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
 import { getBuildingDef, startConstruction } from './buildings.js'
@@ -61,6 +61,21 @@ const DEFAULT_HOOKS: TurnHooks = { resolveTimedOutDispute }
 
 function findUnit(state: GameState, id: string): Unit | undefined {
   return state.units.find(u => u.id === id)
+}
+
+/**
+ * Declares war if the two players are currently neutral; otherwise a no-op.
+ * Attacking is itself an act of war: combat against a pact is already rejected
+ * in validateAction, so the only auto-war case is a neutral target.
+ */
+function ensureWarDeclared(
+  state: GameState, attackerId: string, targetOwnerId: string,
+): GameState {
+  if (relationBetween(state, attackerId, targetOwnerId) === 'neutral') {
+    const res = declareWar(state, attackerId, targetOwnerId)
+    if (res.ok) return res.state
+  }
+  return state
 }
 
 /**
@@ -211,6 +226,14 @@ export function validateAction(
       const occupied = state.units.some(u => hexKey(u.position) === hexKey(action.targetCoord))
       if (occupied) return { valid: false, reason: 'target hex is occupied' }
 
+      // Cannot enter the territory of a neutral civ. A pact (friendly passage)
+      // or a war (invasion) lifts the block — keeping conquest possible.
+      const owner = territoryOwnerAt(state.cities, action.targetCoord)
+      if (owner && owner !== playerId &&
+          relationBetween(state, playerId, owner) === 'neutral') {
+        return { valid: false, reason: 'enemy territory' }
+      }
+
       return { valid: true }
     }
 
@@ -318,16 +341,18 @@ export function applyAction(
       // validateAction guarantees both units exist and are a legal pairing.
       const attacker = findUnit(state, action.attackerUnitId)!
       const defender = findUnit(state, action.defenderUnitId)!
+      // Attacking a neutral civ declares war automatically.
+      const warState = ensureWarDeclared(state, playerId, defender.ownerId)
       const dispute = createCombatDispute(attacker, defender, now)
-      const units = state.units.map(u =>
+      const units = warState.units.map(u =>
         u.id === attacker.id ? { ...u, hasAttacked: true } : u,
       )
       return {
         ok: true,
         state: {
-          ...state,
+          ...warState,
           units,
-          combatDisputes: [...state.combatDisputes, dispute],
+          combatDisputes: [...warState.combatDisputes, dispute],
         },
       }
     }
@@ -424,6 +449,8 @@ export function applyAction(
     case 'attackCity': {
       const unit = findUnit(state, action.unitId)!
       const city = state.cities.find(c => c.id === action.cityId)!
+      // Attacking a neutral civ's city declares war automatically.
+      const warState = ensureWarDeclared(state, playerId, city.ownerId)
       const cityMaxHpVal = cityMaxHp(city.level)
       const cityHp    = city.hp ?? cityMaxHpVal
       const cityDef   = cityDefense(city.level)
@@ -434,9 +461,9 @@ export function applyAction(
         ? { ...city, ownerId: playerId, hp: cityMaxHpVal, maxHp: cityMaxHpVal }
         : { ...city, hp: newHp, maxHp: cityMaxHpVal }
       const nextState: GameState = {
-        ...state,
-        cities: state.cities.map(c => c.id === city.id ? updatedCity : c),
-        units:  state.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
+        ...warState,
+        cities: warState.cities.map(c => c.id === city.id ? updatedCity : c),
+        units:  warState.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
       }
       // Capturing a city may leave its former owner with zero cities → eliminate
       // them immediately (marks isEliminated and removes their units). endTurn's

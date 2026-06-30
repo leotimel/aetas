@@ -56,6 +56,27 @@ export function hexDistance(a: HexCoord, b: HexCoord): number {
   return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2
 }
 
+/**
+ * Owner of the territory a hex falls in (nearest city within `maxRadius`), or
+ * null if no city is close enough. Voronoi with deterministic id tie-break.
+ * Mirrors the client border logic in HexMap.tsx so engine and UI agree.
+ */
+export function territoryOwnerAt(
+  cities: ReadonlyArray<{ id: string; position: HexCoord; ownerId: string }>,
+  coord: HexCoord,
+  maxRadius = 2,
+): string | null {
+  let best: { dist: number; cityId: string; ownerId: string } | null = null
+  for (const city of cities) {
+    const d = hexDistance(coord, city.position)
+    if (d > maxRadius) continue
+    if (!best || d < best.dist || (d === best.dist && city.id < best.cityId)) {
+      best = { dist: d, cityId: city.id, ownerId: city.ownerId }
+    }
+  }
+  return best ? best.ownerId : null
+}
+
 /** The 6 immediately adjacent hexes. Does not clamp to map bounds. */
 export function hexNeighbors(coord: HexCoord): HexCoord[] {
   return HEX_DIRECTIONS.map(d => ({ q: coord.q + d.q, r: coord.r + d.r }))

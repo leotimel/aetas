@@ -75,11 +75,15 @@ function makeState(opts: {
   currentPlayerId?: string
   turnState?: TurnState
   isFinished?: boolean
+  tiles?: GameMap['tiles']
+  nonAggressionPacts?: GameState['nonAggressionPacts']
+  wars?: GameState['wars']
+  fogOfWar?: PlayerFogOfWar[]
 } = {}): GameState {
   return {
     gameId: 'g1',
     players: opts.players ?? [makePlayer('p0'), makePlayer('p1')],
-    map: MAP,
+    map: opts.tiles ? { ...MAP, tiles: opts.tiles } : MAP,
     units: opts.units ?? [],
     cities: opts.cities ?? [],
     turnNumber: 1,
@@ -88,12 +92,18 @@ function makeState(opts: {
     era: Era.Ancient,
     maxTurns: 10,
     combatDisputes: opts.disputes ?? [],
-    nonAggressionPacts: [],
+    nonAggressionPacts: opts.nonAggressionPacts ?? [],
+    wars: opts.wars,
     diplomaticProposals: [],
-    fogOfWar: [],
+    fogOfWar: opts.fogOfWar ?? [],
     winner: null,
     isFinished: opts.isFinished ?? false,
   }
+}
+
+/** All non-water tiles within radius 5 of origin, for movement/territory tests. */
+function landTiles(): GameMap['tiles'] {
+  return hexesInRadius({ q: 0, r: 0 }, 5).map(coord => ({ coord, terrainType: TerrainType.Plains }))
 }
 
 function deepFreeze<T>(obj: T): T {
@@ -750,5 +760,107 @@ describe('applyAction — moveUnit fog update', () => {
     const res = applyAction(stateNoFog, 'p0', { type: 'moveUnit', unitId: 'u1', targetCoord: targetPos }, 0)
     expect(res.ok).toBe(true)
     expect(res.state.fogOfWar).toHaveLength(0)
+  })
+})
+
+// ─── BAL-1: auto-declare war on attack ─────────────────────────────────────────
+
+describe('applyAction — auto-declares war when attacking (BAL-1)', () => {
+  // Contact is required to declare war; an attacker has necessarily seen the
+  // enemy hex it is adjacent to. Mirror that by marking it explored.
+  const sawHex = (playerId: string, coord: HexCoord): PlayerFogOfWar =>
+    ({ playerId, visibleHexes: [coord], exploredHexes: [coord] })
+
+  it('attackCity against a neutral civ declares war and deals damage', () => {
+    const unit = makeUnit('u1', 'p0', { q: 1, r: 0 })
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({
+      units: [unit], cities: [city], fogOfWar: [sawHex('p0', { q: 0, r: 0 })],
+    })
+    expect(state.wars).toBeUndefined()
+
+    const res = applyAction(state, 'p0', { type: 'attackCity', unitId: 'u1', cityId: 'c1' }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.wars).toHaveLength(1)
+    expect(res.state.wars![0]!.declarerId).toBe('p0')
+    expect(res.state.wars![0]!.targetId).toBe('p1')
+    // City took damage (or was captured).
+    const after = res.state.cities.find(c => c.id === 'c1')!
+    expect(after.ownerId === 'p0' || (after.hp ?? Infinity) < (after.maxHp ?? Infinity)).toBe(true)
+  })
+
+  it('initiateCombat against a neutral civ declares war and opens a dispute', () => {
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 })
+    const defender = makeUnit('d', 'p1', { q: 1, r: 0 })
+    const state = makeState({
+      units: [attacker, defender], fogOfWar: [sawHex('p0', { q: 1, r: 0 })],
+    })
+
+    const res = applyAction(state, 'p0', { type: 'initiateCombat', attackerUnitId: 'a', defenderUnitId: 'd' }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.wars).toHaveLength(1)
+    expect(res.state.wars![0]!.declarerId).toBe('p0')
+    expect(res.state.combatDisputes).toHaveLength(1)
+  })
+
+  it('does not duplicate war when attacker is already at war', () => {
+    const unit = makeUnit('u1', 'p0', { q: 1, r: 0 })
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const existingWar = { id: 'war:p1:p0:1', declarerId: 'p1', targetId: 'p0', declaredAtTurn: 1 }
+    const state = makeState({ units: [unit], cities: [city], wars: [existingWar] })
+
+    const res = applyAction(state, 'p0', { type: 'attackCity', unitId: 'u1', cityId: 'c1' }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.wars).toHaveLength(1)
+  })
+})
+
+// ─── BAL-1: territory movement block ───────────────────────────────────────────
+
+describe('validateAction — territory movement block (BAL-1)', () => {
+  const pactBetween = (a: string, b: string) =>
+    ({ id: `pact:${a}:${b}`, proposerId: a, acceptorId: b, agreedAtTurn: 1 })
+  const warBetween = (a: string, b: string) =>
+    ({ id: `war:${a}:${b}:1`, declarerId: a, targetId: b, declaredAtTurn: 1 })
+
+  // p1 city at origin → its territory is every tile within radius 2.
+  // p0 unit starts at {3,0} (neutral ground, dist 3) and moves to {2,0} (p1 territory).
+  const move: GameAction = { type: 'moveUnit', unitId: 'u1', targetCoord: { q: 2, r: 0 } }
+
+  it('blocks moving into a neutral civ’s territory', () => {
+    const unit = makeUnit('u1', 'p0', { q: 3, r: 0 })
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({ units: [unit], cities: [city], tiles: landTiles() })
+    expect(validateAction(state, 'p0', move, NOW)).toEqual({ valid: false, reason: 'enemy territory' })
+  })
+
+  it('allows moving into territory of a civ you have a pact with', () => {
+    const unit = makeUnit('u1', 'p0', { q: 3, r: 0 })
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({
+      units: [unit], cities: [city], tiles: landTiles(),
+      nonAggressionPacts: [pactBetween('p0', 'p1')],
+    })
+    expect(validateAction(state, 'p0', move, NOW)).toEqual({ valid: true })
+  })
+
+  it('allows moving into enemy territory while at war (enables invasion)', () => {
+    const unit = makeUnit('u1', 'p0', { q: 3, r: 0 })
+    const city = makeCity('c1', 'p1', { q: 0, r: 0 })
+    const state = makeState({
+      units: [unit], cities: [city], tiles: landTiles(),
+      wars: [warBetween('p0', 'p1')],
+    })
+    expect(validateAction(state, 'p0', move, NOW)).toEqual({ valid: true })
+  })
+
+  it('allows moving within your own territory', () => {
+    const unit = makeUnit('u1', 'p0', { q: 3, r: 0 })
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = makeState({ units: [unit], cities: [city], tiles: landTiles() })
+    expect(validateAction(state, 'p0', move, NOW)).toEqual({ valid: true })
   })
 })
