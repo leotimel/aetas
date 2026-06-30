@@ -31,6 +31,7 @@ function buildShareText(
   score: ReturnType<typeof rankPlayers>[0],
   t: (key: string, opts?: Record<string, unknown>) => string,
   lang: string,
+  streak: number,
 ): string {
   const label = formatDateLabel(today, lang)
   const isWon = daily.winnerId === daily.enginePlayerId
@@ -42,6 +43,7 @@ function buildShareText(
     `🏙️ ${score.territory}  👥 ${score.population}  🔬 ${score.development}`,
     `(${turnStatus})`,
   ]
+  if (streak >= 3) lines.push(`🔥 Streak: ${streak} dias`)
   return lines.join('\n')
 }
 
@@ -54,6 +56,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   const today = todayUTC()
   const [daily, setDaily] = useState<DailyGame | null | 'none'>('none')
   const [finalScore, setFinalScore] = useState<ReturnType<typeof rankPlayers>[0] | null>(null)
+  const [streak, setStreak] = useState<number>(0)
   const [starting, setStarting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [countdown, setCountdown] = useState('')
@@ -103,6 +106,14 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
       }
       setDaily(row)
 
+      // Fetch current daily streak
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('daily_streak')
+        .eq('user_id', userId)
+        .single()
+      if (prof) setStreak((prof as { daily_streak: number }).daily_streak)
+
       // If finished, fetch game_state for final score
       if (g.is_finished) {
         const { data: gs } = await supabase
@@ -131,7 +142,7 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
 
   const handleShare = () => {
     if (!daily || daily === 'none' || !finalScore) return
-    const text = buildShareText(today, daily, finalScore, t as (key: string, opts?: Record<string, unknown>) => string, i18n.language)
+    const text = buildShareText(today, daily, finalScore, t as (key: string, opts?: Record<string, unknown>) => string, i18n.language, streak)
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -206,6 +217,9 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
               </svg>
             )}
             <h2 className="font-display text-aetas-gold font-semibold text-sm tracking-wide">{t('daily.title')}</h2>
+            {streak >= 2 && (
+              <span className="text-orange-400 text-xs font-semibold">🔥 {streak}</span>
+            )}
             <span className="text-aetas-dim text-xs">{formatDateLabel(today, i18n.language)}</span>
             {!!daily && typeof daily !== 'string' && (
               <span className="text-emerald-400 text-xs font-medium">{t('daily.played')}</span>

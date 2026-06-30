@@ -70,6 +70,12 @@ Deno.serve(async (req) => {
 
   const didWin   = marked.winner_id === enginePlayerId
   const isDaily  = marked.is_daily as boolean
+
+  if (isDaily) {
+    const today = new Date().toISOString().slice(0, 10)
+    await svc.rpc('update_daily_streak', { p_user_id: userId, p_today: today })
+  }
+
   const xpGained = isDaily
     ? (XP_DAILY_BASE + (didWin ? XP_DAILY_WIN : 0))
     : (XP_FOR_PLAYING + (didWin ? XP_WIN_BONUS : 0))
