@@ -29,21 +29,21 @@ function buildShareText(
   today: string,
   daily: DailyGame,
   score: ReturnType<typeof rankPlayers>[0],
-  t: (key: string, opts?: Record<string, unknown>) => string,
+  _t: (key: string, opts?: Record<string, unknown>) => string,
   lang: string,
   streak: number,
 ): string {
   const label = formatDateLabel(today, lang)
   const isWon = daily.winnerId === daily.enginePlayerId
-  const result = isWon ? t('daily.resultWon') : daily.winnerId ? t('daily.resultLost') : t('daily.resultDraw')
-  const turnStatus = t('game.turnStatus', { n: daily.turnNumber, max: daily.maxTurns })
+  const resultEmoji = isWon ? '🏆' : daily.winnerId ? '❌' : '🤝'
+  const resultText = isWon ? 'Vitória' : daily.winnerId ? 'Derrota' : 'Empate'
   const lines = [
-    `Aetas Daily — ${label}`,
-    `${result} | ${score.total} pts`,
-    `🏙️ ${score.territory}  👥 ${score.population}  🔬 ${score.development}`,
-    `(${turnStatus})`,
+    `🏛️ Aetas Daily — ${label}`,
+    `${resultEmoji} ${resultText} · ${score.total} pts`,
+    `🏙️${score.territory}  👥${score.population}  🔬${score.development}  · Turno ${daily.turnNumber}/${daily.maxTurns}`,
   ]
   if (streak >= 3) lines.push(`🔥 Streak: ${streak} dias`)
+  lines.push('🔗 playaetas.vercel.app')
   return lines.join('\n')
 }
 
@@ -143,10 +143,14 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
   const handleShare = () => {
     if (!daily || daily === 'none' || !finalScore) return
     const text = buildShareText(today, daily, finalScore, t as (key: string, opts?: Record<string, unknown>) => string, i18n.language, streak)
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    if (navigator.share) {
+      void navigator.share({ text })
+    } else {
+      void navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+    }
   }
 
   // Loading
