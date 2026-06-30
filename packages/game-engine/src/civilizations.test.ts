@@ -17,10 +17,13 @@ import {
 // ─── Suite 1 — Integridade do catálogo ───────────────────────────────────────
 
 describe('CIVILIZATION_CATALOG — integridade', () => {
-  const CIV_IDS = ['romans', 'mongols', 'egyptians', 'greeks', 'vikings', 'china']
+  const CIV_IDS = [
+    'romans', 'mongols', 'egyptians', 'greeks', 'vikings', 'china',
+    'persians', 'aztecs', 'japanese', 'ottomans',
+  ]
 
-  it('tem exatamente 6 civilizações', () => {
-    expect(CIVILIZATION_CATALOG.size).toBe(6)
+  it('tem exatamente 10 civilizações', () => {
+    expect(CIVILIZATION_CATALOG.size).toBe(10)
   })
 
   it('contém todos os IDs esperados', () => {
@@ -58,8 +61,8 @@ describe('CIVILIZATION_CATALOG — integridade', () => {
 // ─── Suite 2 — Unidades especiais ────────────────────────────────────────────
 
 describe('SPECIAL_UNIT_CATALOG — unidades especiais', () => {
-  it('tem 6 entradas (uma por civ)', () => {
-    expect(SPECIAL_UNIT_CATALOG.size).toBe(6)
+  it('tem 10 entradas (uma por civ)', () => {
+    expect(SPECIAL_UNIT_CATALOG.size).toBe(10)
   })
 
   it('cada unidade especial tem replacesType válido em UnitType', () => {
@@ -117,6 +120,34 @@ describe('SPECIAL_UNIT_CATALOG — unidades especiais', () => {
     for (const [, unit] of SPECIAL_UNIT_CATALOG) {
       expect(unit.canFoundCity, `${unit.type} não deveria fundar cidades`).toBe(false)
     }
+  })
+
+  it('Imortal Persa: mais defesa que Warrior', () => {
+    const immortal = getSpecialUnit('persians')
+    const warrior  = getUnitDef(UnitType.Warrior)
+    expect(immortal.stats.defense).toBeGreaterThan(warrior.stats.defense)
+    expect(immortal.replacesType).toBe(UnitType.Warrior)
+  })
+
+  it('Águia Guerreira Asteca: mais ataque que Cavalry (menor tanque, mais agressiva)', () => {
+    const eagle   = getSpecialUnit('aztecs')
+    const cavalry = getUnitDef(UnitType.Cavalry)
+    expect(eagle.stats.attack).toBeGreaterThan(cavalry.stats.attack)
+    expect(eagle.replacesType).toBe(UnitType.Cavalry)
+  })
+
+  it('Samurai Japonês: mais ataque que Knight', () => {
+    const samurai = getSpecialUnit('japanese')
+    const knight  = getUnitDef(UnitType.Knight)
+    expect(samurai.stats.attack).toBeGreaterThan(knight.stats.attack)
+    expect(samurai.replacesType).toBe(UnitType.Knight)
+  })
+
+  it('Janízaro Otomano: mais ataque que Crossbowman', () => {
+    const janissary   = getSpecialUnit('ottomans')
+    const crossbowman = getUnitDef(UnitType.Crossbowman)
+    expect(janissary.stats.attack).toBeGreaterThan(crossbowman.stats.attack)
+    expect(janissary.replacesType).toBe(UnitType.Crossbowman)
   })
 })
 
@@ -211,6 +242,10 @@ describe('getCivEconomyMultipliers', () => {
     expect(m.food).toBe(1)
     expect(m.production).toBe(1)
   })
+
+  it('Persas: gold multiplier = 1.2', () => {
+    expect(getCivEconomyMultipliers('persians').gold).toBe(1.2)
+  })
 })
 
 // ─── Suite 5 — getCivCombatMultiplier ────────────────────────────────────────
@@ -242,6 +277,18 @@ describe('getCivCombatMultiplier', () => {
 
   it('ID desconhecido retorna 1 (sem lançar)', () => {
     expect(getCivCombatMultiplier('atlantis')).toBe(1)
+  })
+
+  it('Japoneses: combat multiplier = 1.15', () => {
+    expect(getCivCombatMultiplier('japanese')).toBe(1.15)
+  })
+
+  it('Persas: combat multiplier = 1 (sem bônus de combate)', () => {
+    expect(getCivCombatMultiplier('persians')).toBe(1)
+  })
+
+  it('Otomanos: combat multiplier = 1 (sem bônus de combate)', () => {
+    expect(getCivCombatMultiplier('ottomans')).toBe(1)
   })
 })
 

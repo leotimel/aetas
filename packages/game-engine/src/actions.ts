@@ -152,12 +152,17 @@ export function validateAction(
       const unitDef = allUnits.find(u => u.type === action.unitType)
       if (!unitDef) return { valid: false, reason: 'unit not available in this era' }
 
-      if (player.resources.production < unitDef.productionCost) {
+      const rawCost = unitDef.productionCost
+      const effectiveCost =
+        player.civilizationId === 'ottomans' && unitDef.type === 'catapult'
+          ? Math.floor(rawCost * 0.7)
+          : rawCost
+      if (player.resources.production < effectiveCost) {
         return { valid: false, reason: 'insufficient production' }
       }
 
-      const foodCost = Math.ceil(unitDef.productionCost / 2)
-      const goldCost = Math.ceil(unitDef.productionCost / 3)
+      const foodCost = Math.ceil(effectiveCost / 2)
+      const goldCost = Math.ceil(effectiveCost / 3)
       if (player.resources.food < foodCost) return { valid: false, reason: 'insufficient food' }
       if (player.resources.gold < goldCost) return { valid: false, reason: 'insufficient gold' }
 
@@ -363,14 +368,19 @@ export function applyAction(
       const allUnits = unitsForCiv(player.civilizationId, state.era)
       const unitDef = allUnits.find(u => u.type === action.unitType)!
       const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position)
-      const foodCost = Math.ceil(unitDef.productionCost / 2)
-      const goldCost = Math.ceil(unitDef.productionCost / 3)
+      const rawCost = unitDef.productionCost
+      const effectiveCost =
+        player.civilizationId === 'ottomans' && unitDef.type === 'catapult'
+          ? Math.floor(rawCost * 0.7)
+          : rawCost
+      const foodCost = Math.ceil(effectiveCost / 2)
+      const goldCost = Math.ceil(effectiveCost / 3)
       const updatedPlayers = state.players.map(p =>
         p.id !== playerId ? p : {
           ...p,
           resources: {
             ...p.resources,
-            production: p.resources.production - unitDef.productionCost,
+            production: p.resources.production - effectiveCost,
             food:       p.resources.food       - foodCost,
             gold:       p.resources.gold       - goldCost,
           },
@@ -460,8 +470,16 @@ export function applyAction(
       const updatedCity = captured
         ? { ...city, ownerId: playerId, hp: cityMaxHpVal, maxHp: cityMaxHpVal }
         : { ...city, hp: newHp, maxHp: cityMaxHpVal }
+      const capturer = warState.players.find(p => p.id === playerId)
+      const playersAfterConquest = captured && capturer?.civilizationId === 'aztecs'
+        ? warState.players.map(p =>
+            p.id !== playerId ? p
+            : { ...p, conquestBonusProduction: (p.conquestBonusProduction ?? 0) + 5 },
+          )
+        : warState.players
       const nextState: GameState = {
         ...warState,
+        players: playersAfterConquest,
         cities: warState.cities.map(c => c.id === city.id ? updatedCity : c),
         units:  warState.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
       }

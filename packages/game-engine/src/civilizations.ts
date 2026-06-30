@@ -86,6 +86,51 @@ const SPECIAL_UNITS: readonly SpecialUnitDefinition[] = [
     canFoundCity:   false,
     description:    'Arqueiro montado. Combina mobilidade de cavalaria com alcance de besteiro.',
   },
+  // Persas — Warrior replacement: similar ao Guerreiro mas com defesa superior
+  {
+    type:           'persian_immortal',
+    name:           'Imortal',
+    eraRequired:    Era.Ancient,
+    productionCost: 15,
+    replacesType:   UnitType.Warrior,
+    stats:          { attack: 9, defense: 6, maxHp: 12, movement: 2 },
+    canFoundCity:   false,
+    description:    'Guarda imperial persa. Resistente e disciplinado.',
+  },
+  // Astecas — Cavalry replacement: mais ágil, menos tanque
+  {
+    type:           'aztec_eagle_warrior',
+    name:           'Águia Guerreira',
+    eraRequired:    Era.Classical,
+    productionCost: 38,
+    replacesType:   UnitType.Cavalry,
+    stats:          { attack: 13, defense: 4, maxHp: 9, movement: 4 },
+    canFoundCity:   false,
+    description:    'Guerreiro ágil. Captura prisioneiros em combate.',
+  },
+  // Japoneses — Knight replacement; counterattack 25% é TODO (resolveCombat não suporta)
+  {
+    type:           'japanese_samurai',
+    name:           'Samurai',
+    eraRequired:    Era.Medieval,
+    productionCost: 65,
+    replacesType:   UnitType.Knight,
+    // TODO: counterattack (25% dano recebido devolvido) aguarda refactor de resolveCombat
+    stats:          { attack: 20, defense: 9, maxHp: 14, movement: 2 },
+    canFoundCity:   false,
+    description:    'Guerreiro do bushido. Disciplina inabalável no combate.',
+  },
+  // Otomanos — Crossbowman replacement: mais ataque
+  {
+    type:           'ottoman_janissary',
+    name:           'Janízaro',
+    eraRequired:    Era.Medieval,
+    productionCost: 50,
+    replacesType:   UnitType.Crossbowman,
+    stats:          { attack: 16, defense: 5, maxHp: 12, movement: 2, range: 2 },
+    canFoundCity:   false,
+    description:    'Elite jenízara com alcance de besteiro.',
+  },
 ]
 
 export const SPECIAL_UNIT_CATALOG: ReadonlyMap<string, SpecialUnitDefinition> = new Map(
@@ -196,6 +241,63 @@ const CATALOG_ENTRIES: readonly Civilization[] = [
       },
     ],
     specialUnitType: 'china_horse_archer',
+  },
+  {
+    id:          'persians',
+    name:        'Persas',
+    description: 'Império mercantil da era antiga. A Rota Real conecta e enriquece.',
+    abilities: [
+      {
+        id:          'persian_royal_road',
+        name:        'Rota Real',
+        // TODO: desconto de 50% em ouro para propostas de pacto (proposePact sem custo de ouro atual)
+        description: '+20% renda de ouro por turno.',
+        effect:      { type: 'goldBonus', multiplier: 1.2 },
+      },
+    ],
+    specialUnitType: 'persian_immortal',
+  },
+  {
+    id:          'aztecs',
+    name:        'Astecas',
+    description: 'Expansão ritual. Cada conquista alimenta a máquina de guerra.',
+    abilities: [
+      {
+        id:          'aztec_ritual_expansion',
+        name:        'Expansão Ritual',
+        description: '+5 produção permanente por cidade capturada.',
+        effect:      { type: 'conquestBonus', resourceType: 'production', amountPerCity: 5 },
+      },
+    ],
+    specialUnitType: 'aztec_eagle_warrior',
+  },
+  {
+    id:          'japanese',
+    name:        'Japoneses',
+    description: 'Caminho do guerreiro. O Bushido eleva todo combatente.',
+    abilities: [
+      {
+        id:          'japanese_bushido',
+        name:        'Bushido',
+        description: '+15% de dano em combate para todas as unidades.',
+        effect:      { type: 'combatBonus', multiplier: 1.15 },
+      },
+    ],
+    specialUnitType: 'japanese_samurai',
+  },
+  {
+    id:          'ottomans',
+    name:        'Otomanos',
+    description: 'Mestres do cerco. Catapultas chegam mais cedo e custam menos.',
+    abilities: [
+      {
+        id:          'ottoman_siege_master',
+        name:        'Mestre de Cerco',
+        description: 'Catapultas custam 30% menos produção.',
+        effect:      { type: 'siegeDiscount', unitType: 'catapult', multiplier: 0.7 },
+      },
+    ],
+    specialUnitType: 'ottoman_janissary',
   },
 ]
 

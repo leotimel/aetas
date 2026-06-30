@@ -148,6 +148,13 @@ export function endTurn(
       food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food),
       production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production),
     }
+    // Aztec Expansão Ritual: flat production bonus per captured city
+    if (actor.conquestBonusProduction) {
+      actor.resources = {
+        ...actor.resources,
+        production: actor.resources.production + actor.conquestBonusProduction,
+      }
+    }
     const actorUnitCount = state.units.filter(u => u.ownerId === actorId).length
     const maint = applyUnitMaintenance(actor.resources.gold, actorUnitCount)
     actor.resources = { ...actor.resources, gold: maint.gold }

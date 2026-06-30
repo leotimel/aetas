@@ -103,6 +103,8 @@ export type CivilizationAbilityEffect =
   | { type: 'goldBonus';       multiplier: number }
   | { type: 'foodBonus';       multiplier: number }
   | { type: 'visionBonus';     extraRadius: number }
+  | { type: 'conquestBonus';   resourceType: 'production'; amountPerCity: number }
+  | { type: 'siegeDiscount';   unitType: 'catapult';        multiplier: number }
 
 export interface CivilizationAbility {
   readonly id:          string
@@ -139,6 +141,8 @@ export interface Player {
   isAIControlled:           boolean
   /** Set only for dedicated AI opponent players, not for human-substitute turns. */
   aiDifficulty?:            AIDifficulty
+  /** Accumulated flat production bonus from Aztec conquest trait (+5 per captured city). */
+  conquestBonusProduction?: number
 }
 
 // ─── Unit ─────────────────────────────────────────────────────────────────────
