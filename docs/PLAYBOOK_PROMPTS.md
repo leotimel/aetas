@@ -1022,235 +1022,2300 @@ não chegam.
 
 ---
 
-## FASE 5 — Android nativo (Kotlin)
+### Bloco D — IA, Nomes e Polimento Visual
 
-**Nota:** dado que você não tem Mac (ver bloco no início da Fase 5), execute
-esta fase ANTES da Fase 5 na prática — Android não tem a restrição de
-plataforma do iOS. A numeração das fases ficou como estava no documento
-original só para não quebrar as referências cruzadas; siga a ordem real:
-Fase 0 → 1 → 1.5 → 2 → 3 → 4 → **6 (Android)** → 5 (iOS, quando houver Mac).
-
-**6.1 a 6.3 — Espelham a Fase 5**
+**4.5.D1 — IA: movement + loop de consecutivas** · **Opus** 🔴 🧠
 ```
-Repita a Fase 5 em Kotlin/Jetpack Compose, usando o SDK Supabase para
-Kotlin, seguindo o mesmo GLOSSARY.md.
+Dois fixes no engine + backend. Faça planejamento antes de codar.
+
+1. MOVEMENT DA IA — packages/game-engine/src/ai.ts, função decideOpponentTurn:
+   Atualmente a IA só ataca adjacentes e passa a vez. Adicione lógica de movement
+   ANTES da fase de ataque:
+   - Para cada unidade minha com !hasMoved:
+     a) Identifique o alvo mais próximo visível: unidade inimiga OU cidade inimiga
+        (use o fogOfWar do player para filtrar — a IA só vê o que está visible).
+     b) Calcule qual dos hexes adjacentes à unidade está mais perto do alvo
+        (hexDistance menor), que não seja water, que não esteja ocupado por outra unidade.
+     c) Se encontrou hex válido, emita { type: 'moveUnit', unitId, targetCoord }.
+        Valide com validateAction antes de emitir. Aplique no estado de trabalho.
+   - Depois do movimento, re-execute a fase de ataque (pode haver adjacentes novos).
+   - Se não há nenhum inimigo visível, mova em direção ao centro do mapa (tile mais
+     próximo do centro geométrico).
+   - Preserve a invariante: no máximo 1 ataque por unidade (hasAttacked).
+   - Atualize ai.test.ts: adicione pelo menos 2 testes para movement (move toward
+     enemy, move toward center when blind).
+   - Rode `pnpm -w run build` e confirme que o backend-core.js foi regenerado.
+
+2. LOOP DE IAs CONSECUTIVAS — supabase/functions/submit-action/index.ts:
+   O bloco atual só processa 1 IA por vez. Reescreva para:
+   - Após o sweep inicial da primeira IA, re-fetch o game_state do banco.
+   - Se o novo currentPlayerId ainda for isAIControlled, faça outro sweepTimeouts.
+   - Repita até não-IA ou isFinished, com limite de 10 iterações para segurança.
+   Faça `supabase functions deploy submit-action` ao final.
 ```
 
-✅ **Commit:** "Android completo".
+✅ **Commit:** `"fix(ai): movement logic + consecutive AI loop in submit-action"`
+
+🛑 **CHECKPOINT D1:** Jogar o Desafio Diário. Após End Turn, o log deve mostrar a IA movendo uma unidade E o turno voltando imediatamente (sem esperar cron). Em jogo com 3 AIs, todas devem jogar sem pausa.
+
+---
+
+**4.5.D2 — Nomes reais dos jogadores** · Sonnet
+```
+Os nomes dos jogadores aparecem como IDs ('c98675...') porque create-game e
+create-daily-game não buscam display_name antes de salvar o game_state.
+A tabela user_profiles tem display_name vindo do OAuth (migration 20260621000001).
+
+1. supabase/functions/create-daily-game/index.ts:
+   - Antes de montar o gameState, busque o display_name do usuário:
+     const { data: upRow } = await svc.from('user_profiles').select('display_name')
+       .eq('id', userId).maybeSingle()
+     const displayName = upRow?.display_name ?? 'Player'
+   - Use displayName em players[0].displayName (remova o hardcoded 'You').
+
+2. supabase/functions/create-game/index.ts:
+   - Idem: ao criar o game_state com os jogadores, busque display_name de cada
+     human slot (user_id não-nulo) e salve em players[].displayName.
+   - Jogadores AI: displayName = civName + ' (AI)'.
+
+3. supabase/functions/join-game/index.ts (se existir — verifique):
+   - Quando um usuário entra na partida, atualize game_state.players[].displayName
+     para o jogador que acabou de entrar.
+
+4. apps/web/src/components/PlayerBar.tsx:
+   - Use player.displayName ?? civ?.name ?? player.id.slice(0, 6) na exibição.
+
+5. apps/web/src/pages/GameView.tsx — header do jogo:
+   - Substituir gameId.slice(0, 8) por lista dos nomes dos oponentes,
+     ex: "vs Ana · Gregos (AI)", truncada a ~28 chars com '…'.
+
+6. Faça deploy: supabase functions deploy create-daily-game create-game
+   (e join-game se foi alterado).
+```
+
+✅ **Commit:** `"feat(web+backend): player display names from OAuth profile"`
+
+---
+
+**4.5.D3 — Cards da GameListPage com identidade** · Sonnet
+```
+Os cards na GameListPage mostram apenas gameId.slice(0,8) como título.
+Após o D2, game_state.players[].displayName terá nomes reais. Use-os.
+
+1. apps/web/src/pages/GameListPage.tsx — fetchGames:
+   - Adicione game_state ao select:
+     .select('game_id, engine_player_id, games(turn_number, current_player_id,
+     is_finished, winner_id, max_turns, updated_at, seed, map_size, game_state)')
+   - Atualize a interface GameRow para incluir game_state: { players: ... } | null.
+
+2. GameCard sub-componente:
+   - Receba players: { id, displayName, civilizationId, isAIControlled }[] do game_state.
+   - Título do card: filtrar self (engine_player_id) e mostrar "vs [nomes]",
+     ex: "vs Léo · Gregos (AI)". Se displayName for UUID, fallback para civ name.
+   - Civs repetidas entre jogadores: adicionar índice ("Egípcios 1", "Egípcios 2")
+     detectado comparando civilizationIds duplicados na lista de players.
+   - Minimap preview continua como thumbnail à esquerda (não remover MapPreviewMini).
+
+3. Sem migration necessária — game_state já está no banco.
+   Nota de performance: lista raramente terá >20 jogos, carregar game_state é OK.
+```
+
+✅ **Commit:** `"feat(web): game cards show opponent names + handle duplicate civs"`
+
+---
+
+**4.5.D4 — Polimento visual completo** · Sonnet 🧠
+```
+Embeleze todos os componentes visíveis antes de ir para o app nativo.
+Planeje quais arquivos tocar antes de codar.
+
+1. PLAYERBAR (apps/web/src/components/PlayerBar.tsx):
+   - Substituir "1u 1c" por ícones menores: ⚔{uCount} 🏛{cCount} (sem texto "u"/"c").
+   - Flag da civ maior e mais proeminente.
+   - Civs repetidas: adicionar número subscrito na flag ("🏛¹" vs "🏛²").
+   - Player ativo: highlight com border-left colorida na cor da civ, mais visível
+     que o ponto piscando atual.
+   - Era badge: se já está no header do GameView, remover do PlayerBar para
+     ganhar espaço.
+
+2. FRONTEIRAS DO MAPA (apps/web/src/components/HexMap.tsx):
+   - Para cada hex com dono visível, itere os 6 vizinhos. Se o vizinho tem
+     dono diferente E também é visível: desenhe uma linha na borda compartilhada.
+   - A borda compartilhada é definida pelos 2 vértices comuns: calcule via
+     hexPolygonPoints(cx, cy, hexSize). Cada hex tem vértices i e (i+1)%6;
+     o vizinho na direção d compartilha os vértices d e (d+1)%6.
+   - Estilo: strokeWidth=2, cor da civ donante, opacity=0.75, strokeLinecap="round".
+   - Mantenha o overlay de território atual (fillOpacity 0.18) — as linhas são adicionais.
+
+3. HEADER DO GAMEVIEW (apps/web/src/pages/GameView.tsx):
+   - Após D2: remover o gameId.slice(0,8) — substituído pelos nomes de D2.
+   - Layout mais limpo: "← | Turn N/Max | [Era icon] Era | ● SUA VEZ / nome".
+   - Botões ⚖️ e ↺: adicionar label de texto visível em sm+ ("Diplomacy", "Refresh").
+   - Fundo do header: gradient sutil por era (Ancient = warm terra, Classical = steel
+     blue, Medieval = stone gray) em 4–5% opacity, sem impactar legibilidade.
+
+4. RESOURCEBAR (apps/web/src/components/ResourceBar.tsx):
+   - Ler o arquivo e avaliar. Ícones maiores, income +N em verde/vermelho mais
+     visível, layout mais arejado. Sem remover informação, só melhorar hierarquia.
+
+5. CARDS DA GAMELIST (apps/web/src/pages/GameListPage.tsx):
+   - Complemento do D3: color strip lateral na cor da civ do jogador no card,
+     progress bar do turno mais visível, timestamp mais legível.
+   - Badge "MY TURN": estilo gold pill mais chamativo.
+
+Critério de aceite: abrir o jogo e ter a impressão de produto acabado, não
+protótipo. Cada elemento com propósito e hierarquia visual clara.
+```
+
+✅ **Commit:** `"feat(web): visual polish — PlayerBar, borders, GameView header, ResourceBar, GameList cards"`
+
+🛑 **CHECKPOINT PRÉ-APP (substitui o CHECKPOINT FINAL anterior):**
+Abra o jogo no mobile (DevTools, iPhone SE). Jogue uma partida completa do início ao fim:
+1. PlayerBar exibe nomes reais, civs diferenciadas visualmente.
+2. Header do jogo mostra "vs [nome]", não um UUID.
+3. Fronteiras do território estão nítidas no mapa.
+4. IA move suas unidades após End Turn e o turno volta imediatamente.
+5. Cards da lista identificam claramente o adversário.
+Se tudo isso estiver OK, a web está pronta e você pode partir para o Android.
+
+---
+
+## BLOCO E — Motor, IA completa e economia
+
+---
+
+**4.5.E1 — Diplomacia completa na IA oponente** · Sonnet
+
+```
+Bug confirmado: `decideOpponentTurn` em packages/game-engine/src/ai.ts nunca chama
+`planDiplomaticResponses` nem `planDiplomaticInitiatives` — por isso propostas de
+pacto ficam eternamente pendentes. As duas funções já existem e são usadas pelo
+`decideSubstituteTurn`; basta incorporá-las ao oponente.
+
+1. Em `decideOpponentTurn` (ai.ts ~linha 286), ajuste a ordem das fases para:
+   defensive → diplomacyResponses → movement → attackLoop → diplomacyInitiatives → endTurn
+
+   Troque:
+     const defensive = planDefensiveResponses(state, playerId, now)
+     const movement  = planMovement(defensive.state, playerId, now)
+     let s = movement.state
+     const actions = [...defensive.actions, ...movement.actions]
+     // ... combat loop ...
+     return [...actions, END_TURN]
+
+   Por:
+     const defensive  = planDefensiveResponses(state, playerId, now)
+     const diplomatic = planDiplomaticResponses(defensive.state, playerId, now)
+     const movement   = planMovement(diplomatic.state, playerId, now)
+     let s = movement.state
+     const actions = [...defensive.actions, ...diplomatic.actions, ...movement.actions]
+     // ... combat loop (sobre s) ...
+     const initiatives = planDiplomaticInitiatives(s, playerId, now)
+     return [...actions, ...initiatives.actions, END_TURN]
+
+2. Adicione ao ai.test.ts um teste que verifica a resposta diplomática:
+   - Crie um game_state onde player p1 tem uma `diplomaticProposal` pendente de p0 para
+     p1 (proposePact). Chame `decideOpponentTurn(state, p1.id, now)`.
+   - Espera: o array de ações contém `{ type: 'respondToDiplomacy', accept: true }`.
+   - Verifique que o teste falha ANTES da mudança e passa DEPOIS (TDD leve).
+
+3. Rode `pnpm --filter @aetas/game-engine test` — toda a suíte deve passar.
+   Não é necessário rebuild do backend-core nem deploy — o ai.ts é já bundlado.
+   MAS: após os testes, rode `pnpm --filter @aetas/backend-core bundle` e deploy
+   `supabase functions deploy submit-action` para que a mudança vá a produção.
+```
+
+✅ **Commit:** `"fix(ai): opponent AI now responds to and initiates diplomacy"`
+
+---
+
+**4.5.E2 — IA treina unidades, constrói edifícios e ataca cidades** · **Opus** 🔴 🧠
+
+```
+A IA oponente nunca usa trainUnit, constructBuilding nem attackCity. Adicione três
+novas fases a `decideOpponentTurn` em packages/game-engine/src/ai.ts.
+Planeje antes de codar: leia BUILDING_CATALOG e UNIT_CATALOG para conhecer
+custos e pré-requisitos.
+
+REGRAS DE OURO (não quebre nenhuma):
+- Toda ação emitida deve passar validateAction antes de ser acumulada.
+- A função permanece pura e determinística (sem RNG, sem Date.now, ordem por id).
+- Não mute o estado de entrada — use o padrão fold (working state s).
+
+FASE: planUnitTraining(s, playerId, now)
+  Objetivo: treinar um warrior por turno se o recurso de produção for suficiente
+  E a IA tiver menos unidades vivas do que um teto (ex.: metade do maxTurns, mínimo 3).
+  - Itere as cidades da IA ordenadas por id.
+  - Para cada cidade, tente { type: 'trainUnit', cityId, unitType: 'warrior', unitId: gerado via hexKey+now+cityId }.
+    ⚠ unitId deve ser único e determinístico; use `\`u-\${cityId.slice(0,4)}-\${s.turnNumber}\`` ou similar.
+  - validateAction → applyAction → acumule. Pare após treinar 1 unidade por turno
+    (não treine em todas as cidades de uma vez — evita snowball).
+  - Não treine settlers (fora de escopo desta fase).
+
+FASE: planBuildingConstruction(s, playerId, now)
+  Objetivo: construir o edifício de menor custo disponível que ainda não existe na cidade.
+  - Leia BUILDING_CATALOG para saber BuildingType, productionCost e requiredEra.
+  - Prioridade simples: o edifício disponível (era <= gameState.era) de menor custo
+    que a cidade ainda não possui (city.buildings ?? []).
+  - Itere cidades por id; tente { type: 'constructBuilding', cityId, buildingType } →
+    validateAction → applyAction. Construa no máximo 1 edifício por cidade por turno.
+
+FASE: planCityAttack(s, playerId, now)
+  Objetivo: atacar cidades inimigas adjacentes quando vantajoso.
+  - Para cada unidade minha não eliminada (por id), verifique cidades inimigas a
+    distance=1. Se city.hp <= city.maxHp * 0.4 OU a IA tiver >= 2 unidades adjacentes,
+    emita { type: 'attackCity', unitId, cityId } → validateAction → applyAction.
+  - Isso acontece DEPOIS do combate de unidades no loop atual.
+
+ORDEM FINAL das fases em decideOpponentTurn:
+  defensive → diplomaticResponses → movement → combatLoop → cityAttack → unitTraining
+  → buildingConstruction → diplomaticInitiatives → endTurn
+
+TESTES:
+  - planUnitTraining: estado com produção suficiente → espera trainUnit no array.
+  - planBuildingConstruction: cidade sem edifícios, produção suficiente → espera
+    constructBuilding com o edifício de menor custo.
+  - planCityAttack: unidade minha adjacente a cidade inimiga com HP baixo → espera
+    attackCity.
+  - Rode pnpm --filter @aetas/game-engine test — toda a suíte verde.
+
+Ao final: pnpm --filter @aetas/backend-core bundle &&
+          supabase functions deploy submit-action
+```
+
+✅ **Commit:** `"feat(ai): opponent AI trains units, builds and attacks cities"`
+
+🛑 **CHECKPOINT E2:** Inicie um jogo solo vs 1 IA. Após 3–5 End Turns:
+- A IA deve ter treinado pelo menos 1 warrior adicional (PlayerBar mostrará ⚔2+).
+- Se a IA capturar uma cidade sua, a conquista deve aparecer no log.
+- Nenhum erro 500 nos Edge Functions.
+
+---
+
+**4.5.E3 — Manutenção de unidades em ouro + rebalanceio de economia** · **Opus** 🔴 🧠
+
+```
+Problema: ouro e alimento têm pouco valor; só produção importa. A causa raiz é que
+ouro não tem sink (unit maintenance está comentado em economy.ts mas nunca implementado)
+e o income de produção é baixo demais para uma partida de 10–20 turnos.
+
+Planeje antes de codar. Leia:
+  - packages/game-engine/src/economy.ts (processTurnEconomy, applyGrowth, BASE_*)
+  - packages/game-engine/src/types.ts (Unit, Player)
+  - packages/game-engine/src/actions.ts (trainUnit cost, endTurn)
+  - supabase/functions/create-daily-game/index.ts e create-game/index.ts (recursos iniciais)
+
+MUDANÇA 1 — Manutenção de unidades (ouro):
+  Em economy.ts, adicione uma constante e função:
+    export const UNIT_MAINTENANCE_GOLD = 1  // gold por unidade viva por turno
+
+  Em processTurnEconomy (ou onde o endTurn compute o income), após somar o income
+  de cidades, subtraia: player.resources.gold -= unitCount * UNIT_MAINTENANCE_GOLD
+  onde unitCount = unidades vivas pertencentes ao jogador.
+
+  Consequência de ouro negativo (escolha simples e sem punição excessiva):
+  Se gold ficar < 0 após a dedução, cada unidade recebe -1 de defesa neste turno
+  (aplique via um flag temporário `isUnderMaintenance?: boolean` no Unit, limpo no
+  início do próximo turno). Não dissolva unidades — é punitivo demais para v1.
+
+MUDANÇA 2 — Rebalanceio de custos e income base:
+  Objetivo: o jogador deve conseguir treinar seu primeiro warrior adicional em ~3–4 turnos.
+  Com recursos iniciais = 10 production e income ~1–2/turno, um warrior a 20 leva 10+ turnos.
+  Ajuste conservador recomendado (confirme com testes antes de aceitar):
+    - Warrior productionCost: 20 → 10  (em UNIT_CATALOG, packages/game-engine/src/units.ts)
+    - BASE_PRODUCTION_PER_POP: 1 → 1.5 (arredonda: pop=1 commercial = 1, military = 2)
+    - BASE_GOLD_PER_POP: 1 → 1.5 (para cobrir maintenance de 2 warriors = 2 gold/turno)
+  Se UNIT_CATALOG ou os valores estiverem em local diferente, ajuste lá.
+
+MUDANÇA 3 — UI: ResourceBar mostra manutenção:
+  Em apps/web/src/components/ResourceBar.tsx, adicione uma quarta linha "manutenção"
+  se unitCount > 0:
+    🗡 { unitCount } unidades · -{unitCount * UNIT_MAINTENANCE_GOLD}g/turno
+  O componente precisa receber unitCount como prop; passe-o de GameView.tsx
+  onde myPlayer já está disponível.
+  Exiba com cor vermelha se gold < unitCount * UNIT_MAINTENANCE_GOLD (stress indicator).
+
+MUDANÇA 4 — Testes:
+  - economy.test.ts (ou ai.test.ts): endTurn com 2 unidades deve deduzir 2 gold.
+  - Unidade com ouro negativo deve ter isUnderMaintenance = true.
+  - processTurnEconomy: o income de produção com pop=1 deve ser >= 1 (não 0.75 arredondado).
+
+Rode pnpm --filter @aetas/game-engine test — toda a suíte verde.
+Não é necessário deploy de Edge Functions (economy é client-side no engine).
+Rebuild: pnpm --filter @aetas/backend-core bundle && supabase functions deploy submit-action
+```
+
+✅ **Commit:** `"feat(engine): unit gold maintenance + economy rebalance (warrior cost 20→10, income +50%)"`
+
+🛑 **CHECKPOINT E3:** Jogue 5 turnos numa partida solo:
+- ResourceBar deve mostrar linha de manutenção com custo em ouro.
+- Seu ouro deve cair conforme você tem mais unidades.
+- Você deve conseguir treinar o segundo warrior antes do turno 5.
+- Alimento deve crescer a população visivelmente (city.population sobe após ~8 turnos).
+- IA deve se comportar de forma ameaçadora: treinar, construir, atacar.
+
+---
+
+**4.5.E4 — Compartilhamento melhorado no fim de partida** · Sonnet
+
+```
+Melhore o buildShareText e o handleShare em
+apps/web/src/components/GameOverScreen.tsx.
+
+TEXTO GERADO (buildShareText):
+  Linha 1: título com turno — ex: "🏛 Aetas · Turno 12/20"
+  Linha 2+: placar por jogador ordenado por rank, usando a flag da civ +
+  emoji de medalha + nome + pontos — ex:
+    "🏆 🇮🇹 Mongóis 57pts"
+    "🥈 ⚡ Gregos 0pts"
+  Última linha: "playaetas.vercel.app"
+
+Detalhes:
+  - civFlag() já existe no arquivo e retorna a flag da civ — use-a.
+  - gameState.turnNumber / gameState.maxTurns já existem no GameState.
+  - Não inclua breakdown Terr./Pop./Dev. — o texto ficaria longo demais
+    para WhatsApp/Telegram; guarde isso para "View History" futuro.
+
+SHARE HANDLER (handleShare):
+  Tente navigator.share({ text }) primeiro (funciona em mobile Chrome/Safari
+  e abre a sheet nativa). Se navigator.share não existir ou lançar erro
+  (desktop), faça fallback para navigator.clipboard.writeText(text).
+  Após clipboard copy bem-sucedido, mostre feedback visual: troque o texto
+  do botão para "✓ Copiado!" por 2 segundos (useState + setTimeout).
+
+I18N:
+  - en.json: gameover.share → "Share 📋", gameover.copied → "✓ Copied!"
+  - pt.json: gameover.share → "Compartilhar 📋", gameover.copied → "✓ Copiado!"
+  (não altere outras chaves de gameover)
+
+Não precisa de testes unitários — a função é pura e trivial de inspecionar
+manualmente. Confirme visualmente que o texto gerado está bem formatado.
+```
+
+✅ **Commit:** `"feat(web): share message com flags/turno/URL + native share API"`
+
+---
+
+**4.5.E5 — Abandonar partida em andamento** · Sonnet 🧠
+
+```
+Adicione a funcionalidade de abandonar uma partida em andamento. Planeje
+antes de codar: identifique os arquivos tocados e a ordem de modificações.
+
+── 1. EDGE FUNCTION: supabase/functions/abandon-game/index.ts ──
+
+Inputs (JSON body): { gameId: string }
+Auth: extrai userId do JWT (supabase.auth.getUser()). Retorna 401 se não logado.
+
+Lógica:
+  a) Busca a row em `games` + `game_players` onde game_id=gameId e user_id=userId.
+     Retorna 403 se o usuário não é jogador da partida.
+     Retorna 400 se a partida já está finalizada (is_finished=true).
+
+  b) Determina o engine_player_id do caller via game_players.
+
+  c) Lê game_state (JSON) da coluna games.game_state.
+
+  d) PARTIDA SOLO (todos os outros players em game_state.players têm
+     isAIControlled=true OR somente 1 humano no jogo):
+       UPDATE games SET is_finished=true, winner_id=null,
+         updated_at=now() WHERE id=gameId
+       Retorna { abandoned: true, multiplayer: false }
+
+  e) PARTIDA MULTIPLAYER (≥2 humanos no jogo):
+       - Marca o player do caller como isEliminated=true em game_state.players
+       - Se currentPlayerId === engine_player_id do caller:
+           Avança para o próximo não-eliminado (mesma lógica de nextPlayerId
+           do endTurn em turn.ts — busca o próximo na turnOrder que não esteja
+           eliminado)
+       - Conta jogadores não-eliminados restantes:
+           · Se 0 restam (edge case): is_finished=true, winner_id=null
+           · Se 1 resta: is_finished=true, winner_id=<id do restante>
+           · Se ≥2 restam: apenas salva o game_state atualizado
+       UPDATE games SET game_state=<novo>, is_finished=..., winner_id=...,
+         current_player_id=<novo se avançou>, updated_at=now() WHERE id=gameId
+       Retorna { abandoned: true, multiplayer: true, gameOver: boolean }
+
+  Manipule game_state diretamente como JSON — não passe pelo engine (abandon
+  não é uma ação validável, é um evento externo).
+
+── 2. DEPLOY ──
+  supabase functions deploy abandon-game
+
+── 3. FRONTEND: apps/web/src/pages/GameListPage.tsx ──
+
+Nos cards de partidas ATIVAS (is_finished=false), adicione um botão
+de opções "⋯" no canto superior direito do card. Ao clicar, mostra um
+menu simples (div absoluto com overlay, ou segundo estado do card) com a
+opção "Abandonar partida 🏳".
+
+Ao clicar em "Abandonar partida":
+  - Mostra um modal de confirmação com dois textos distintos:
+    · Solo: "Tem certeza? A partida será encerrada."
+    · Multiplayer: "Tem certeza? Você será eliminado e o jogo continuará
+      sem você."
+  - Determina solo/multi verificando se game_state.players tem ≥2 com
+    isAIControlled=false.
+  - Botão "Confirmar" chama:
+      supabase.functions.invoke('abandon-game', { body: { gameId } })
+  - Sucesso: remove o card da lista local (setState filtrando o gameId)
+    sem refetch.
+  - Erro: mostra mensagem de erro inline no modal.
+
+I18N (en.json + pt.json):
+  - "gamelist.abandon": "Abandon game 🏳" / "Abandonar partida 🏳"
+  - "gamelist.abandonConfirmSolo": "Are you sure? The game will end." /
+    "Tem certeza? A partida será encerrada."
+  - "gamelist.abandonConfirmMulti": "Are you sure? You'll be eliminated
+    and the game continues without you." / "Tem certeza? Você será
+    eliminado e o jogo continuará sem você."
+  - "gamelist.abandonConfirmBtn": "Confirm" / "Confirmar"
+  - "gamelist.abandonCancel": "Cancel" / "Cancelar"
+
+Confirme que: clicar em "Abandonar" numa partida solo a remove da lista;
+numa partida multiplayer (se existir), o modal mostra o aviso de eliminação.
+```
+
+✅ **Commit:** `"feat(web): abandonar partida em andamento (solo + multiplayer)"`
+
+🛑 **CHECKPOINT E4/E5:** Valide manualmente:
+- Share: o texto copiado tem flags de civ, placar e URL; no celular abre a sheet nativa.
+- Abandonar: partida solo some da lista após confirmação; testar multiplayer se possível.
+- Nenhuma regressão na tela de game over (botões Back to Lobby / View History intactos).
+
+---
+
+**4.5.E6 — Balanceamento de economia + eliminação automática + defesa de cidades** · **Opus** 🔴 🧠
+
+```
+Planeje antes de codar — este prompt toca 3 arquivos do engine em paralelo.
+Identifique a ordem correta de modificações e os riscos de regressão antes
+de escrever qualquer linha.
+
+Contexto do problema reportado:
+  - Com 3 cavaleiros mongóis, o jogador conquista todas as cidades em poucos
+    turnos sem resistência. Cavaleiro (attack=18) vs city nível 1 (def=3)
+    resulta em 15 dano por turno, matando a cidade (hp=10) em 1 hit.
+  - Quando todas as cidades de um adversário são conquistadas, o jogo não
+    encerra — isEliminated nunca é definido por conquista de cidade.
+  - Food e gold não influenciam o treinamento de unidades, então só produção
+    importa.
+
+MUDANÇA 1 — Eliminação automática por conquista de cidade (actions.ts)
+  Na função applyAction para o caso 'attackCity', após a lógica que captura
+  a cidade (newHp <= 0): verifique se o oldOwner (ex-dono da cidade) ainda
+  possui alguma cidade em state.cities. Se não possuir nenhuma, marque o
+  jogador correspondente em state.players como isEliminated = true.
+  O endTurn já verifica activeNow.length <= 1 e encerra o jogo com winner —
+  não é necessário duplicar essa lógica.
+
+MUDANÇA 2 — City HP e defesa escalados por nível (actions.ts)
+  Substitua o valor fixo de maxHp (10) e a fórmula de defesa da cidade por:
+    cityMaxHp(level)  = 10 + (level - 1) * 5   // nível 1=10, 2=15, 3=20
+    cityDef(level)    = 3 + city.level           // era: 2 + city.level
+  Use cityMaxHp() onde o maxHp de cidade for referenciado (conquista, cura,
+  display). Se maxHp for um campo do objeto City, recalcule ao aplicar
+  levelUp também.
+  Objetivo: cavaleiro (18) vs nível 1 (def=4): 14 dano. Ainda conquista em
+  1 turno nível 1, mas nível 2 (def=5, hp=15) requer 2 ataques de cavaleiro.
+
+MUDANÇA 3 — Manutenção 2g/unidade (economy.ts)
+  UNIT_MAINTENANCE_GOLD = 2 (era 1). Três cavaleiros = 6g/turno.
+  Confirme que os testes existentes de manutenção usam a constante
+  (não valor hardcoded) — se sim, passam automaticamente; se não, ajuste.
+
+MUDANÇA 4 — Treinar unidade custa food + gold (actions.ts)
+  Em validateTrainUnit, adicione duas novas verificações antes de permitir
+  o treino:
+    foodCost = Math.ceil(unit.productionCost / 2)
+    goldCost = Math.ceil(unit.productionCost / 3)
+  Retorne erro apropriado se player.resources.food < foodCost ou
+  player.resources.gold < goldCost.
+  Em applyTrainUnit, deduza food e gold imediatamente quando o treino começa
+  (não quando completa), para evitar que o jogador acumule e gaste na hora.
+  Exemplos de custo com os valores atuais:
+    Guerreiro (prod=10): food=5, gold=4
+    Cavaleiro (prod=60): food=30, gold=20
+
+MUDANÇA 5 — Cap de unidades por população total (actions.ts)
+  Em validateTrainUnit, adicione verificação de capacidade populacional:
+    totalPop = sum de city.population para todas as cidades do jogador
+    currentUnits = units.filter(u => u.ownerId === playerId).length
+  Se currentUnits >= totalPop, retorne erro "insufficient_population".
+  Isso força o jogador a crescer cidades (acumulando food) antes de ter um
+  exército grande.
+
+MUDANÇA 6 — IA ataca cidades com threshold mais agressivo (ai.ts)
+  Em planCityAttack, mude a condição de ataque de:
+    hp <= maxHp * 0.4 OU adjMine >= 2
+  Para:
+    hp <= maxHp * 0.7 OU adjMine >= 1
+  Isso faz a IA atacar cidades com menos de 70% de vida, ou qualquer cidade
+  adjacente com pelo menos 1 unidade disponível (sem precisar de 2).
+
+TESTES:
+  Adicione testes em actions.test.ts (ou arquivo dedicado):
+  - trainUnit falha quando food insuficiente
+  - trainUnit falha quando gold insuficiente
+  - trainUnit falha quando currentUnits >= totalPop
+  - trainUnit deduz food e gold do estado ao ser aplicado
+  - attackCity com captura da última cidade marca isEliminated=true no owner
+  - attackCity numa cidade nível 2 com cavaleiro não captura em 1 hit
+    (nível 2: def=5, hp=15; cavaleiro: attack=18; dano=13; hp restante=2)
+
+Regenere o backend-core.js após todas as mudanças:
+  pnpm --filter @aetas/backend-core bundle
+
+Valide com pnpm --filter @aetas/game-engine test antes de commitar.
+```
+
+✅ **Commit:** `"feat(engine): auto-eliminação + city HP escalado + food/gold para treinar + cap por pop + manutenção 2g"`
+
+🛑 **CHECKPOINT E6:** Jogue uma partida solo vs 2 IAs, dificuldade mediana:
+- Não consegue treinar 3 cavaleiros no início sem ter food e gold acumulados
+- Cavaleiro não conquista cidade de nível 2 em 1 hit (leva 2 ataques)
+- Quando você conquista a última cidade de um adversário, ele é eliminado
+  imediatamente e o jogo encerra se sobrar só você
+- IA ataca suas cidades quando tem unidades adjacentes (mesmo sem 2 unidades)
+- Manutenção: 3 cavaleiros = 6g/turno; veja o ícone vermelho se seu ouro for insuficiente
+
+---
+
+**4.5.E7 — Edifícios custam gold + ação Fortify City** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt adiciona uma nova ação ao engine e
+expõe ela na UI.
+
+MUDANÇA 1 — Buildings custam gold (buildings.ts + actions.ts)
+  Em buildings.ts, adicione goldCost a cada edifício do catálogo.
+  Proporção sugerida (ajuste se necessário):
+    goldCost ≈ Math.round(productionCost * 0.5)
+  Em validateBuildBuilding: adicione verificação de player.resources.gold
+    >= building.goldCost.
+  Em applyBuildBuilding: deduza building.goldCost de player.resources.gold
+    imediatamente ao iniciar a construção.
+
+MUDANÇA 2 — Nova ação "fortifyCity" (types.ts + actions.ts + UI)
+  Adicione o type FortifyCity ao union de SubmittableAction em types.ts:
+    { type: 'fortifyCity'; cityId: string; goldAmount: number }
+
+  validateFortifyCity:
+    - Caller deve ser dono da cidade
+    - goldAmount deve ser >= 5 e <= player.resources.gold
+    - city.hp deve ser < cityMaxHp(city.level) (já no máximo = não faz sentido)
+
+  applyFortifyCity:
+    - Deduza goldAmount do ouro do jogador
+    - Aumente city.hp em Math.floor(goldAmount / 5), com cap em cityMaxHp
+
+  Taxa de conversão: 5 gold = +1 HP de cidade. Exemplo: 20 gold = +4 HP.
+
+  UI em apps/web/src/pages/GameView.tsx ou componente de CityPanel:
+    - Quando o jogador seleciona uma cidade própria que não está em hp máximo,
+      mostre um botão "Fortify 🏰" com input de gold (mínimo 5).
+    - Submeta como action: { type: 'fortifyCity', cityId, goldAmount }.
+    - Feedback: mostre o HP atualizado na barra da cidade após confirmação.
+
+  I18N: adicione chave "action.fortify" (en/pt).
+
+Regenere backend-core.js após as mudanças.
+Confirme que pnpm --filter @aetas/game-engine test não regride.
+```
+
+✅ **Commit:** `"feat(engine): buildings custam gold + ação fortifyCity"`
+
+🛑 **CHECKPOINT E6+E7:** Jogue uma partida com foco em economia:
+- Construir um edifício requer gold além de produção
+- Cidade sitiada pode ser reforçada com gold antes do próximo ataque da IA
+- Todos os recursos (food, gold, production) têm uso claro e visível
+
+---
+
+**4.5.E8 — City level-up por população + territórios + gate de edifício** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt toca economy.ts, actions.ts e CityModal.tsx.
+Identifique a ordem (engine primeiro, UI depois) e os pontos de regressão antes
+de escrever qualquer linha.
+
+CONTEXTO:
+  city.level nunca sobe de 1. Já existem no engine: cityMaxHp(level),
+  cityDefense(level), LEVEL_BONUS_PER_LEVEL=0.2, e
+  computeCityTerritoryBonus(..., radius) aceitando raio variável — tudo pronto
+  para ser ativado assim que o level mudar.
+
+MUDANÇA 1 — Level-up automático por população (economy.ts, applyGrowth)
+  Após applyGrowth calcular o novo population da cidade, aplicar:
+
+    function popToLevel(pop: number): number {
+      if (pop >= 4) return 3
+      if (pop >= 2) return 2
+      return 1
+    }
+
+  Se popToLevel(grown.population) > grown.level:
+    - newLevel = popToLevel(grown.population)
+    - newMaxHp = cityMaxHp(newLevel)
+    - hp ganha a diferença:
+        hp = Math.min(newMaxHp,
+          (grown.hp ?? cityMaxHp(grown.level)) + (newMaxHp - cityMaxHp(grown.level)))
+    - Retornar cidade com level, maxHp e hp atualizados.
+  O level NUNCA diminui (só cresce).
+
+  Justificativa dos thresholds 2/4 (não 3/6):
+    Com FOOD_PER_POPULATION_GROWTH=20 e cidades Military (food×0.75), pop 2
+    é atingida por volta do turno 12-15 e pop 4 por volta do turno 18-22.
+    Com maxTurns=20, isso torna o sistema observável — threshold 3/6 nunca
+    seria atingido numa partida padrão.
+
+MUDANÇA 2 — 2º edifício da especialização requer nível 2 (actions.ts, case 'constructBuilding')
+  Após checar especialização correta e que o building não está construído nem
+  em construção:
+    const builtForSpec = (city.buildings ?? []).filter(b =>
+      getBuildingDef(b).specialization === buildingDef.specialization
+    )
+    if (builtForSpec.length >= 1 && city.level < 2) {
+      return { valid: false, reason: 'city level too low' }
+    }
+  Exemplo: Quartel (1º Military) construível em nível 1; Muralha (2º Military)
+  só em nível 2+ (pop ≥ 2).
+
+MUDANÇA 3 — Território expande para raio 3 no nível 3 (economy.ts, computeCityProduction)
+  Na chamada de computeCityTerritoryBonus, passar:
+    const territoryRadius = city.level >= 3 ? 3 : 2
+  em vez do radius default 2. Cidade nível 3 reivindica tiles em raio 3,
+  gerando mais recursos de terreno.
+
+MUDANÇA 4 — UI: barra de progresso de nível (apps/web/src/components/CityModal.tsx)
+  Entre o stats grid (linha ~131) e a seção de Resources (linha ~137), adicionar
+  bloco condicional quando isMyCity:
+  a) Se city.level < 3: barra de progresso
+       level 1 → "Pop {city.population}/2 → Nível 2"
+       level 2 → "Pop {city.population}/4 → Nível 3"
+       Barra: width = min(100, city.population / threshold * 100)%, cor aetas-gold.
+  b) Se city.level === 3: "🏛 Nível Máximo" em gold.
+
+  No bloco de buildings já existente: se city.level < 2 && já existe 1 building
+  da especialização construído, renderizar o card do 2º building desabilitado
+  (opacity-50, cursor-not-allowed) com "🔒 Requer Nível 2" no lugar dos botões.
+
+  I18N (en/pt): chaves city.levelProgress, city.maxLevel, city.requiresLevel2.
+
+TESTES (economy.test.ts / actions.test.ts):
+  - applyGrowth: pop 1 → 2 → level 2, maxHp 15, hp +5.
+  - applyGrowth: pop 3 → 4 → level 3, maxHp 20.
+  - applyGrowth: cidade no nível máximo não regride.
+  - constructBuilding: 2º building da especialização rejeitado se level < 2.
+  - constructBuilding: 2º building aceito com level >= 2.
+  - computeCityProduction: cidade nível 3 reivindica território de raio 3
+    (mais tiles que nível 2 na mesma posição).
+
+Regenere e valide:
+  pnpm --filter @aetas/backend-core bundle
+  pnpm --filter @aetas/game-engine test    (não aumentar as 3 falhas do baseline)
+  pnpm --filter @aetas/web build           (TypeScript limpo)
+```
+
+✅ **Commit:** `"feat(engine+ui): city level-up por população + territórios + gate de edifício"`
+
+🛑 **CHECKPOINT E8:**
+- Commercial city: após ~12 turnos o StatBox "Level" deve passar de 1 para 2
+- Barra de progresso mostra pop atual / threshold do próximo nível
+- Quartel construível em nível 1; Muralha mostra 🔒 até nível 2
+- Cidade nível 3 (pop 4) reivindica tiles mais distantes (income de território maior)
+- +20% recursos por nível funciona automaticamente via LEVEL_BONUS_PER_LEVEL
+
+---
+
+## BLOCO UI — Redesign Visual Romano (UI-T1 → T3)
+
+> Estes 3 prompts transformam o visual do app de "SaaS dark mode" para "strategy
+> game romano". Nenhuma regra de jogo é alterada. Executar em sequência; cada
+> um é um commit isolado e revertível.
+>
+> **Referências visuais:** menu principal (imagem 3), tela de partida (imagem 2),
+> modal de cidade (imagem 1) — usadas como moodboard estético, não cópia exata.
+> Labels permanecem em inglês/português (sem latinização de texto).
+
+---
+
+**UI-T1 — Fundação: tokens + componentes romanos reutilizáveis** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt cria a base de estilo que os prompts
+UI-T2 e UI-T3 vão consumir.
+
+CONTEXTO VISUAL:
+  Referência: jogo de estratégia romano com paleta warm-dark (marrom âmbar
+  profundo), bordas duplas em aetas-gold/20, tipografia Cinzel em displays.
+  Cinzel já está importada em index.css. Os tokens existentes são bons — o
+  objetivo é pequeno ajuste de calor e adição de novos tons.
+
+MUDANÇA 1 — tokens.css: ajuste de calor + novos tokens
+  Nos tokens existentes:
+    aetas-bg:      #0e0c09 → #110d07   (ligeiramente mais âmbar)
+    aetas-surface: #17140f → #1c1509
+    aetas-raised:  #211d16 → #271a0d
+    aetas-panel:   #2b261e → #312010
+    aetas-border:  #38301f → #3d2910
+    aetas-border-strong: #4d4230 → #52350f
+
+  Novos tokens (adicionar após os existentes):
+    --color-aetas-stone:    #bfaa87   /* mármore/pedra, fundo de stat boxes */
+    --color-aetas-bronze:   #7a4f1e   /* bronze escuro, variante de fundo de botão */
+    --color-aetas-parchment:#c8a552   /* pergaminho dourado — bordas decorativas */
+
+  Em tailwind.config (se existir) OU tokens.css: garantir que `font-display`
+  mapeia para `Cinzel, Georgia, serif`.
+
+MUDANÇA 2 — SealButton.tsx (novo componente)
+  Crie apps/web/src/components/ui/SealButton.tsx.
+  Props: variant ('gold' | 'red'), size ('sm' | 'md' | 'lg'), onClick, disabled,
+         children, className.
+  Design:
+    - Formato circular (border-radius 9999px)
+    - Gold: gradiente radial do centro #e8c97a para fora #8f6b20; borda dupla
+      1px solid aetas-gold/60 com outline 1px solid aetas-gold/20
+    - Red: mesmo padrão com #c94a4a centro e #7a1a1a borda
+    - Sombra: shadow-lg com cor da variante a 40% de opacidade
+    - Tamanhos: sm = w-10 h-10 text-xs, md = w-14 h-14 text-sm,
+                lg = w-24 h-24 text-xl font-display font-semibold
+    - Estado disabled: opacity-40 cursor-not-allowed
+    - Hover/active: brightness-110 scale-[1.03]
+  Exportar como default e como named export.
+
+MUDANÇA 3 — AetasLogo.tsx (novo componente SVG)
+  Crie apps/web/src/components/ui/AetasLogo.tsx.
+  É uma medalha/moeda circular em SVG inline (48×48):
+    - Círculo externo: stroke aetas-gold, fill none, stroke-width 2
+    - Círculo interno (menor, separado por 3px): mesmo stroke, opacity 0.5
+    - Anel de louros simplificado entre os dois círculos: série de ~16 elipses
+      pequenas inclinadas alternando para esquerda/direita em stroke aetas-gold
+    - Centro: letra "A" estilizada em Cinzel OU escudo romano simples (retângulo
+      + semicírculo no topo) em fill aetas-gold/70
+  Aceitar prop `size` (default 48). Usar className aetas-gold para stroke/fill.
+
+MUDANÇA 4 — RomanDivider.tsx (novo componente)
+  Crie apps/web/src/components/ui/RomanDivider.tsx.
+  SVG inline: linha horizontal de largura total com ornamento central.
+    - Linha: dois traços horizontais (left 0→40%, right 60→100%) stroke
+      aetas-gold/30, stroke-width 0.5
+    - Centro: diamante SVG (losango 8×8px) em fill aetas-gold/50
+    - Opcionalmente: 2 pontos menores flanqueando o diamante
+  Props: className.
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build   (TypeScript limpo, sem erros)
+  Verificar que os novos tokens não quebram nenhuma classe existente no build.
+```
+
+✅ **Commit:** `"feat(ui-t1): theme foundation — tokens + SealButton + AetasLogo + RomanDivider"`
+
+🛑 **CHECKPOINT UI-T1:** Abrir o app no browser e confirmar que o tom de fundo ficou
+ligeiramente mais âmbar (não deve parecer verde ou frio). Os 3 novos componentes
+podem ser temporariamente renderizados numa rota de teste ou inspecionados via
+import no DevTools para confirmar que TypeScript não reclamou.
+
+---
+
+**UI-T2 — GameListPage: menu romano completo** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt redesenha o menu principal inteiro.
+Toca GameListPage.tsx, DailyCard.tsx (se existir separado), e possivelmente
+GameCard.tsx/GameListItem.tsx.
+
+CONTEXTO:
+  O menu atual é "dark SaaS". A referência visual mostra:
+    - Logo em medalha dourada no canto superior esquerdo
+    - Barra de título com linha dourada separadora abaixo
+    - Card de Daily Challenge com moldura de pedra (bordas retas + detalhe
+      duplo dourado), badge de vitória no canto, ícones em bronze
+    - Seção "MY TURN" com número em badge + ornamento decorativo central
+    - Cards de jogo com thumbnail em clip-path hexagonal e moldura
+    - Botão "+ New Game" como lacre circular heroico (SealButton lg) fixo
+      no canto inferior direito
+    - Background: silhueta SVG do Coliseu em opacity 8–12% cobrindo o 1/3
+      inferior da tela
+
+ANTES DE CODAR: ler GameListPage.tsx inteiro + quaisquer subcomponentes de
+card de jogo para mapear o que é componente separado.
+
+MUDANÇA 1 — Header: AetasLogo + título Cinzel + separador
+  - Substituir CivAvatar+h1 por: AetasLogo (size 40) seguido de
+    <span className="font-display text-2xl font-semibold text-aetas-gold
+    tracking-widest">AETAS</span>
+  - Abaixo do header: linha divisória full-width em border-aetas-gold/20
+    (substituir ou enriquecer o border-b existente)
+  - Opcional: thin gradient bar em aetas-gold/30 sob o header (height 1px)
+
+MUDANÇA 2 — Paleta geral da página
+  - bg-aetas-bg → manter (token já ajustado no T1)
+  - Cantos: substituir rounded-xl/2xl por rounded-sm em todos os cards
+    principais (Daily Challenge, game cards) — deixar rounded-full apenas
+    para avatares e SealButton
+  - Bordas: cards principais recebem borda dupla CSS:
+      border: 1px solid var(--color-aetas-border);
+      outline: 1px solid var(--color-aetas-gold) / 12%;
+      outline-offset: -3px;
+    (implementar via classe Tailwind customizada ou style inline)
+
+MUDANÇA 3 — Card Daily Challenge
+  - Remover rounded-xl → rounded-sm
+  - Aplicar borda dupla (ver acima) + accent top: 3px solid aetas-parchment
+    no topo do card (borda superior mais grossa e mais clara)
+  - Background do card: bg-aetas-panel (já correto), mas adicionar subtle
+    background linear-gradient from aetas-gold/5 to transparent no header
+    interno
+  - Ícone de troféu atual (emoji 🏆 ou lucide): substituir por SVG inline
+    simples — círculo dourado com letra "D" ou coroa de louros minimalista,
+    stroke aetas-gold, fill none, stroke-width 1.5
+  - Badge "Victory" / "Played today": se existir, posicionar no canto superior
+    direito como bandeira vertical (retângulo crimson com "Victory" em Cinzel
+    texto branco, inclinado -2deg)
+
+MUDANÇA 4 — Seção "MY TURN" e cards de jogo
+  - Header da seção: <RomanDivider /> acima + texto "MY TURN" em font-display
+    uppercase tracking-widest text-aetas-gold/80 text-xs + número de turno em
+    SealButton variant gold size sm (read-only, não clicável)
+  - Cards de jogo:
+    a) Thumbnail do mapa: trocar container quadrado por hexágono via clip-path:
+       clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)
+       manter o mesmo conteúdo de preview dentro
+    b) Borda do card: mesmo padrão de borda dupla do Daily Challenge
+    c) Botão "Play →": substituir pelo SealButton variant gold size sm com
+       texto "▶" ou "→"
+
+MUDANÇA 5 — Botão New Game (FAB)
+  - Substituir o FAB atual por SealButton variant gold size lg
+  - Posição: fixed bottom-6 right-6 (ou right-4 em mobile)
+  - Texto: "+  New Game" em font-display
+  - Sombra heroica: shadow-2xl shadow-aetas-gold/30
+
+MUDANÇA 6 — Background Colosseum SVG
+  - No container principal, adicionar como filho absolute (pointer-events-none):
+    SVG da silhueta do Coliseu (série de arcos semicirculares em camadas —
+    3 linhas de arcos decrescentes simulando os andares do Coliseu) na cor
+    aetas-text/8 opacity, posicionado bottom-0 right-0 ou centralizado,
+    width ~80% da tela, height ~30vh
+  - A silhueta deve ser construída com paths simples: cada andar é uma série
+    de rect+circle (arco) repetida. Não precisa ser fotorrealista — apenas
+    reconhecível como arquitectura romana.
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build
+  Verificar em modo mobile (375px) e desktop que nenhum card transborda.
+```
+
+✅ **Commit:** `"feat(ui-t2): GameListPage redesign — roman theme, hex clips, seal FAB"`
+
+🛑 **CHECKPOINT UI-T2:**
+- Header mostra AetasLogo + "AETAS" em Cinzel dourado
+- Daily Challenge card com bordas retas e acento dourado no topo
+- Cards de partida com thumbnail em formato hexagonal
+- Botão New Game é o SealButton dourado circular heroico no canto inferior
+- Silhueta do Coliseu visível mas sutil no fundo (não deve competir com conteúdo)
+- Testar no celular: SealButton cabe sem cortar
+
+---
+
+**UI-T3 — CityModal + GameView chrome: painéis romanos** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt redesenha o modal de cidade e a barra
+de UI do GameView (topo + painel lateral direito). NÃO altera a lógica de
+jogo, o mapa de hexágonos, nem os labels de texto.
+
+CONTEXTO:
+  CityModal atual: bottom sheet arredondado, botões retangulares Build/Train,
+  stat boxes simples.
+  Referência visual: painel de pedra com cabeçalho em cartela decorativa,
+  stat boxes em mármore (fundo claro, texto escuro), botões Build/Train como
+  selos circulares (dourado/vermelho), seção de recursos com ícones de moeda.
+  GameView atual: barra de recursos simples, botão "End Turn" retangular.
+  Referência: barra com ícones de moeda, botão "End Turn" como painel romano.
+
+ANTES DE CODAR: ler CityModal.tsx inteiro + ResourceBar.tsx + GameView.tsx
+linhas 700-800 (área dos botões End Turn / painel lateral).
+
+--- CityModal ---
+
+MUDANÇA 1 — Header do modal: cartela decorativa
+  - Manter estrutura (nome da cidade + dono + botão fechar)
+  - Fundo do header: bg-aetas-panel com border-b border-aetas-gold/30
+  - Título da cidade: font-display text-lg text-aetas-gold font-semibold
+    tracking-wide (text-center se couber)
+  - Subtítulo (civ name): text-aetas-muted text-xs uppercase tracking-widest
+  - Botão fechar: SealButton variant red size sm com "✕" (substituir o
+    rounded-full manual atual)
+  - Linha decorativa sob o header: <RomanDivider /> (importar de ui/)
+
+MUDANÇA 2 — Stat boxes (Level, Population, Food)
+  - Container de cada box: bg-aetas-stone/20 border border-aetas-stone/30
+    rounded-sm (não rounded-lg)
+  - Label: text-aetas-dim uppercase tracking-widest text-[10px]
+  - Valor: text-aetas-gold font-display font-semibold text-xl
+  - Fundo contrastante claro (stone/20) cria efeito "mármore" contra o
+    fundo escuro do modal
+
+MUDANÇA 3 — Seção de recursos do jogador (Res Publicae)
+  - Label "Player Resources": substituir por <RomanDivider /> + texto
+    "RES PUBLICAE" em font-display text-[10px] uppercase tracking-widest
+    centralizado (mas ainda em inglês: se i18n já tem 'city.playerResources',
+    manter a chave — só estilizar o rótulo)
+  - Cada pill de recurso: fundo bg-aetas-raised rounded-sm + ícone SVG
+    circular (moeda bronze). Os 3 ícones:
+      Gold icon: SVG círculo + "G" em Cinzel OU perfil de Júlio César
+        simplificado (óvalo horizontal + retângulo menor = busto de perfil)
+        stroke aetas-gold, fill none
+      Food icon: SVG cesto trançado simples (retângulo com linhas internas
+        diagonais cruzadas) em stroke aetas-gold/70
+      Production icon: SVG bigorna (retângulo trapezoid) em stroke aetas-gold/70
+    Tamanho dos ícones: 20×20px, stroke-width 1.5
+
+MUDANÇA 4 — Botões Build e Train → SealButton
+  - Substituir todos os <button> de "Build" no bloco de edifícios disponíveis
+    por <SealButton variant="gold" size="sm">Build</SealButton>
+  - Substituir todos os <button> de "Train" no bloco de unidades
+    por <SealButton variant="red" size="sm">Train</SealButton>
+  - Ajustar layout do card de edifício/unidade para acomodar o formato circular
+    (o SealButton sm tem w-10 h-10; se o espaço for apertado, usar size="sm"
+    e remover o custo de produção do mesmo row — mover para linha separada)
+
+MUDANÇA 5 — Level progress bar: estilo romano
+  - A barra existente (E8): substituir cor de bg pela bg-aetas-bronze/40 para
+    o trilho, e bg-aetas-gold para o fill — já deve estar com bg-aetas-gold,
+    confirmar
+  - Container da barra: border border-aetas-border rounded-sm (não rounded-full)
+  - Texto "Pop X/Y → Nível Z": font-display text-[10px] text-aetas-gold/80
+
+--- GameView ---
+
+MUDANÇA 6 — ResourceBar.tsx: ícones de moeda
+  - Para cada recurso (Gold, Food, Production, Maintenance):
+    Substituir emoji/ícone atual por SVG inline 16×16 com stroke aetas-gold/70.
+    Gold: círculo com "G" interno; Food: folha/espiga; Production: engrenagem
+    (ou bigorna como no CityModal); Maintenance: escudo/espada cruzadas.
+    stroke-width 1.5, fill none.
+  - Fundo da barra: bg-aetas-raised → bg-aetas-panel com border-b
+    border-aetas-gold/20 (ligeiramente mais visível)
+
+MUDANÇA 7 — Botão End Turn no GameView
+  - Localizar o botão principal "End Turn" (no painel lateral ou FAB)
+  - Substituir por painel decorativo:
+      <div className="border border-aetas-gold/40 bg-aetas-panel rounded-sm
+        px-4 py-2 font-display text-aetas-gold tracking-widest uppercase
+        text-center cursor-pointer hover:bg-aetas-raised transition-colors">
+        End Turn
+      </div>
+  - Versão mobile (se for o botão grande): SealButton variant gold size lg
+    com texto "END TURN" font-display
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build
+  Abrir uma partida real no browser e verificar:
+    - CityModal abre com header romano e botões Build/Train circulares
+    - ResourceBar com ícones SVG legíveis em mobile
+    - End Turn button com estilo romano
+```
+
+✅ **Commit:** `"feat(ui-t3): CityModal + GameView chrome — roman panels, seal buttons, SVG icons"`
+
+🛑 **CHECKPOINT UI-T3:**
+- Modal de cidade: header com Cinzel dourado, stat boxes com fundo pedra
+- Botões Build (dourado circular) e Train (vermelho circular) visíveis e clicáveis
+- ResourceBar com ícones SVG ao invés de emojis
+- End Turn estilizado como painel romano
+- Layout não quebra em celular (375px) nem no modal de cidade scrollável
+- Testar Build e Train reais: as ações ainda funcionam (SealButton deve disparar
+  os mesmos callbacks — só visual mudou)
+
+---
+
+## BLOCO UI-V — Aproximação Visual às Referências (UI-V1 → V3)
+
+> Estes prompts fecham o gap entre os esboços de referência e o estado pós-T3.
+> Dependem de assets PNG/WebP gerados manualmente antes de cada prompt.
+> Ordem: UI-V1 → V2 → V3. Não pule V1 sem o asset pronto.
+
+---
+
+**UI-V1 — GameView: fundo de imagem romana + END TURN circular** · Sonnet 🧠
+
+> ⚠️ PRÉ-REQUISITO MANUAL antes de colar este prompt:
+> Salve a imagem gerada (Retro Print, Coliseu à esquerda + Arco à direita,
+> céu laranja/vermelho, foreground escuro azul-índigo) em
+> `apps/web/public/assets/game-bg.webp` (resolução 1536×1024px ou superior).
+> Confirme que o arquivo existe antes de iniciar.
+>
+> Se precisar regerar: Copilot Pro Image Creator, estilo "Impressão Retrô",
+> paleta linha 1 col 3 (bege/âmbar/azul escuro/crimson). Prompt:
+> "Cinematic Roman panorama, Colosseum on the far LEFT edge, Triumphal Arch
+>  on the far RIGHT edge, warm amber/orange sunset sky in the center,
+>  very dark blue-black foreground at the bottom, city silhouettes in
+>  middle distance. Retro Print halftone style. No text. 16:9 landscape."
+
+```
+Planeje antes de codar — este prompt adiciona imagem de fundo ao mapa e
+converte o botão END TURN para SealButton circular no desktop.
+
+ANTES DE CODAR: ler GameView.tsx (div do mapa, linhas ~718-730) e
+ActionSheet.tsx (sidebar desktop, linhas ~141-175) inteiros.
+
+MUDANÇA 1 — Fundo do mapa com imagem (GameView.tsx):
+  Localizar a div `className="relative flex-1 min-h-0 bg-aetas-bg"` que
+  contém o HexMap. Modificar para:
+    - Remover bg-aetas-bg do className
+    - Adicionar style={{ backgroundImage: 'url(/assets/game-bg.webp)',
+        backgroundSize: 'cover', backgroundPosition: 'center center' }}
+    - Adicionar como primeiro filho (z-0) um overlay escuro para manter
+      contraste com os hexágonos:
+        <div className="absolute inset-0 bg-aetas-bg/60 pointer-events-none z-0" />
+    - Garantir que HexMap e demais filhos tenham position relativa (z-1 ou
+      relative) para aparecer sobre o overlay
+
+MUDANÇA 2 — END TURN desktop como SealButton lg (ActionSheet.tsx):
+  Localizar o <button> do sidebar desktop (className w-full py-3 rounded-sm
+  font-display...). Substituir pelo padrão circular:
+    <div className="flex justify-center py-2">
+      <SealButton
+        variant="gold"
+        size="lg"
+        onClick={onEndTurn}
+        disabled={!isMyTurn}
+      >
+        <span className="font-display text-center leading-tight
+          text-[10px] uppercase tracking-widest">
+          END<br/>TURN
+        </span>
+      </SealButton>
+    </div>
+  Quando !isMyTurn, o SealButton já aplica opacity-40 via prop disabled.
+  Adicionar import { SealButton } from './ui/SealButton' se ainda não existe.
+  Manter o texto de "waiting" abaixo do botão como <p> separado:
+    {!isMyTurn && (
+      <p className="text-center text-aetas-dim text-xs">
+        {t('action.waitingTurn')}
+      </p>
+    )}
+  O mobile (bottom sheet) mantém o estilo retangular que já existe.
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build
+  Abrir partida no browser:
+  - Mapa deve ter fundo visual (não preto sólido)
+  - Overlay escuro deve manter hexágonos legíveis
+  - END TURN circular dourado visível no sidebar desktop
+  - Mobile: bottom sheet não alterado
+```
+
+✅ **Commit:** `"feat(ui-v1): roman background image + circular END TURN button"`
+
+🛑 **CHECKPOINT UI-V1:** Verificar em mobile que o overlay não escurece demais
+o mapa (ajustar bg-aetas-bg/60 para /50 se necessário — a imagem game-bg.webp
+tem foreground muito escuro, então /60 é o ponto de partida).
+Confirmar que END TURN ainda dispara a ação de fim de turno.
+
+---
+
+**UI-V2 — GameListPage: imagem de cena romana** · Sonnet
+
+> ⚠️ PRÉ-REQUISITO MANUAL antes de colar este prompt:
+> Salve a imagem gerada (Retro Print, fundo escuro ouro/azul com Coliseu,
+> aqueduto, arco e estandarte com Águia romana) em
+> `apps/web/public/assets/menu-bg.webp` (resolução 1536×1024px ou superior).
+> Confirme que o arquivo existe antes de iniciar.
+>
+> Se precisar regerar: Copilot pro Image Creator, estilo "Impressão Retrô",
+> paleta linha 1 col 3. Prompt original:
+> "A cinematic atmospheric background illustration for a strategy game UI
+>  main screen, 16:9. Colosseum, aqueduct, triumphal arches. Low-key epic
+>  lighting, rich golds, deep bronzes, dark browns. Golden-amber fog.
+>  Roman Aquila eagle on parchment in corner. No text, no UI elements."
+
+```
+Substituir o ColosseumSilhouette SVG geométrico por imagem real de cena
+romana no GameListPage.
+
+ANTES DE CODAR: ler GameListPage.tsx — localizar a div com
+pointer-events-none fixed que contém <ColosseumSilhouette />.
+
+MUDANÇA 1 — Trocar SVG geométrico por imagem:
+  Substituir o bloco:
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 h-[30vh]...">
+      <ColosseumSilhouette />
+    </div>
+  por:
+    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      aria-hidden="true">
+      <img
+        src="/assets/menu-bg.webp"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover object-bottom"
+        style={{ opacity: 0.18 }}
+      />
+      {/* Gradient para escurecer o topo e preservar legibilidade do header */}
+      <div className="absolute inset-0 bg-gradient-to-b
+        from-aetas-bg via-aetas-bg/70 to-aetas-bg/30" />
+    </div>
+  Remover a função ColosseumSilhouette() do final do arquivo.
+
+MUDANÇA 2 — Ajuste de contraste do conteúdo:
+  A imagem de fundo pode reduzir contraste de texto. Verificar:
+  - GameCards: adicionar bg-aetas-surface/80 se necessário (já têm bg-aetas-surface)
+  - DailyCard: idem
+  Se o texto ficar ilegível, aumentar opacity do gradient overlay de /70 para /90.
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build
+  No menu principal:
+  - Imagem de fundo romana visível mas não dominando o texto
+  - Cards e textos legíveis sobre o fundo
+  - Header "AETAS" com boa separação visual do background
+  - Fade gradual da imagem no topo (header area é mais escura)
+```
+
+✅ **Commit:** `"feat(ui-v2): roman scene background image for game menu"`
+
+---
+
+**UI-V3 — DailyCard stone frame + score pills romanos + Play→ pill** · Sonnet 🧠
+
+```
+Planeje antes de codar — este prompt refina 3 elementos visuais no menu:
+a moldura stone do DailyCard, os score pills como moedas de bronze, e o
+botão Play → como pílula de texto ao invés de SealButton circular.
+
+ANTES DE CODAR: ler DailyCard.tsx inteiro e GameListPage.tsx (componente
+GameCard, linhas ~287-444 do estado pós-T2).
+
+--- DailyCard.tsx ---
+
+MUDANÇA 1 — Frame de pedra com ornamentos de canto:
+  No container principal do card (a div com rounded-sm e inline style),
+  adicionar 4 ornamentos SVG nos cantos via posicionamento absoluto:
+    {/* Corner ornaments — thin gold L-shapes */}
+    {['top-0 left-0', 'top-0 right-0 rotate-90', 'bottom-0 right-0 rotate-180',
+      'bottom-0 left-0 -rotate-90'].map((pos, i) => (
+      <svg key={i} className={`absolute ${pos} w-4 h-4`} viewBox="0 0 16 16"
+        fill="none" stroke="var(--color-aetas-parchment)" strokeWidth="1.5">
+        <path d="M1 15 L1 1 L15 1" />
+      </svg>
+    ))}
+  O container já tem position relative — apenas adicionar overflow-hidden
+  se os cantos aparecerem fora dos bounds.
+
+  Também reforçar o box-shadow do card para dar profundidade de pedra:
+    style={{
+      ...estilos existentes,
+      boxShadow: 'inset 0 1px 0 rgba(201,168,76,0.15), 0 4px 24px rgba(0,0,0,0.6)'
+    }}
+
+MUDANÇA 2 — Score pills como moedas de bronze (só quando daily.isFinished):
+  Substituir os 3 <ScorePill> existentes por nova versão com moeda circular:
+  
+  function CoinPill({ icon, label, value }: { icon: JSX.Element; label: string; value: number }) {
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <div className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'radial-gradient(circle at 35% 35%, #a87828 0%, #5a3a0a 100%)',
+            border: '2px solid rgba(201,168,76,0.50)',
+            boxShadow: 'inset 0 1px 0 rgba(232,201,122,0.25)',
+          }}>
+          {icon}
+        </div>
+        <span className="font-display text-aetas-gold font-semibold text-base leading-none">{value}</span>
+        <span className="text-aetas-dim text-[10px] uppercase tracking-wider">{label}</span>
+      </div>
+    )
+  }
+
+  Ícones SVG 20×20 para os 3 pills (stroke aetas-text/80, strokeWidth 1.5):
+    - Territory: <path d="M10 2 L17 6 L17 14 L10 18 L3 14 L3 6 Z"/> (hexágono)
+    - Population: <circle cx="10" cy="7" r="3"/> + <path d="M4 17 Q10 12 16 17"/>
+    - Development: <path d="M4 16 L4 4 L12 4 L16 8 L16 16 Z"/> <path d="M12 4 L12 8 L16 8"/>
+
+  Reorganizar o layout do score section para flex com gap-4 centralizado.
+  O total "57 pts" fica à direita como antes.
+
+--- GameListPage.tsx ---
+
+MUDANÇA 3 — Reverter Play → para pílula de texto:
+  No componente GameCard, substituir:
+    <SealButton variant="gold" size="sm" onClick={onEnter} className="mt-2">▶</SealButton>
+  por:
+    <button
+      onClick={onEnter}
+      className="mt-2 px-3 py-1.5 rounded-sm bg-aetas-gold text-aetas-bg
+        text-xs font-semibold hover:brightness-110 transition-colors"
+    >
+      Play →
+    </button>
+  O SealButton fica exclusivo para: New Game FAB + Section count badge.
+
+VALIDAÇÃO:
+  pnpm --filter @aetas/web build
+  No menu:
+  - DailyCard com ornamentos de canto dourados visíveis nos 4 cantos
+  - Score pills circulares douradas quando daily finalizado
+  - Botão "Play →" retangular (não circular) nos game cards
+  - Layout em 375px: pills não transbordam o card
+```
+
+✅ **Commit:** `"feat(ui-v3): DailyCard stone frame + bronze coin pills + Play pill button"`
+
+🛑 **CHECKPOINT UI-V1→V3:** Validar nas duas telas principais:
+- Menu: cena romana visível ao fundo, cards legíveis, Daily Challenge com moldura e pills
+- Jogo: fundo de imagem com overlay adequado, END TURN circular dourado no desktop
+- Mobile (375px): sem overflow, botão End Turn mobile inalterado
+- Funcionalidade: Build, Train, Play, End Turn ainda disparam as ações corretas
+
+---
+
+## BLOCO BAL — Balanceamento & Gameplay
+
+> Executar após CHECKPOINT UI-V1→V3. Todos os prompts BAL-1 e BAL-2 tocam o engine — rodar `pnpm test` após cada um antes de avançar.
+
+---
+
+### BAL-1 — Auto-guerra + Bloqueio territorial · **Opus** 🔴 🧠
+
+```
+Implementar duas novas regras de engine em `packages/game-engine/src/actions.ts`:
+
+REGRA 1 — Auto-declaração de guerra ao atacar:
+Em `validateAction` para os tipos `attackUnit` e `attackCity`:
+- Verificar se o jogador já está em guerra com o dono do alvo.
+- Se NÃO está → auto-aplicar `applyAction({ type: 'declareWar', targetPlayerId })`
+  sobre o estado antes de validar/aplicar o ataque. O ataque ainda prossegue normalmente.
+- Se já está em guerra → sem mudança.
+- Atenção: `applyAction` pode precisar ser chamado em cadeia; verificar se há
+  side-effects no `validateAction` que dependem de um estado sem guerra declarada.
+
+REGRA 2 — Bloqueio de movimento em território inimigo:
+Em `validateAction` para `moveUnit`:
+- Território de um player = todos os tiles cuja cidade mais próxima pertence a esse player.
+  Replicar a lógica de `apps/web/src/components/HexMap.tsx` linhas 239–251
+  (Voronoi por hexDistance). `hexDistance` já está exportado de
+  `packages/game-engine/src/map.ts`.
+- Se o tile de destino pertence a outro player E o jogador não tem pacto ativo
+  com ele → retornar `{ valid: false, reason: 'enemy territory' }`.
+- Aliados = players com PactStatus.Active bilateral com o jogador.
+
+Atualizar testes em `packages/game-engine/src/actions.test.ts`:
+- atacar sem guerra prévia → guerra declarada, ataque aplicado
+- mover para tile inimigo sem pacto → rejeitado 'enemy territory'
+- mover para tile aliado (pacto ativo) → aceito
+
+pnpm test
+```
+
+✅ **Commit:** `"feat(bal-1): auto-declare war on attack + territory movement block"`
+
+---
+
+### BAL-2 — Nerfe de especiais + Penalidade diplomática · **Opus** 🔴
+
+```
+PARTE 1 — Nerfe de unidades especiais em `packages/game-engine/src/units.ts`:
+O Berserker (atk 24) é ~56% mais forte que o Knight base de outras civs,
+considerando o bônus Viking de +15% combat. Manter o flavor, cortar a
+vantagem absoluta para ≤ 20% vs. a unidade que substitui:
+
+- Berserker: attack 24 → 20, HP 14 → 12
+- Cavaleiro Mongol: se ataque > 15 (Cavalry base tem 12), trazer para ≤ 15
+- Carro de Guerra Egípcio: não deve ter mais que +2 attack vs. Cavalry base
+- Regra geral: nenhum especial pode ter soma (atk + def + HP) > 35% acima
+  do substituto base
+
+PARTE 2 — Penalidade diplomática por guerra em `packages/game-engine/src/ai.ts`:
+- No processamento de IA: detectar se um player declarou guerra nos últimos
+  5 turnos (verificar o log de ações ou campo equivalente no GameState).
+- Player marcado como "warmonger": a IA recusa propostas de pacto vindas dele
+  e prioriza propor pacto com outros players (coalizão simples contra o agressor).
+- Manter toda a lógica existente de IA intacta; adicionar apenas este bloco
+  de verificação de warmonger.
+
+pnpm test
+```
+
+✅ **Commit:** `"feat(bal-2): nerf special units + AI warmonger penalty"`
+
+---
+
+### BAL-3 — Quatro novas civilizações · Sonnet 🧠
+
+```
+Adicionar 4 novas civilizações em `packages/game-engine/src/civilizations.ts`
+e suas unidades especiais em `packages/game-engine/src/units.ts`.
+
+───────────────────────────────────────────────
+PERSAS (Era: ancient)
+- id: 'persians'  color: '#9B59B6' (roxo imperial)
+- Trait: Rota Real — +20% renda de ouro por turno; propostas de pacto
+  custam 50% menos ouro para o jogador Persa
+- Especial: Imortal (immortal) — substitui Warrior
+  Stats: attack 9, defense 6, HP 12, movement 2. Production cost: 15
+  (mesma defesa elevada, attack similar ao Guerreiro base)
+
+───────────────────────────────────────────────
+ASTECAS (Era: classical)
+- id: 'aztecs'  color: '#27AE60' (verde jade)
+- Trait: Expansão Ritual — cada cidade capturada concede +5 production
+  permanente ao player Asteca (adicionar campo `conquestBonusProduction`
+  no player e somá-lo ao income de production a cada turno)
+- Especial: Águia Guerreira (eagle_warrior) — substitui Cavalry
+  Stats: attack 13, defense 4, HP 9, movement 4. Production cost: 38
+  (mais ágil, menos tanque que Cavalry base)
+
+───────────────────────────────────────────────
+JAPONESES (Era: medieval)
+- id: 'japanese'  color: '#E74C3C' (vermelho lacquer)
+- Trait: Bushido — +15% combat para todas as unidades japonesas
+  (mesmo padrão de Vikings; verificar helper de bônus em ai.ts/actions.ts)
+- Especial: Samurai (samurai) — substitui Knight
+  Stats: attack 20, defense 9, HP 14, movement 2. Production cost: 65
+  Diferencial: ao ser atacado, devolve 25% do dano recebido ao atacante
+  (counterattack). Implementar em `packages/game-engine/src/combat.ts`
+  — se estrutura não suportar counterattack, usar stats superiores simples
+  e marcar TODO para fase futura.
+
+───────────────────────────────────────────────
+OTOMANOS (Era: medieval)
+- id: 'ottomans'  color: '#E67E22' (laranja sultão)
+- Trait: Mestre de Cerco — Catapultas custam 30% menos production
+  (aplicar desconto em validateAction → trainUnit para unitType 'catapult')
+- Especial: Janízaro (janissary) — substitui Besteiro/Crossbowman
+  Stats: attack 16, defense 5, HP 12, movement 2. Production cost: 50
+
+───────────────────────────────────────────────
+Para cada civ: preencher name, id, era, specialty, specialtyDescription,
+color e o campo bio se existir em GameListPage.
+
+Atualizar `packages/game-engine/src/civilizations.test.ts` com as 4 novas civs.
+pnpm test
+```
+
+✅ **Commit:** `"feat(bal-3): add Persians, Aztecs, Japanese, Ottomans + special units"`
+
+---
+
+### BAL-4 — Streak de desafios diários · Sonnet 🧠
+
+```
+Implementar contador de streak (dias consecutivos) para o Daily Challenge.
+
+PASSO 1 — DB (Supabase):
+Verificar se existe tabela `profiles` (padrão Supabase). Se sim, adicionar:
+  daily_streak INT DEFAULT 0
+  last_daily_date DATE
+Se não existir, criar migration em `supabase/migrations/` com:
+  CREATE TABLE user_stats (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    daily_streak INT DEFAULT 0,
+    last_daily_date DATE
+  );
+  + Row Level Security: usuário lê/edita apenas os próprios dados.
+
+PASSO 2 — Lógica em `apps/web/src/api.ts` ou diretamente em DailyCard.tsx:
+Ao detectar que o daily ficou `is_finished = true` (polling ou após End Turn):
+- Buscar `last_daily_date` do usuário
+- Se last_daily_date == today − 1 dia → streak++   (consecutivo)
+- Se last_daily_date == today → nenhuma mudança    (já contou hoje)
+- Se gap > 1 dia ou NULL → streak = 1              (reinicia ou primeiro dia)
+- Atualizar last_daily_date = today no DB
+
+PASSO 3 — UI em `apps/web/src/components/DailyCard.tsx`:
+- Buscar streak no useEffect de carregamento do daily
+- Exibir badge `🔥 N` ao lado do título "Daily Challenge" quando streak ≥ 2
+- Streak 0 ou 1: não exibir badge (não punir quem começa)
+- Incluir streak na share message se ≥ 3: linha extra `🔥 Streak: N dias`
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(bal-4): daily streak counter + 🔥 badge in DailyCard"`
+
+---
+
+### BAL-5 — Mensagem de compartilhamento · Sonnet
+
+```
+Atualizar `buildShareText()` em `apps/web/src/components/DailyCard.tsx`.
+
+Formato atual:
+  Aetas Daily — [data]
+  [resultado] | [pts]
+  🏙️ [terr]  👥 [pop]  🔬 [dev]
+  ([turno X/Y])
+
+Novo formato:
+  🏛️ Aetas Daily — [data formatada]
+  [emoji resultado] [texto resultado] · [total] pts
+  🏙️[terr]  👥[pop]  🔬[dev]  · Turno [X]/[Y]
+  🔗 playaetas.vercel.app
+
+Regras:
+- emoji resultado: 🏆 vitória / ❌ derrota / 🤝 empate
+- Linha de URL é literal (não internacionalizada)
+- Se streak ≥ 3: inserir linha `🔥 Streak: N dias` antes da URL
+- Testar `navigator.clipboard.writeText` em iOS — se bloqueado fora de
+  gesture handler, adicionar fallback via Web Share API:
+  `if (navigator.share) navigator.share({ text })` antes do clipboard
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(bal-5): improved share message + web URL"`
+
+---
+
+🛑 **CHECKPOINT BAL:** Validar em partida real (médio, 3–4 civs):
+- Atacar unidade inimiga sem pacto/guerra → log mostra guerra declarada, ataque ocorre
+- Tentar mover para tile colorido de outro player sem pacto → movimento bloqueado
+- Berserker ainda é ameaça mas não vence sozinho 2 civs em 20 turnos
+- Após player declarar guerra, IA rejeita pactos e tende a coligar contra ele
+- Seletor de civ mostra as 4 novas (Persa, Asteca, Japonês, Otomano) com bios
+- Daily: após 2 dias consecutivos aparece 🔥 N no card
+- Share: mensagem inclui `🔗 playaetas.vercel.app` e streak se ≥ 3
+
+> **Eras pendente:** Adicionar Renascimento/Industrial ficou fora deste bloco.
+
+---
+
+## BLOCO ENT — Entretenimento & Profundidade
+
+Origem: ciclo `/playbook-architect` (auditoria pós-BAL). Diagnóstico: o jogo
+está tecnicamente pronto para a web, mas é **previsível** — placar oculto até
+o fim (zero tensão no meio), snowball sem freio, vitória única por pontos, IA
+sem personalidade e nenhuma mecânica-assinatura. Este bloco ataca as 5
+alavancas de diversão, ordenadas por risco/fundação e payoff imediato.
+
+**Decisões travadas nesta sessão** (via AskUserQuestions):
+- Vitória: **dominação militar + placar ao vivo**
+- Anti-snowball: **custo crescente de expansão**
+- IA: **personalidade por civ** (Agressor / Construtor / Diplomata)
+- Mecânica-assinatura: **Maravilhas do Mundo** E **Eventos Mundiais** (ambas)
+
+**Regra de ouro reforçada:** toda regra nova vive em `packages/game-engine`.
+UI só renderiza e envia intenção. Rodar `pnpm --filter @aetas/game-engine test`
+após cada prompt de motor.
+
+---
+
+### ENT-1 — Placar ao vivo · Sonnet
+
+```
+Revelar o ranking de pontuação DURANTE a partida (hoje só aparece no fim).
+
+O motor já expõe tudo: `rankPlayers(state)` em
+`packages/game-engine/src/scoring.ts` já devolve território/população/
+desenvolvimento/total por jogador. NÃO mudar o motor.
+
+No cliente web:
+- Em `apps/web/src/components/ScoreModal.tsx` (ou o modal aberto pelo badge
+  👥 no header do GameView): mostrar a lista rankeada de TODOS os jogadores
+  visíveis, ordenada por total desc, com medalha para o 1º.
+- Marcar a linha do jogador local (destaque dourado).
+- Para jogadores ainda não contatados (fog), ocultar o nome real e mostrar
+  "??? " — não vazar informação que a névoa esconde. Usar o mesmo critério de
+  contato que a diplomacia usa (`haveMadeContact`/exploredHexes).
+- Adicionar um mini-indicador no header: posição do jogador (ex: "2º/4").
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ent-1): live in-game scoreboard with fog-aware ranking"`
+
+---
+
+### ENT-2 — Vitória por Dominação · **Opus** 🔴 🧠
+
+```
+Adicionar uma SEGUNDA condição de vitória: dominação militar. Se um jogador
+fica sendo o único não-eliminado (todos os outros perderam suas cidades),
+a partida encerra IMEDIATAMENTE com ele como vencedor — sem esperar maxTurns.
+
+Contexto do motor:
+- `packages/game-engine/src/turn.ts` já chama `eliminatePlayersWithNoCities`
+  e tem o hook `determineWinner` (de `scoring.ts`) para o fim por maxTurns.
+- `packages/game-engine/src/scoring.ts` tem `determineWinner(state)`.
+
+Implementar em `turn.ts` (é máquina de estados — cuidado com edge cases):
+- Após resolver eliminações no fim de um turno, checar `activePlayers(state)`.
+  Se restar exatamente 1 jogador ativo → definir `state.winner = esseId`,
+  `state.isFinished = true`, encerrar já.
+- Empate por eliminação mútua no mesmo passo (raro, mas possível se um combate
+  por timeout elimina o penúltimo E o último simultaneamente): resolver por
+  maior pontuação com `determineWinner`; se ainda empatar, `winner = null`.
+- Vitória por dominação tem precedência sobre a de maxTurns.
+
+Testes novos em `turn.test.ts`:
+- 3 jogadores, 2 perdem a última cidade no mesmo turno → o 3º vence na hora.
+- Eliminação NÃO encerra se ainda há ≥2 ativos.
+- Dominação no turno 5 de uma partida de 20 turnos encerra em 5.
+
+pnpm --filter @aetas/game-engine test
+```
+
+✅ **Commit:** `"feat(ent-2): military domination victory (last civ standing)"`
+
+🛑 **CHECKPOINT ENT-A:** Jogar 1 partida no médio conquistando as duas IAs →
+a partida deve encerrar no momento da última captura, com tela de vitória; o
+placar ao vivo (ENT-1) deve bater com o resultado final.
+
+---
+
+### ENT-3 — Custo crescente de expansão · Sonnet 🧠
+
+```
+Frear o snowball: cada cidade adicional torna a PRÓXIMA expansão mais cara.
+Objetivo de design — expandir deve ser uma decisão, não um automatismo; quem
+já lidera paga mais caro para crescer.
+
+Regra (definir no motor, `packages/game-engine`):
+- O custo de produção do Colono (Settler) escala com o nº de cidades que o
+  jogador JÁ possui: custo_efetivo = custo_base * (1 + 0.5 * nCidades).
+  Ex.: base 20 → 1ª expansão (1 cidade) = 30, 2ª (2 cidades) = 40, etc.
+- Aplicar em `validateAction` e `applyAction` do case `trainUnit`, no mesmo
+  ponto onde o BAL-3 já calcula `effectiveCost` para o desconto Otomano de
+  Catapulta. Seguir exatamente esse padrão (não duplicar lógica).
+- IMPORTANTE: o custo escalado vale só para o Settler. Não afetar outras
+  unidades. Combinar com o desconto Otomano se algum dia colidir (não colide:
+  Otomano é Catapulta).
+- Expor o custo efetivo para a UI: a `CityModal` já mostra ⚙🌾💰 por unidade
+  (BAL-anteriores). Garantir que o número exibido para o Colono seja o
+  escalado, não o base — senão o jogador vê "insufficient production" sem
+  entender.
+
+Testes em `actions.test.ts`:
+- Jogador com 1 cidade: Settler custa base*1.5.
+- Jogador com 3 cidades: Settler custa base*2.5.
+- Warrior/Knight NÃO são afetados.
+
+pnpm --filter @aetas/game-engine test && pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ent-3): rising settler cost per owned city (anti-snowball)"`
+
+---
+
+### ENT-4 — Personalidade de IA por civ · **Opus** 🔴 🧠
+
+```
+Dar identidade às IAs: hoje toda civ joga igual. Criar 3 arquétipos que
+modulam os PESOS das decisões que a IA já toma (não inventar ações novas).
+
+Contexto: `packages/game-engine/src/ai.ts` já decide combate (com viés
+pessimista de +2 defesa), treino de unidades, expansão e diplomacia
+(warmonger tracking do BAL-2). A personalidade só ajusta thresholds/pesos.
+
+Arquétipos e mapeamento por civ:
+- AGRESSOR (vikings, mongols, aztecs, japanese): ataca com margem menor de
+  segurança; treina mais unidades militares; propõe menos pactos; declara
+  guerra mais cedo.
+- CONSTRUTOR (romans, china, egyptians, ottomans): prioriza edifícios e
+  expansão; ataca só com folga grande; defende bem; neutro em diplomacia.
+- DIPLOMATA (greeks, persians): propõe pactos proativamente; evita guerra;
+  foca economia; só ataca quem já é warmonger/inimigo declarado.
+
+Implementação:
+- Uma função `civPersonality(civId): 'aggressor'|'builder'|'diplomat'` (mapa).
+- Um objeto de PESOS por arquétipo (ex.: `attackSafetyMargin`,
+  `militaryTrainBias`, `pactPropensity`, `expansionBias`). Aplicar esses
+  pesos nos pontos de decisão EXISTENTES do ai.ts — não criar caminhos novos.
+- Manter DETERMINISMO: nada de RNG. Mesma entrada → mesma saída (a suíte
+  depende disso). Personalidade é função pura do civId.
+
+Testes em `ai.test.ts`:
+- Mesma situação de combate marginal: Agressor ataca, Construtor não.
+- Diplomata propõe pacto a um vizinho neutro; Agressor não.
+- Determinismo: rodar 2x a mesma decisão → resultado idêntico.
+
+pnpm --filter @aetas/game-engine test
+```
+
+✅ **Commit:** `"feat(ent-4): per-civ AI personalities (aggressor/builder/diplomat)"`
+
+🛑 **CHECKPOINT ENT-B:** Jogar 2 partidas com civs de IA diferentes → Vikings/
+Mongóis devem pressionar militarmente; Gregos/Persas devem propor pactos e
+evitar guerra. As civs precisam "sentir" diferentes.
+
+---
+
+### ENT-5 — Maravilhas do Mundo · **Opus** 🔴 🧠 (motor) + Sonnet (UI)
+
+```
+PARTE A (motor · Opus) — Adicionar Maravilhas: construções ÚNICAS globais.
+Apenas UM jogador no mundo pode ter cada maravilha; a primeira construção
+trava a maravilha para todos os outros. Efeito forte + pontos de placar.
+
+Novo arquivo `packages/game-engine/src/wonders.ts`:
+- ~6 maravilhas com id, nome, era requerida, custo de produção (alto: 80-150),
+  efeito e bônus de pontuação. Sugestões (ajustar no design):
+  - Grande Biblioteca (classical): +2 pesquisa de era/turno na cidade.
+  - Coliseu (classical): +10 pontos de desenvolvimento fixos.
+  - Grande Muralha (medieval): +5 defesa em TODAS as cidades do dono.
+  - Jardins Suspensos (ancient): +30% comida em todas as cidades do dono.
+  - Grande Farol (ancient): +1 movimento a unidades navais/costeiras (ou +1
+    visão global se naval não existir — checar).
+  - Sun Tzu / Academia Militar (medieval): -25% custo de treino militar.
+- Catálogo em Map (padrão de `civilizations.ts`) + helpers de lookup.
+- Estado: adicionar `wonders: BuiltWonder[]` em GameState (types.ts), cada um
+  com wonderId, ownerId, cityId, builtAtTurn.
+- Nova ação `buildWonder` (ou estender constructBuilding) com validação:
+  maravilha ainda não construída por NINGUÉM (trava global), era alcançada,
+  produção suficiente, cidade do jogador. applyAction deduz custo e registra.
+- Integrar bônus em `scoring.ts` (pontos) e nos agregadores de economia/
+  combate conforme o efeito (reusar o padrão dos aggregators de civ).
+- Testes em `wonders.test.ts`: unicidade global (2º jogador é bloqueado),
+  efeito aplicado, pontos no placar.
+
+PARTE B (UI · Sonnet, prompt separado) — Na `CityModal`, aba/lista de
+Maravilhas disponíveis: mostrar as não-construídas com custo e efeito; marcar
+as já tomadas por outro jogador como "Construída por [civ]" (bloqueada);
+botão Construir com o padrão pill existente. Ícone especial no mapa/cidade
+que possui uma maravilha.
+
+pnpm --filter @aetas/game-engine test
+```
+
+✅ **Commit (A):** `"feat(ent-5a): World Wonders system (globally unique builds)"`
+✅ **Commit (B):** `"feat(ent-5b): Wonders UI in CityModal + map marker"`
+
+🛑 **CHECKPOINT ENT-C:** Construir uma maravilha numa partida; numa segunda
+partida verificar que, quando a IA a constrói primeiro, o jogador vê
+"bloqueada"; os pontos entram no placar ao vivo.
+
+---
+
+### ENT-6 — Eventos Mundiais · **Opus** 🔴 🧠
+
+```
+Adicionar surpresa e variabilidade: eventos que disparam ao longo da partida.
+CRÍTICO — devem ser DETERMINÍSTICOS pela seed, para o desafio diário continuar
+comparável entre jogadores (mesma seed = mesmos eventos nos mesmos turnos).
+
+Novo arquivo `packages/game-engine/src/events.ts`:
+- Reusar o PRNG seedado que `map.ts` já usa na geração procedural (localizar
+  a função — provável mulberry32/splitmix). NÃO usar Math.random.
+- Derivar a semente de cada turno de forma determinística:
+  `rngForTurn(state.map.seed, state.turnNumber)`.
+- ~3 tipos de evento (v1):
+  - BÁRBAROS: spawn de unidade neutra hostil perto de uma cidade aleatória
+    (hostil a todos; a IA já sabe reagir a ameaças adjacentes).
+  - PRAGA: uma cidade aleatória perde 1 de população (mín. 1).
+  - ERA DOURADA: um jogador (ou todos, decidir) ganha +20% de renda por 2-3
+    turnos.
+- Frequência baixa e previsível (ex.: chance por turno a partir do turno 5;
+  ajustar por playtesting). Resolver os eventos como um passo em `turn.ts`
+  (no fim do turno, antes de passar a vez), retornando um log do que ocorreu.
+- Expor o log para a UI notificar (banner/toast "☄️ Bárbaros surgiram perto
+  de [cidade]!"). Sem regra nova no cliente — só exibição.
+- Testes em `events.test.ts`: MESMA seed + turno → MESMO evento (determinismo,
+  é o requisito mais importante); praga nunca zera população; bárbaro nasce em
+  hex válido (terreno não-água, dentro do mapa).
+
+pnpm --filter @aetas/game-engine test
+```
+
+✅ **Commit:** `"feat(ent-6): deterministic world events (barbarians/plague/golden age)"`
+
+---
+
+🛑 **CHECKPOINT ENT-FINAL:** Rodar o desafio diário DUAS vezes com a mesma
+data/seed → os eventos, o mapa e as posições iniciais devem ser idênticos
+(comparabilidade do diário preservada). Jogar uma partida completa usando
+todas as mecânicas novas: placar ao vivo, dominação, custo de expansão
+crescente, IAs com personalidades distintas, uma maravilha construída e ao
+menos um evento disparado. Confirmar que nenhuma delas quebra o loop ou o
+equilíbrio a ponto de tornar a partida trivial ou impossível.
+
+> Após o CHECKPOINT ENT-FINAL, retomar a **FASE 5 (Android)** — a web ganha
+> este bloco de profundidade antes de duplicar a UI em Kotlin.
+
+---
+
+## FASE 5 — Android nativo (Kotlin + Jetpack Compose)
+
+**Arquitetura thin-client:** o motor de jogo roda 100% no servidor (Edge
+Functions); o app Android é um cliente de apresentação que (1) autentica o
+usuário via Google OAuth, (2) lê `game_state` do Supabase, (3) renderiza em
+Jetpack Compose e (4) envia ações ao `submit-action` Edge Function.
+Nenhuma regra de jogo é re-implementada no Android.
+
+---
+
+### PRÉ-REQUISITOS MANUAIS — faça você mesmo antes de iniciar os prompts
+
+> ⚠️ Este checklist é executado por você, não pelo Claude Code.
+> Confirme cada item antes de prosseguir para o prompt 5.1.
+
+**1. Instalar Android Studio**
+- Baixe a versão mais recente em: https://developer.android.com/studio
+- Execute o instalador com as opções padrão (inclui JDK 17 embutido)
+- Na primeira abertura, siga o "Android Studio Setup Wizard" até o fim
+- Via **SDK Manager** (File → Settings → Android SDK ou ícone de engrenagem):
+  - Aba "SDK Platforms": marque **Android 8.0 (API 26)** (mínimo) e **Android 15 (API 35)** (target)
+  - Aba "SDK Tools": confirme que "Android Emulator" e "Android SDK Build-Tools" estão marcados
+
+**2. Criar emulador (ou usar celular físico)**
+- Opção A — Emulador: **Device Manager** (barra lateral) → "Create Virtual Device"
+  → Pixel 8 → selecione API 35 (x86_64) → Finish → clique ▶ para iniciar
+- Opção B — Celular físico (mais fiel ao comportamento real):
+  1. Configurações → Sobre o telefone → toque 7× em "Número da versão" → ativa Opções do Desenvolvedor
+  2. Configurações → Opções do Desenvolvedor → Depuração USB → ativar
+  3. Conecte o USB e aceite a permissão "Permitir depuração USB" no celular
+  4. No Android Studio o dispositivo aparece no seletor de run (triângulo ▶)
+
+**3. Criar projeto Firebase (gratuito)**
+- Acesse: https://console.firebase.google.com → "Adicionar projeto" → nome "Aetas"
+- No painel do projeto: "Adicionar app" → ícone Android 🤖
+  - Package name: `com.aetas.app` (anote: será o `applicationId` do Gradle)
+  - Baixe o **google-services.json** — você colocará em `apps/android/app/`
+- Ative o Firebase App Distribution: menu lateral Build → App Distribution → "Começar"
+
+**4. Copiar variáveis do Supabase**
+- Painel Supabase → Settings → API: copie `Project URL` e `anon public key`
+- Guarde-as para usar como variáveis de build no passo 5.1
+
+---
+
+**5.1 — Scaffold do módulo Android + configuração thin-client** · Sonnet 🧠
+
+```
+Crie apps/android/ como módulo Gradle nativo (Kotlin DSL). Arquitetura
+thin-client: toda lógica de jogo fica nas Edge Functions; o app renderiza
+GameState e submete ações via Supabase Kotlin SDK.
+
+ESTRUTURA:
+  apps/android/
+    app/
+      build.gradle.kts
+      google-services.json     (no .gitignore — dev coloca manualmente)
+      src/main/
+        AndroidManifest.xml
+        java/com/aetas/app/
+          AetasApplication.kt  (Hilt Application)
+          MainActivity.kt      (NavHost: Auth → GameList → Game)
+          ui/
+            auth/   (AuthScreen.kt, AuthViewModel.kt)
+            list/   (GameListScreen.kt, GameListViewModel.kt)
+            game/   (GameScreen.kt, GameViewModel.kt)
+          data/
+            SupabaseClient.kt  (singleton com URL/Key via BuildConfig)
+            GameRepository.kt  (fetch game_state + submit-action)
+          model/
+            GameSession.kt     (data class: id, gameState: JsonObject, updatedAt)
+    build.gradle.kts
+    settings.gradle.kts
+    gradle.properties
+    local.properties           (no .gitignore — contém SUPABASE_URL e ANON_KEY)
+
+DEPENDÊNCIAS principais (build.gradle.kts do app):
+  - io.github.jan-tennert.supabase:postgrest-kt
+  - io.github.jan-tennert.supabase:auth-kt
+  - io.github.jan-tennert.supabase:realtime-kt
+  - io.github.jan-tennert.supabase:compose-auth-ui
+  - androidx.compose.ui:ui + material3
+  - androidx.navigation:navigation-compose
+  - com.google.dagger:hilt-android + hilt-compiler
+
+SUPABASE_URL e SUPABASE_ANON_KEY: lidos de local.properties via gradle e
+injetados como BuildConfig.SUPABASE_URL / SUPABASE_ANON_KEY. Adicione
+local.properties ao .gitignore.
+
+Confirme que `./gradlew :app:assembleDebug` compila sem erros.
+```
+
+✅ **Commit:** `"feat(android): scaffold Kotlin/Compose thin-client"`
+
+---
+
+**5.2 — Autenticação Google via Supabase Kotlin** · Sonnet
+
+```
+Em apps/android/, implemente a tela de login com Google OAuth.
+
+1. SupabaseClient.kt: inicialize com BuildConfig.SUPABASE_URL e ANON_KEY.
+   Instale plugins: Auth, Postgrest, Realtime.
+
+2. AuthScreen.kt (Compose): botão "Entrar com Google" centralizado.
+   Use o composable GoogleButton do supabase compose-auth-ui, ou construa
+   manualmente com um OutlinedButton + ícone do Google (Material Icons).
+   Enquanto carrega: CircularProgressIndicator.
+
+3. AuthViewModel.kt:
+     supabase.auth.signInWith(Google)
+   Após sucesso: navegue para GameListScreen via navController.
+
+4. Persista a sessão: configure o SessionManager do supabase-kt para usar
+   SharedPreferences (sessão sobrevive a restart do app).
+
+5. MainActivity.kt: ao abrir, verifique supabase.auth.currentSessionOrNull()
+   — se válida, vá direto para GameListScreen sem mostrar AuthScreen.
+
+6. TopAppBar da GameListScreen: ícone de logout (ExitToApp) → chama
+   supabase.auth.signOut() e retorna para AuthScreen.
+
+Confirme: (a) clique no botão abre picker de conta Google, (b) após escolher
+a conta a sessão é salva e o app vai para GameListScreen, (c) reabrir o app
+mantém o login sem pedir credenciais novamente.
+```
+
+✅ **Commit:** `"feat(android): Google OAuth via Supabase Auth Kotlin"`
+
+---
+
+**5.3 — GameListScreen (lista de partidas ativas)** · Sonnet
+
+```
+Implemente a tela de lista de partidas em apps/android/.
+
+GameRepository.kt — fetchMyGames():
+  - Consulte a view/tabela `game_sessions` no Supabase com .from("game_sessions")
+    .select("id, game_state, updated_at").
+  - Filtre no cliente: game_state.players deve conter o userId do usuário logado
+    (supabase.auth.currentUserOrNull()?.id).
+  - Exponha como Flow<List<GameSession>> usando Realtime subscription na tabela
+    game_sessions (filtre por id dos jogos do usuário).
+
+GameListViewModel.kt:
+  - StateFlow<GameListUiState> (Loading | Success(games) | Error).
+  - Colete o Flow do repository e exponha ao composable.
+
+GameListScreen.kt:
+  - LazyColumn de cards. Cada card mostra:
+    · "vs [nomes dos oponentes]" — extraia de game_state.players (filtre o próprio userId)
+    · Chip "Seu turno" (verde) ou "Vez de [nome]" — compare currentPlayerId com myId
+    · Timestamp relativo da última atualização (ex: "há 2h")
+  - Swipe-to-refresh (PullToRefreshBox do Material 3).
+  - FAB "+" para novo jogo (stub: navega para CreateGameScreen futura).
+  - Ao clicar num card: navegar para GameScreen(gameId).
+
+Confirme: partidas do usuário aparecem, atualizam via Realtime sem reload
+manual, e toque num card navega corretamente.
+```
+
+✅ **Commit:** `"feat(android): GameListScreen com Realtime"`
+
+---
+
+**5.4 — GameScreen: HexMap em Canvas, ResourceBar e ações** · **Opus** 🔴 🧠
+
+```
+Implemente a tela principal de jogo. A peça mais complexa: mapa hex
+interativo desenhado em Compose Canvas. Planeje antes de codar.
+
+Leia antes de escrever qualquer linha:
+  - apps/web/src/components/HexMap.tsx (toda a matemática hex já está lá)
+  - packages/game-engine/src/map.ts (hexKey, hexDistance)
+  - O GameState JSON: map.tiles, units, cities, players, currentPlayerId, era
+
+COMPONENTE HexMap (@Composable + Canvas):
+  Matemática pointy-top hex (idêntica à web):
+    fun hexToPixel(q: Int, r: Int, size: Float): Offset {
+      return Offset(
+        x = size * (sqrt(3f) * q + sqrt(3f) / 2f * r),
+        y = size * (3f / 2f * r)
+      )
+    }
+  Para cada tile: desenhe um Path hexagonal (6 pontos).
+  Cores: Plains=verde escuro, Forest=verde, Hills=marrom, Mountain=cinza, Water=azul.
+  Unidades: círculo colorido com inicial do tipo (W=warrior, etc).
+  Cidades: quadrado no centro do hex + minibarra de HP abaixo.
+  Toque em hex: seleciona (estado local selectedHex).
+  Segundo toque em hex adjacente com unidade selecionada → chama submitAction(moveUnit).
+  Pan e zoom: Modifier.transformable(rememberTransformableState { scale, offset, _ -> ... }).
+
+RESOURCEBAR (topo, Row):
+  🏅{gold} 🌾{food} ⚙{production} 🗡{unitCount}·-{maintenance}g
+  Texto de manutenção em vermelho se gold < maintenance.
+
+PLAYERBAR (rodapé, LazyRow):
+  Chip por jogador: cor da civ + displayName + ícones ⚔/🏛.
+  Borda esquerda colorida no jogador ativo.
+
+AÇÕES:
+  - "Fim de Turno" Button no canto inferior direito, habilitado apenas quando
+    currentPlayerId == myId (supabase.auth.currentUserOrNull()?.id).
+  - submitAction(action: Map<String, Any>):
+      supabase.functions.invoke("submit-action",
+        body = mapOf("gameId" to gameId, "action" to action))
+  - Após sucesso, o Realtime subscription atualiza o GameState automaticamente.
+
+GameViewModel.kt:
+  - StateFlow<GameUiState> com o gameState atual e selectedHex.
+  - loadGame(gameId): busca game_state inicial + subscribe Realtime.
+  - submitAction(action): chama Edge Function, trata erro com snackbar.
+
+Confirme: você consegue mover unidade, encerrar turno, a IA responde e o
+estado atualiza no app em tempo real.
+```
+
+✅ **Commit:** `"feat(android): GameScreen HexMap Canvas + ResourceBar + ações"`
+
+🛑 **CHECKPOINT 5.4:** Jogue uma partida solo vs IA no emulador ou celular físico:
+- Login Google funciona
+- HexMap renderiza corretamente (tiles coloridos, unidades, cidades)
+- Mover unidade e encerrar turno funcionam
+- A IA responde no próximo End Turn
+- Sem crash em 5 turnos consecutivos
+
+---
+
+**5.5 — Distribuição via Firebase App Distribution (sem conta Google Play)** · Sonnet
+
+```
+Configure o Firebase App Distribution para distribuir o APK de testes
+gratuitamente, sem precisar da conta de dev do Google Play.
+
+1. Em apps/android/app/build.gradle.kts, adicione o plugin Firebase:
+     id("com.google.firebase.appdistribution") version "5.0.0"
+   Na seção buildTypes > release:
+     firebaseAppDistribution {
+       artifactType = "APK"
+       releaseNotes = "Build de teste — Aetas"
+       testers = "seuemail@gmail.com"  // substitua pelo seu e-mail
+     }
+
+2. No build.gradle.kts raiz (plugins block):
+     id("com.google.firebase.appdistribution") version "5.0.0" apply false
+
+3. Para distribuir, rode no terminal (na raiz do monorepo):
+     cd apps/android
+     ./gradlew :app:assembleRelease appDistributionUploadRelease
+   Você receberá um e-mail com link de instalação.
+   (Para App Distribution, o APK de release não precisa de keystore configurado
+   ainda — o Firebase aceita APK não-assinado para testes internos.)
+
+4. Crie docs/DISTRIBUTE_ANDROID.md com instruções completas:
+   - Como gerar o APK de teste (comando acima)
+   - Como adicionar testadores no Firebase Console (App Distribution → Testadores)
+   - Como o testador instala: clica no link do e-mail, instala o app Firebase
+     no celular, e a partir daí recebe atualizações automáticas
+   - Diferença entre App Distribution (testes, gratuito) e Google Play (produção, pago)
+   - Quando faz sentido migrar: quando você tiver >10 testadores ou quiser
+     distribuição pública
+
+Confirme: você recebe o e-mail do Firebase e consegue instalar o APK
+no celular clicando no link.
+```
+
+✅ **Commit:** `"feat(android): Firebase App Distribution configurado"`
+
+🛑 **CHECKPOINT 5.5 — ANDROID FUNCIONAL (via App Distribution):**
+Instale o APK via link do Firebase no seu celular físico (não emulador).
+Confirme:
+- Login Google funciona no APK de release (não só debug)
+- Lista de partidas carrega via Supabase
+- HexMap e ações funcionam sem crash
+- Realtime updates chegam sem refresh manual
+Só avance para a Fase 6 (Google Play) quando este checkpoint passar.
 
 ---
 
 ## FASE 6 — Publicação no Google Play
 
-Pode ser executada logo após a Fase 6. Não requer Mac. Requer apenas uma
-conta de desenvolvedor no Google Play Console (US$ 25, taxa única).
+Esta fase requer a conta de desenvolvedor Google Play (US$25, taxa única,
+em play.google.com/console). Você pode atrasar indefinidamente enquanto
+distribui via Firebase App Distribution (Fase 5.5).
 
-**Pré-requisitos manuais (faça você mesmo antes dos prompts):**
-- Crie a conta em play.google.com/console e pague a taxa de US$ 25.
-- Crie uma política de privacidade (pode ser uma página simples em GitHub
-  Pages ou no próprio site do jogo) — o Google exige o link.
-- Prepare screenshots do app Android (mínimo 2, tamanho 16:9 ou 9:16),
-  ícone 512×512px e um feature graphic 1024×500px.
+---
 
-**7.1 — Configuração de build de produção Android** · Sonnet
-```
-Em apps/android/, configure o build de produção para o Google Play:
-- Gere e documente o processo de criação do keystore de assinatura (arquivo
-  .jks) com keytool. IMPORTANTE: inclua instruções claras de que esta chave
-  deve ser guardada em local seguro — perder o keystore impede atualizações
-  futuras do app. Nunca commite o keystore no repositório.
-- Configure o arquivo keystore.properties (no .gitignore) e o build.gradle
-  para ler as credenciais de assinatura de variáveis de ambiente.
-- Gere um build .aab (Android App Bundle) assinado com `./gradlew
-  bundleRelease`. Valide que o .aab é gerado em app/build/outputs/bundle/.
-- Adicione ao README da pasta android/ as instruções passo a passo de como
-  um dev fresh gera o .aab de produção sem perder nada.
-```
+**6.0 — Política de Privacidade via GitHub Pages** · Haiku
 
-**7.2 — Pipeline CI/CD Android (GitHub Actions)** · Sonnet 🧠
 ```
-Crie .github/workflows/android-release.yml: um workflow que dispara
-manualmente (workflow_dispatch) ou em push para a branch `release/android`.
-O workflow deve: instalar Java e o SDK Android, ler as credenciais do
-keystore via GitHub Secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD,
-KEY_ALIAS, KEY_PASSWORD), gerar o .aab assinado, e fazer upload como
-artifact do GitHub Actions. Não configure upload automático para o Play
-Console ainda — só gerar o .aab via CI já é suficiente para a primeira
-submissão manual. Documente quais secrets precisam ser cadastrados no
-repositório do GitHub (com os nomes exatos).
+Gere docs/privacy-policy.html com política de privacidade adequada para
+o Aetas, considerando:
+  - Coleta: nome e e-mail via Google OAuth (identificação do jogador)
+  - Armazenamento: estado de jogo no Supabase (Postgres — confirme a região
+    no painel Supabase Settings → Infrastructure → Region)
+  - Não coleta: localização, contatos, câmera, microfone
+  - Terceiros: Google Sign-In (sujeito à política do Google)
+  - Retenção: dados excluídos mediante solicitação via e-mail de suporte
+
+A política deve:
+  - Ser em português (adicione seção em inglês ao final)
+  - Ter seções claras: "Dados coletados", "Como usamos", "Terceiros",
+    "Seus direitos (LGPD — Lei 13.709/2018)", "Contato"
+  - Incluir e-mail de suporte: [substitua pelo seu e-mail]
+  - Ser HTML standalone (sem dependências externas) para hospedar no GitHub Pages
+
+Crie também docs/SETUP_GITHUB_PAGES.md com o passo a passo:
+  1. No repositório GitHub: Settings → Pages → Source: "Deploy from branch"
+     → Branch: main → Folder: /docs → Save
+  2. Aguarde 1–2 min; a URL será:
+     https://[seuusuario].github.io/aetas/privacy-policy.html
+  3. Confirme que a URL abre e o conteúdo aparece
+  4. Guarde esta URL — será obrigatória no Google Play Console (passo 6.3)
+     e também pode ser usada no App Store Connect (Fase 8)
 ```
 
-**7.3 — Checklist de submissão manual** · Sonnet
+✅ **Commit:** `"docs: privacy policy HTML + GitHub Pages setup guide"`
+
+---
+
+**6.1 — Conta de dev + Keystore + build de produção (.aab)** · Sonnet
+
 ```
-Gere um arquivo docs/PUBLISH_ANDROID.md com o checklist completo de
-submissão para o Google Play Console:
-- Criar o app no Console (nome, categoria, classificação etária).
-- Upload do .aab gerado pelo CI no canal de testes internos primeiro.
-- Preencher os metadados da loja (título, descrição curta, descrição longa
-  — tudo em português, com versão em inglês se quiser distribuição global).
-- Upload de screenshots e feature graphic.
-- Configurar política de privacidade (link obrigatório).
-- Revisar e publicar no canal de produção.
-Liste também os motivos mais comuns de rejeição no Google Play e como
-evitá-los para um jogo multiplayer com login social.
+Configure o build de produção Android para submissão ao Google Play.
+
+PRÉ-REQUISITO HUMANO (faça antes de rodar este prompt):
+  - Crie a conta em play.google.com/console e pague US$25.
+  - Crie o app no Console: "Criar aplicativo" → nome "Aetas" → Jogo → Português.
+
+1. Geração do keystore — rode você mesmo no terminal (Claude não gera chaves):
+     keytool -genkey -v -keystore aetas-release.jks \
+       -alias aetas -keyalg RSA -keysize 2048 -validity 10000
+   CRÍTICO: guarde aetas-release.jks e as senhas num gerenciador de senhas.
+   Perder o keystore = impossível atualizar o app no Google Play para sempre.
+   Adicione aetas-release.jks ao .gitignore imediatamente.
+
+2. Crie apps/android/keystore.properties (também no .gitignore):
+     storeFile=../../aetas-release.jks
+     storePassword=SUA_SENHA_KEYSTORE
+     keyAlias=aetas
+     keyPassword=SUA_SENHA_KEY
+
+3. Em apps/android/app/build.gradle.kts, configure a assinatura de release:
+     signingConfigs {
+       create("release") {
+         val props = Properties()
+         props.load(rootProject.file("keystore.properties").inputStream())
+         storeFile = file(props["storeFile"] as String)
+         storePassword = props["storePassword"] as String
+         keyAlias = props["keyAlias"] as String
+         keyPassword = props["keyPassword"] as String
+       }
+     }
+     buildTypes {
+       release { signingConfig = signingConfigs.getByName("release") }
+     }
+
+4. Gere o .aab assinado:
+     ./gradlew :app:bundleRelease
+   Confirme que aparece em: app/build/outputs/bundle/release/app-release.aab
+
+5. Crie docs/BUILD_ANDROID.md com o passo a passo completo para um dev fresh:
+   geração do keystore, configuração do local.properties, comando de build,
+   e onde encontrar o .aab gerado.
 ```
+
+✅ **Commit:** `"feat(android): build de produção + keystore configurado"`
+
+---
+
+**6.2 — CI/CD Android via GitHub Actions** · Sonnet 🧠
+
+```
+Crie .github/workflows/android-release.yml: workflow que gera o .aab
+assinado automaticamente.
+
+Trigger: workflow_dispatch (manual) OU push para branch release/android.
+
+Etapas:
+  1. actions/checkout
+  2. actions/setup-java: distribution=temurin, java-version=17
+  3. Restaurar keystore a partir do secret KEYSTORE_BASE64:
+       echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > aetas-release.jks
+  4. Criar keystore.properties com os valores dos secrets
+  5. Criar local.properties com SUPABASE_URL e SUPABASE_ANON_KEY
+  6. ./gradlew :app:bundleRelease
+  7. actions/upload-artifact: path=apps/android/app/build/outputs/bundle/release/
+
+Secrets necessários (documente no workflow E em docs/BUILD_ANDROID.md):
+  KEYSTORE_BASE64       — base64 do .jks: base64 -i aetas-release.jks (macOS/Linux)
+                          Ou no PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("aetas-release.jks"))
+  KEYSTORE_PASSWORD     — senha do keystore
+  KEY_ALIAS             — alias da chave (aetas)
+  KEY_PASSWORD          — senha da chave
+  SUPABASE_URL          — URL do projeto Supabase
+  SUPABASE_ANON_KEY     — anon key do Supabase
+
+Não configure upload automático para o Play Console neste prompt — o .aab
+gerado pelo CI será submetido manualmente via drag-and-drop no Play Console.
+```
+
+✅ **Commit:** `"ci: GitHub Actions para build .aab Android de produção"`
+
+---
+
+**6.3 — Checklist de submissão ao Google Play Console** · Sonnet
+
+```
+Gere docs/PUBLISH_ANDROID.md com o checklist completo de publicação no
+Google Play, estruturado em 5 seções:
+
+1. TESTES INTERNOS PRIMEIRO (sem revisão da Google, instantâneo):
+   - Play Console → Testes → Testes internos → Criar release → Upload do .aab
+   - Adicione seu e-mail como testador interno
+   - Instale via link do Play Console (não APK) e confirme que funciona
+   - Só promova para produção após validar completamente aqui
+
+2. METADADOS DA LOJA:
+   - Título: "Aetas" (max 30 chars)
+   - Descrição curta: max 80 chars — ex: "Civ-like assíncrono. Construa impérios, domine eras."
+   - Descrição longa: max 4000 chars (use GAME_DESIGN.md como base)
+   - Screenshots: mínimo 2, tamanho 16:9 ou 9:16 (Ctrl+S no emulador Android Studio)
+   - Ícone: 512×512px PNG sem transparência
+   - Feature graphic: 1024×500px (use Canva ou GIMP)
+
+3. POLÍTICA DE PRIVACIDADE:
+   - Cole a URL do GitHub Pages gerada na Fase 6.0
+
+4. CLASSIFICAÇÃO ETÁRIA:
+   - Questionário IARC dentro do Play Console (~5 min)
+   - Aetas não tem violência realista, conteúdo adulto ou compras in-app
+   - Classificação esperada: Livre ou 12+
+
+5. MOTIVOS COMUNS DE REJEIÇÃO (jogos multiplayer + login social):
+   - App não funciona no emulador (teste em API 26, 30 e 35)
+   - Política de privacidade inacessível, expirada ou não cobre dados coletados
+   - Permissões declaradas no AndroidManifest sem uso real no app
+   - Crash na inicialização (teste com Google Play Pre-launch report)
+   - Login social sem fluxo de "skip" visível (o Google exige alternativa ao OAuth)
+
+Inclua também: como usar squoosh.app para redimensionar imagens
+gratuitamente no browser.
+```
+
+✅ **Commit:** `"docs: PUBLISH_ANDROID.md + checklist Google Play"`
 
 🛑 **CHECKPOINT DE PUBLICAÇÃO ANDROID — não pule.**
-Antes de submeter para produção: publique no canal de **testes internos** do
-Play Console (você consegue testar com até 100 e-mails cadastrados sem
-revisão da Google). Instale no seu próprio Android, jogue uma partida
-completa, confirme que o OAuth com Google funciona no build de produção
+Antes de promover para produção: publique no canal de **testes internos** do
+Play Console. Instale no seu celular via Play Store (não APK). Confirme:
+- OAuth com Google funciona no build de produção (diferente do debug)
+- Realtime Supabase funciona (updates chegam via WebSocket)
+- Sem crash em 5 turnos consecutivos
+- Política de privacidade acessível pelo link cadastrado
 (não só no emulador), e que as notificações Realtime chegam. Só aí promova
 para produção.
-
-✅ **Commit:** "pipeline Android + docs de publicação".
 
 ---
 
 ## FASE 7 — iOS nativo (Swift/SwiftUI)
 
-**Nota: você não tem Mac.** Xcode (necessário para compilar, testar e
-depurar iOS) só roda em macOS — isso não tem contorno via Claude Code, é uma
-restrição de plataforma da Apple. As opções reais, do mais simples ao mais
-caro:
+**Requer macOS.** Xcode só compila iOS em macOS — restrição de plataforma
+da Apple sem contorno no Windows. Opções quando estiver pronto:
+- **Mac físico** (comprar, pedir emprestado) — melhor experiência de debug.
+- **Codemagic** (cloud CI com runner macOS) — build e assinatura remotos,
+  sem Mac. Detalhado na Fase 8.
+- **MacStadium / MacinCloud** (acesso remoto via VNC) — semelhante ao Mac
+  local, custo mensal.
 
-1. **Adiar a Fase 5** até ter acesso a um Mac (comprar usado, pedir
-   emprestado, etc.) — a opção mais simples, e razoável dado que Android
-   (Fase 6) não tem essa restrição e pode vir antes.
-2. **Mac na nuvem** (ex: MacStadium, GitHub Actions com runner macOS,
-   Codemagic, ou serviços similares de "Mac em nuvem") — paga por uso/
-   assinatura, permite compilar e rodar testes via CI sem possuir o
-   hardware, mas a experiência de debug interativo (breakpoints, simulador
-   ao vivo) é mais limitada que local.
-3. **MacinCloud ou similar** (acesso remoto a um Mac físico via VNC) — mais
-   parecido com ter o Mac de verdade, custo mensal.
+Execute esta fase quando tiver acesso a um Mac. A numeração 7 reflete a
+ordem real de execução: Android (5) → Google Play (6) → **iOS (7)**.
 
-**Recomendação para este projeto:** inverta a ordem — faça **Android
-primeiro (Fase 6 → vira Fase 5)**, já que Kotlin/Android Studio rodam em
-Windows/Linux sem restrição. Deixe iOS por último, e decida o caminho (Mac
-próprio, nuvem, ou adiar) com mais folga, sem bloquear o progresso do projeto
-agora.
+---
 
-Os prompts abaixo continuam organizados como "Fase 5 = iOS", mas trate como
-**a fase que vem depois do Android**, não antes, dado o bloqueio.
+**7.1 — Scaffold e autenticação iOS** · Sonnet
 
-**5.1 — Scaffold e auth**
 ```
-Crie apps/ios/ como projeto Swift/SwiftUI. Configure Supabase Auth (Google +
-Apple OAuth) usando o SDK oficial do Supabase para Swift. Tela de lista de
-partidas. Siga as convenções do docs/GLOSSARY.md para nomear os conceitos
-de domínio de forma consistente com o resto do projeto.
+Crie apps/ios/ como projeto Swift/SwiftUI com Supabase Auth.
+Configure Google Sign-In + Apple Sign-In (obrigatório pela Apple quando
+qualquer outro OAuth existe). Tela de lista de partidas conectada ao
+Supabase via supabase-swift. Siga docs/GLOSSARY.md para nomenclatura.
 ```
 
-**5.2 — Mapa hex e telas de jogo** · Sonnet 🧠
+**7.2 — Mapa hex e telas de jogo iOS** · Sonnet 🧠
+
 ```
-Reimplemente a visualização do mapa hexagonal nativamente (SwiftUI Canvas ou
-similar) e as telas de jogo equivalentes à Fase 4 (web) — cidade, combate,
-diplomacia, fim de turno/partida. A LÓGICA é sempre via chamadas à API
-(Edge Functions); este client nunca decide um resultado de jogo sozinho.
+Reimplemente o HexMap em SwiftUI Canvas (mesma matemática pointy-top da web:
+hex_to_pixel com sqrt(3)*q para x e 3/2*r para y). Telas equivalentes à
+Fase 4 web: ResourceBar, PlayerBar, ações (moveUnit, endTurn). A lógica
+fica sempre nas Edge Functions — o client iOS nunca decide um resultado.
+Leia apps/web/src/components/HexMap.tsx para a matemática de referência.
 ```
 
-**5.3 — Desafio diário e progressão**
+**7.3 — Distribuição via TestFlight** · Sonnet
+
 ```
-Implemente as telas equivalentes às 4.4 e 4.5, consumindo a mesma API.
+Configure a assinatura de release (Provisioning Profile + certificado de
+distribuição) e o upload para App Store Connect via Transporter ou xcrun altool.
+Adicione pelo menos 1 testador interno no TestFlight e confirme que o build
+chega. Documente o processo em docs/PUBLISH_IOS.md.
 ```
 
-✅ **Commit:** "iOS completo".
+✅ **Commit:** `"feat(ios): scaffold Swift/SwiftUI + auth + telas principais"`
+
+🛑 **CHECKPOINT iOS:** Jogue uma partida completa via TestFlight no iPhone
+antes de submeter para a App Store.
 
 ---
 
 ## FASE 8 — Publicação na App Store (iOS)
 
-Esta fase requer uma conta de desenvolvedor Apple (US$ 99/ano) e resolve o
-problema do Mac via pipeline de CI na nuvem (Codemagic). Você não precisa
-de um Mac físico para submeter o app — o build e a assinatura rodam nos
-servidores do Codemagic.
+Requer conta Apple Developer (US$99/ano) e resolve o build remoto via
+Codemagic — sem Mac físico necessário para o pipeline de CI.
 
-**Pré-requisitos manuais (faça você mesmo antes dos prompts):**
-- Crie a conta em developer.apple.com e assine o contrato de desenvolvedor.
-- No App Store Connect (appstoreconnect.apple.com), crie o app com o nome
-  "Aetas" e o bundle ID (ex: `com.seudominio.aetas`).
-- Crie os certificados de distribuição e provisioning profiles no portal de
-  desenvolvedor Apple — o Codemagic tem um guia específico pra fazer isso
-  sem Mac, usando o portal web da Apple diretamente.
-- Prepare screenshots no tamanho exato do iPhone mais recente (o App Store
-  Connect especifica os tamanhos aceitos — use um simulador online ou o
-  próprio Codemagic pra gerar).
-- Crie a política de privacidade (mesma URL usada no Android serve).
+**PRÉ-REQUISITOS MANUAIS:**
+- Crie a conta em developer.apple.com e assine o contrato de desenvolvedor
+- No App Store Connect: crie o app "Aetas" com bundle ID `com.aetas.app`
+- Crie certificados de distribuição e provisioning profiles via portal web
+  da Apple (o Codemagic tem guia passo a passo para fazer sem Mac)
+- Política de privacidade: use a mesma URL do GitHub Pages (Fase 6.0)
+- Screenshots: use o simulador iOS no Codemagic ou squoosh.app para redimensionar
 
-**8.1 — Configuração de build de produção iOS** · Sonnet
+**8.1 — Build de produção iOS** · Sonnet
+
 ```
-Em apps/ios/, configure o build de produção para a App Store:
-- Ajuste o Info.plist com as permissões corretas (o jogo usa câmera?
-  localização? se não, remova qualquer permissão não utilizada — a Apple
-  rejeita apps que declaram permissões sem justificativa).
-- Configure o Bundle ID e a versão (CFBundleShortVersionString e
-  CFBundleVersion) de forma que o CI possa incrementar automaticamente.
-- Documente em docs/PUBLISH_IOS.md o que cada campo do Info.plist significa
-  e por que foi configurado assim.
-- Valide que o app não usa nenhuma API privada da Apple (a revisão rejeita
-  automaticamente por uso de APIs não-públicas).
+Em apps/ios/, configure Info.plist para a App Store:
+- Remova TODA permissão não usada (câmera, localização, microfone — o Aetas
+  não usa nenhuma; a Apple rejeita declarações sem uso)
+- Configure CFBundleShortVersionString e CFBundleVersion para o CI incrementar
+- Valide que o app não usa APIs privadas da Apple
+- Documente em docs/PUBLISH_IOS.md cada campo configurado e o motivo
 ```
 
 **8.2 — Pipeline CI/CD iOS via Codemagic** · Sonnet 🧠
+
 ```
-Crie codemagic.yaml na raiz do repositório configurando o pipeline de build
-iOS para o Codemagic:
-- Instância: mac_mini_m2 (ou equivalente disponível no Codemagic).
-- Trigger: manual ou push para `release/ios`.
-- Etapas: instalar dependências Swift, compilar o app, assinar com os
-  certificados da Apple (via Codemagic Code Signing — as credenciais ficam
-  no painel do Codemagic, não no repositório), exportar o .ipa, e fazer
-  upload automático para o App Store Connect via altool/xcrun.
-- Documente quais variáveis de ambiente precisam ser cadastradas no
-  Codemagic (APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_ID,
-  APP_STORE_CONNECT_PRIVATE_KEY, e as credenciais de assinatura).
-Inclua no codemagic.yaml o passo de teste unitário (XCTest) antes do build
-de produção — não submeta para a App Store sem ao menos os testes básicos
-passando no CI.
+Crie codemagic.yaml na raiz do repositório:
+- Instância: mac_mini_m2
+- Trigger: workflow_dispatch ou push para release/ios
+- Etapas: instalar deps Swift, compilar, assinar via Codemagic Code Signing
+  (credenciais no painel Codemagic — não no repo), exportar .ipa, upload ao
+  App Store Connect via altool
+- Variáveis necessárias: APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_ID,
+  APP_STORE_CONNECT_PRIVATE_KEY + credenciais de assinatura
+- Inclua XCTest antes do build de produção
 ```
 
-**8.3 — Checklist de submissão manual** · Sonnet
+**8.3 — Checklist de submissão App Store** · Sonnet
+
 ```
-Expanda docs/PUBLISH_IOS.md com o checklist completo de submissão:
-- Verificar no App Store Connect que o build subido pelo Codemagic aparece
-  na seção "TestFlight" (pode demorar 15-30 min após o upload).
-- Testar via TestFlight em pelo menos 1 dispositivo real antes de submeter
-  para revisão — confirmar que o Sign in with Apple funciona no build de
-  produção, e que o Sign in with Google também (o Aetas tem ambos, e a
-  Apple exige Sign in with Apple se qualquer outro provedor social existe).
-- Preencher os metadados no App Store Connect: título, subtítulo, descrição,
-  keywords (11 palavras-chave), URL de suporte, URL de privacidade,
-  classificação etária, screenshots obrigatórios.
-- Submeter para revisão e documentar as respostas comuns de rejeição para
-  jogos multiplayer (permissões, GameKit, etc.) e como resolvê-las.
-- Notar que cada atualização futura passa por revisão novamente — planejar
-  releases com margem de 3-7 dias úteis para a revisão da Apple.
+Expanda docs/PUBLISH_IOS.md com:
+- Verificar build no TestFlight (pode demorar 15-30 min após upload)
+- Testar Sign in with Apple E Sign in with Google no build de produção
+  (Apple exige Sign in with Apple quando qualquer outro OAuth existe)
+- Preencher metadados: título, subtítulo, keywords (11 palavras), URL de
+  privacidade, classificação etária, screenshots obrigatórios
+- Motivos comuns de rejeição: permissões não declaradas, crash no launch,
+  funcionalidade quebrada sem internet, falta de Sign in with Apple
+- Planejar 1-7 dias úteis de revisão por atualização
 ```
 
-🛑 **CHECKPOINT DE PUBLICAÇÃO iOS — não pule.**
-Antes de submeter para revisão da Apple: distribua via TestFlight para pelo
-menos 2-3 pessoas (você mesmo em dispositivos diferentes conta). Jogue uma
-partida multiplayer completa via TestFlight, confirme OAuth funcionando,
-notificações chegando, e que nenhuma tela mostra crash ou estado inválido.
-A revisão da Apple é a mais cara de reprovar — um ciclo de rejeição + correção
-+ nova submissão pode levar 1-2 semanas. Vale testar bem antes.
+🛑 **CHECKPOINT DE PUBLICAÇÃO iOS:** Distribua via TestFlight para 2-3
+dispositivos reais. Confirme OAuth (ambos provedores), Realtime Supabase e
+zero crash. A revisão da Apple é cara de reprovar — teste bem antes.
 
-✅ **Commit:** "pipeline iOS (Codemagic) + docs de publicação".
+✅ **Commit:** `"pipeline iOS (Codemagic) + docs App Store"`
 
 ---
 
-
-
-**T.1 — Slash command de teste**
+**T.1 — Slash command de teste** · Haiku
 ```
-Crie .claude/commands/testar.md: roda vitest run no game-engine e resume.
+Crie .claude/commands/testar.md: roda pnpm --filter @aetas/game-engine test
+e exibe o resumo de passes/failures.
 ```
 
-**T.2 — Subagent revisor de concorrência** 🔴 (defina como Opus)
+**T.2 — Subagent revisor de concorrência** 🔴
 ```
-Crie .claude/agents/revisor-concorrencia.md: subagent que revisa mudanças em
-turn.ts, combat.ts e nas Edge Functions de orquestração, especificamente
+Crie .claude/agents/revisor-concorrencia.md: subagent Opus que revisa
+mudanças em turn.ts, combat.ts e nas Edge Functions de orquestração,
 procurando condições de corrida e estados inconsistentes — os pontos mais
 caros de errar neste projeto.
 ```
@@ -1259,39 +3324,32 @@ caros de errar neste projeto.
 
 ### Lembrete final
 
-Este é o projeto mais ambicioso dos quatro — três UIs completas sobre um
-motor compartilhado, com multiplayer assíncrono persistente.
-
 **Ordem completa de execução:**
 ```
-0 → 1 ✅ → 1.5 → 2 ✅ → 3 ✅ → 4 ✅
-→ 4.5 (A → B → B-Extra → C)
-→ 5 (Android) → 6 (Google Play) → 7 (iOS) → 8 (App Store)
+0 → 1 ✅ → 1.5 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 4.5 (A/B/C/D/E) ✅
+→ 5 (Android) → 6 (Google Play) → 7 (iOS, quando tiver Mac) → 8 (App Store)
 ```
 
-**Estado atual:** Fase 4.5 Bloco B implementado (incluindo B6).
-**Próximo:** Bloco B-Extra (BX1→BX6) → lançamento web `playaetas.vercel.app`
-→ Bloco C → Android.
+**Estado atual:** Fases 0–4 + Bloco 4.5 E1–E8 + UI-T1/T2/T3 commitados e deployados. Engine balanceado, cidades com level-up, visual romano base entregue.
+**Próximo:** BLOCO BAL ✅ concluído (BAL-1 a BAL-5). Agora BLOCO ENT →
+ENT-1 (placar ao vivo · Sonnet) → ENT-2 (vitória por dominação · **Opus** 🔴) →
+🛑 CHECKPOINT ENT-A → ENT-3 (custo crescente de expansão · Sonnet) →
+ENT-4 (personalidade de IA por civ · **Opus** 🔴) → 🛑 CHECKPOINT ENT-B →
+ENT-5 (Maravilhas do Mundo · **Opus** 🔴 motor + Sonnet UI) → 🛑 CHECKPOINT ENT-C →
+ENT-6 (Eventos Mundiais determinísticos · **Opus** 🔴) → 🛑 CHECKPOINT ENT-FINAL →
+Fase 5 Android
+(comece pelos PRÉ-REQUISITOS MANUAIS de cada UI-V, depois pelos da Fase 5).
 
 **Três regras que não mudam:**
-1. **AskUserQuestions é obrigatório** antes de qualquer decisão de design
-   não coberta neste playbook — nunca assuma, sempre pergunte.
-2. **Sonnet 4.6 é o padrão.** Troque para Opus 4.8 SOMENTE nos prompts
-   marcados 🔴 — nunca no projeto inteiro.
-3. **Checkpoints não são opcionais** — cada um existe porque o custo de
-   um bug descoberto depois é multiplicado pelo número de UIs a corrigir.
-
-**Checkpoints da Fase 4.5, em ordem:**
-- 🛑 Checkpoint Visual (após Bloco A)
-- 🛑 Checkpoint de Jogabilidade (após Bloco B)
-- 🛑 **Checkpoint Pré-Lançamento Web** (após Bloco B-Extra) — mais
-  importante antes de qualquer usuário real tocar no jogo.
-- 🛑 Checkpoint Final da Web (após Bloco C)
+1. **AskUserQuestions é obrigatório** antes de decisão de design não coberta.
+2. **Sonnet 4.6 é o padrão.** Opus 4.8 somente nos prompts marcados 🔴.
+3. **Checkpoints não são opcionais** — cada um existe porque o custo de um
+   bug descoberto tarde é multiplicado pelo número de UIs a corrigir.
 
 **Lembretes práticos de publicação:**
-- **Web:** lance em `playaetas.vercel.app`, valide com usuários reais,
-  compre domínio só se valer a pena (`aetas.game` ou `playaetas.app`).
-- **Android:** guarde o keystore fora do repo — perder = não atualizar mais.
+- **Keystore Android:** guarde fora do repo — perder = não atualizar mais.
+- **Política de privacidade (GitHub Pages):** gere antes de abrir a conta Play.
+- **App Distribution (Firebase):** distribua sem custo enquanto valida o app.
 - **iOS sem Mac:** use Codemagic (Fase 8) — build e assinatura na nuvem.
-- **App Store:** cada atualização passa por revisão (1-7 dias úteis).
+- **App Store:** revisão leva 1–7 dias úteis; planeje com margem.
 
