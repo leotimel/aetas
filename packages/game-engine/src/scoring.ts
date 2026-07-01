@@ -1,4 +1,5 @@
-﻿import type { GameState, City } from './types.js'
+﻿import { TurnState } from './types.js'
+import type { GameState, City } from './types.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,23 @@ export function determineWinner(state: GameState): string | null {
   if (ranked.length === 0) return null
   if (ranked.length >= 2 && ranked[0]!.total === ranked[1]!.total) return null
   return ranked[0]!.playerId
+}
+
+/**
+ * Domination end-game rule, single-sourced. If ≤1 player remains active,
+ * returns a finished state with the lone survivor as winner (or null on
+ * mutual annihilation). Otherwise returns the input unchanged (same ref).
+ * Called mid-turn after a city capture (actions.ts) and at end-of-turn (turn.ts).
+ */
+export function finalizeIfDominated(state: GameState): GameState {
+  const active = state.players.filter(p => !p.isEliminated)
+  if (active.length > 1) return state
+  return {
+    ...state,
+    isFinished: true,
+    winner: active[0]?.id ?? null,
+    turnState: TurnState.Completed,
+  }
 }
 
 /**

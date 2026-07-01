@@ -125,6 +125,17 @@ function hexDistance(a, b) {
   const dr = a.r - b.r;
   return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
 }
+function territoryOwnerAt(cities, coord, maxRadius = 2) {
+  let best = null;
+  for (const city of cities) {
+    const d = hexDistance(coord, city.position);
+    if (d > maxRadius) continue;
+    if (!best || d < best.dist || d === best.dist && city.id < best.cityId) {
+      best = { dist: d, cityId: city.id, ownerId: city.ownerId };
+    }
+  }
+  return best ? best.ownerId : null;
+}
 function hexNeighbors(coord) {
   return HEX_DIRECTIONS.map((d) => ({ q: coord.q + d.q, r: coord.r + d.r }));
 }
@@ -632,6 +643,16 @@ function determineWinner(state) {
   if (ranked.length >= 2 && ranked[0].total === ranked[1].total) return null;
   return ranked[0].playerId;
 }
+function finalizeIfDominated(state) {
+  const active = state.players.filter((p) => !p.isEliminated);
+  if (active.length > 1) return state;
+  return {
+    ...state,
+    isFinished: true,
+    winner: active[0]?.id ?? null,
+    turnState: "completed" /* Completed */
+  };
+}
 function eliminatePlayersWithNoCities(state) {
   const toEliminate = state.players.filter(
     (p) => !p.isEliminated && !state.cities.some((c) => c.ownerId === p.id)
@@ -820,7 +841,9 @@ var SPECIAL_UNITS = [
     eraRequired: "ancient" /* Ancient */,
     productionCost: 30,
     replacesType: "warrior" /* Warrior */,
-    stats: { attack: 9, defense: 12, maxHp: 14, movement: 2 },
+    // Nerf (BAL-2): hp 14→12 to honour the "≤35% stat-sum over base" cap
+    // (was 40% over Warrior). Defensive identity (def 12) kept intact.
+    stats: { attack: 9, defense: 12, maxHp: 12, movement: 2 },
     canFoundCity: false,
     description: "Infantaria de forma\xE7\xE3o cerrada. Defesa excepcional, ataque contido."
   },
@@ -831,7 +854,9 @@ var SPECIAL_UNITS = [
     eraRequired: "medieval" /* Medieval */,
     productionCost: 70,
     replacesType: "knight" /* Knight */,
-    stats: { attack: 24, defense: 8, maxHp: 14, movement: 3 },
+    // Nerf (BAL-2): atk 24→20, hp 14→12. With the +15% Viking combat bonus its
+    // effective attack stays a threat without one-shotting; sum now below Knight.
+    stats: { attack: 20, defense: 8, maxHp: 12, movement: 3 },
     canFoundCity: false,
     description: "Guerreiro em transe de batalha. Ataque excepcional; sem escudo."
   },
@@ -845,6 +870,51 @@ var SPECIAL_UNITS = [
     stats: { attack: 15, defense: 6, maxHp: 12, movement: 3, range: 2 },
     canFoundCity: false,
     description: "Arqueiro montado. Combina mobilidade de cavalaria com alcance de besteiro."
+  },
+  // Persas — Warrior replacement: similar ao Guerreiro mas com defesa superior
+  {
+    type: "persian_immortal",
+    name: "Imortal",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 15,
+    replacesType: "warrior" /* Warrior */,
+    stats: { attack: 9, defense: 6, maxHp: 12, movement: 2 },
+    canFoundCity: false,
+    description: "Guarda imperial persa. Resistente e disciplinado."
+  },
+  // Astecas — Cavalry replacement: mais ágil, menos tanque
+  {
+    type: "aztec_eagle_warrior",
+    name: "\xC1guia Guerreira",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 38,
+    replacesType: "cavalry" /* Cavalry */,
+    stats: { attack: 13, defense: 4, maxHp: 9, movement: 4 },
+    canFoundCity: false,
+    description: "Guerreiro \xE1gil. Captura prisioneiros em combate."
+  },
+  // Japoneses — Knight replacement; counterattack 25% é TODO (resolveCombat não suporta)
+  {
+    type: "japanese_samurai",
+    name: "Samurai",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 65,
+    replacesType: "knight" /* Knight */,
+    // TODO: counterattack (25% dano recebido devolvido) aguarda refactor de resolveCombat
+    stats: { attack: 20, defense: 9, maxHp: 14, movement: 2 },
+    canFoundCity: false,
+    description: "Guerreiro do bushido. Disciplina inabal\xE1vel no combate."
+  },
+  // Otomanos — Crossbowman replacement: mais ataque
+  {
+    type: "ottoman_janissary",
+    name: "Jan\xEDzaro",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 50,
+    replacesType: "crossbowman" /* Crossbowman */,
+    stats: { attack: 16, defense: 5, maxHp: 12, movement: 2, range: 2 },
+    canFoundCity: false,
+    description: "Elite jen\xEDzara com alcance de besteiro."
   }
 ];
 var SPECIAL_UNIT_CATALOG = new Map(
@@ -952,6 +1022,63 @@ var CATALOG_ENTRIES3 = [
       }
     ],
     specialUnitType: "china_horse_archer"
+  },
+  {
+    id: "persians",
+    name: "Persas",
+    description: "Imp\xE9rio mercantil da era antiga. A Rota Real conecta e enriquece.",
+    abilities: [
+      {
+        id: "persian_royal_road",
+        name: "Rota Real",
+        // TODO: desconto de 50% em ouro para propostas de pacto (proposePact sem custo de ouro atual)
+        description: "+20% renda de ouro por turno.",
+        effect: { type: "goldBonus", multiplier: 1.2 }
+      }
+    ],
+    specialUnitType: "persian_immortal"
+  },
+  {
+    id: "aztecs",
+    name: "Astecas",
+    description: "Expans\xE3o ritual. Cada conquista alimenta a m\xE1quina de guerra.",
+    abilities: [
+      {
+        id: "aztec_ritual_expansion",
+        name: "Expans\xE3o Ritual",
+        description: "+5 produ\xE7\xE3o permanente por cidade capturada.",
+        effect: { type: "conquestBonus", resourceType: "production", amountPerCity: 5 }
+      }
+    ],
+    specialUnitType: "aztec_eagle_warrior"
+  },
+  {
+    id: "japanese",
+    name: "Japoneses",
+    description: "Caminho do guerreiro. O Bushido eleva todo combatente.",
+    abilities: [
+      {
+        id: "japanese_bushido",
+        name: "Bushido",
+        description: "+15% de dano em combate para todas as unidades.",
+        effect: { type: "combatBonus", multiplier: 1.15 }
+      }
+    ],
+    specialUnitType: "japanese_samurai"
+  },
+  {
+    id: "ottomans",
+    name: "Otomanos",
+    description: "Mestres do cerco. Catapultas chegam mais cedo e custam menos.",
+    abilities: [
+      {
+        id: "ottoman_siege_master",
+        name: "Mestre de Cerco",
+        description: "Catapultas custam 30% menos produ\xE7\xE3o.",
+        effect: { type: "siegeDiscount", unitType: "catapult", multiplier: 0.7 }
+      }
+    ],
+    specialUnitType: "ottoman_janissary"
   }
 ];
 var CIVILIZATION_CATALOG = new Map(
@@ -1074,6 +1201,12 @@ function endTurn(state, playerId, now, hooks = {}) {
       food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food),
       production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production)
     };
+    if (actor.conquestBonusProduction) {
+      actor.resources = {
+        ...actor.resources,
+        production: actor.resources.production + actor.conquestBonusProduction
+      };
+    }
     const actorUnitCount = state.units.filter((u) => u.ownerId === actorId).length;
     const maint = applyUnitMaintenance(actor.resources.gold, actorUnitCount);
     actor.resources = { ...actor.resources, gold: maint.gold };
@@ -1094,16 +1227,7 @@ function endTurn(state, playerId, now, hooks = {}) {
   working = { ...working, players, cities, combatDisputes };
   const activeNow = activePlayers(players);
   if (activeNow.length <= 1) {
-    return {
-      ok: true,
-      state: {
-        ...working,
-        currentPlayerId: actorId,
-        turnState: "completed" /* Completed */,
-        isFinished: true,
-        winner: activeNow[0]?.id ?? null
-      }
-    };
+    return { ok: true, state: finalizeIfDominated({ ...working, currentPlayerId: actorId }) };
   }
   if (wrap && state.turnNumber === state.maxTurns) {
     const winner = hooks.determineWinner ? hooks.determineWinner(working) : determineWinner(working);
@@ -1642,6 +1766,13 @@ var DEFAULT_HOOKS = { resolveTimedOutDispute };
 function findUnit2(state, id) {
   return state.units.find((u) => u.id === id);
 }
+function ensureWarDeclared(state, attackerId, targetOwnerId) {
+  if (relationBetween(state, attackerId, targetOwnerId) === "neutral") {
+    const res = declareWar(state, attackerId, targetOwnerId);
+    if (res.ok) return res.state;
+  }
+  return state;
+}
 function validateAction(state, playerId, action, _now) {
   const gate = canSubmitAction(state, playerId);
   if (!gate.valid) return gate;
@@ -1697,11 +1828,13 @@ function validateAction(state, playerId, action, _now) {
       const allUnits = unitsForCiv(player.civilizationId, state.era);
       const unitDef = allUnits.find((u) => u.type === action.unitType);
       if (!unitDef) return { valid: false, reason: "unit not available in this era" };
-      if (player.resources.production < unitDef.productionCost) {
+      const rawCost = unitDef.productionCost;
+      const effectiveCost = player.civilizationId === "ottomans" && unitDef.type === "catapult" ? Math.floor(rawCost * 0.7) : rawCost;
+      if (player.resources.production < effectiveCost) {
         return { valid: false, reason: "insufficient production" };
       }
-      const foodCost = Math.ceil(unitDef.productionCost / 2);
-      const goldCost = Math.ceil(unitDef.productionCost / 3);
+      const foodCost = Math.ceil(effectiveCost / 2);
+      const goldCost = Math.ceil(effectiveCost / 3);
       if (player.resources.food < foodCost) return { valid: false, reason: "insufficient food" };
       if (player.resources.gold < goldCost) return { valid: false, reason: "insufficient gold" };
       const totalPop = state.cities.filter((c) => c.ownerId === playerId).reduce((s, c) => s + c.population, 0);
@@ -1755,6 +1888,10 @@ function validateAction(state, playerId, action, _now) {
       if (dist > unit.stats.movement) return { valid: false, reason: "target out of movement range" };
       const occupied = state.units.some((u) => hexKey(u.position) === hexKey(action.targetCoord));
       if (occupied) return { valid: false, reason: "target hex is occupied" };
+      const owner = territoryOwnerAt(state.cities, action.targetCoord);
+      if (owner && owner !== playerId && relationBetween(state, playerId, owner) === "neutral") {
+        return { valid: false, reason: "enemy territory" };
+      }
       return { valid: true };
     }
     case "foundCity": {
@@ -1833,16 +1970,17 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
     case "initiateCombat": {
       const attacker = findUnit2(state, action.attackerUnitId);
       const defender = findUnit2(state, action.defenderUnitId);
+      const warState = ensureWarDeclared(state, playerId, defender.ownerId);
       const dispute = createCombatDispute(attacker, defender, now);
-      const units = state.units.map(
+      const units = warState.units.map(
         (u) => u.id === attacker.id ? { ...u, hasAttacked: true } : u
       );
       return {
         ok: true,
         state: {
-          ...state,
+          ...warState,
           units,
-          combatDisputes: [...state.combatDisputes, dispute]
+          combatDisputes: [...warState.combatDisputes, dispute]
         }
       };
     }
@@ -1852,14 +1990,16 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       const allUnits = unitsForCiv(player.civilizationId, state.era);
       const unitDef = allUnits.find((u) => u.type === action.unitType);
       const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position);
-      const foodCost = Math.ceil(unitDef.productionCost / 2);
-      const goldCost = Math.ceil(unitDef.productionCost / 3);
+      const rawCost = unitDef.productionCost;
+      const effectiveCost = player.civilizationId === "ottomans" && unitDef.type === "catapult" ? Math.floor(rawCost * 0.7) : rawCost;
+      const foodCost = Math.ceil(effectiveCost / 2);
+      const goldCost = Math.ceil(effectiveCost / 3);
       const updatedPlayers = state.players.map(
         (p) => p.id !== playerId ? p : {
           ...p,
           resources: {
             ...p.resources,
-            production: p.resources.production - unitDef.productionCost,
+            production: p.resources.production - effectiveCost,
             food: p.resources.food - foodCost,
             gold: p.resources.gold - goldCost
           }
@@ -1934,6 +2074,7 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
     case "attackCity": {
       const unit = findUnit2(state, action.unitId);
       const city = state.cities.find((c) => c.id === action.cityId);
+      const warState = ensureWarDeclared(state, playerId, city.ownerId);
       const cityMaxHpVal = cityMaxHp(city.level);
       const cityHp = city.hp ?? cityMaxHpVal;
       const cityDef = cityDefense(city.level);
@@ -1941,12 +2082,18 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       const newHp = Math.max(0, cityHp - dmg);
       const captured = newHp <= 0;
       const updatedCity = captured ? { ...city, ownerId: playerId, hp: cityMaxHpVal, maxHp: cityMaxHpVal } : { ...city, hp: newHp, maxHp: cityMaxHpVal };
+      const capturer = warState.players.find((p) => p.id === playerId);
+      const playersAfterConquest = captured && capturer?.civilizationId === "aztecs" ? warState.players.map(
+        (p) => p.id !== playerId ? p : { ...p, conquestBonusProduction: (p.conquestBonusProduction ?? 0) + 5 }
+      ) : warState.players;
       const nextState = {
-        ...state,
-        cities: state.cities.map((c) => c.id === city.id ? updatedCity : c),
-        units: state.units.map((u) => u.id === unit.id ? { ...u, hasAttacked: true } : u)
+        ...warState,
+        players: playersAfterConquest,
+        cities: warState.cities.map((c) => c.id === city.id ? updatedCity : c),
+        units: warState.units.map((u) => u.id === unit.id ? { ...u, hasAttacked: true } : u)
       };
-      return { ok: true, state: captured ? eliminatePlayersWithNoCities(nextState) : nextState };
+      if (!captured) return { ok: true, state: nextState };
+      return { ok: true, state: finalizeIfDominated(eliminatePlayersWithNoCities(nextState)) };
     }
     case "proposePact":
       return fromDiplomacy(proposeNonAggressionPact(state, playerId, action.targetId));
@@ -2016,13 +2163,22 @@ function planDefensiveResponses(state, playerId, now) {
 }
 var END_TURN = { type: "endTurn" };
 var resourceTotal = (r) => r.gold + r.food + r.production;
+var WARMONGER_WINDOW = 5;
+function warmongers(state) {
+  const set = /* @__PURE__ */ new Set();
+  for (const war of state.wars ?? []) {
+    if (state.turnNumber - war.declaredAtTurn <= WARMONGER_WINDOW) set.add(war.declarerId);
+  }
+  return set;
+}
 function planDiplomaticResponses(state, playerId, now) {
   let s = state;
   const actions = [];
+  const aggressors = warmongers(s);
   const pending = s.diplomaticProposals.filter((p) => p.status === "pending" && p.targetId === playerId).slice().sort(byId);
   for (const proposal of pending) {
     const kind = proposal.kind ?? (proposal.terms ? "trade" : "pact");
-    const accept = kind === "trade" ? !!proposal.terms && resourceTotal(proposal.terms.offer) >= resourceTotal(proposal.terms.request) : true;
+    const accept = kind === "trade" ? !!proposal.terms && resourceTotal(proposal.terms.offer) >= resourceTotal(proposal.terms.request) : kind === "pact" ? !aggressors.has(proposal.proposerId) : true;
     const action = { type: "respondToDiplomacy", proposalId: proposal.id, accept };
     if (validateAction(s, playerId, action, now).valid) {
       actions.push(action);
@@ -2052,6 +2208,7 @@ function aiFavorableTrade(me) {
 function planDiplomaticInitiatives(state, playerId, now) {
   const me = state.players.find((p) => p.id === playerId);
   if (!me) return { state, actions: [] };
+  const aggressors = warmongers(state);
   const contacts = state.players.filter((p) => p.id !== playerId && !p.isEliminated && haveMadeContact(state, playerId, p.id)).slice().sort(byId);
   for (const other of contacts) {
     const pendingBetween = state.diplomaticProposals.some(
@@ -2061,6 +2218,7 @@ function planDiplomaticInitiatives(state, playerId, now) {
     const relation = relationBetween(state, playerId, other.id);
     let candidate = null;
     if (relation === "neutral") {
+      if (aggressors.has(other.id)) continue;
       const alreadyOfferedPact = state.diplomaticProposals.some(
         (p) => (p.kind ?? (p.terms ? "trade" : "pact")) === "pact" && p.proposerId === playerId && p.targetId === other.id
       );
@@ -2365,6 +2523,7 @@ async function resolveDispute(repo, params) {
 function foldActions(state, playerId, actions, now) {
   let s = state;
   for (const action of actions) {
+    if (s.isFinished) break;
     const res = applyAction(s, playerId, action, now, FULL_HOOKS);
     if (!res.ok) return null;
     s = res.state;
@@ -2481,6 +2640,7 @@ export {
   diffDisputes,
   eliminatePlayersWithNoCities,
   endTurn,
+  finalizeIfDominated,
   generateMap,
   getBuildingDef,
   getBuildingsBySpecialization,
@@ -2524,6 +2684,7 @@ export {
   sweepTimeouts,
   terrainAt,
   terrainDefenseBonus,
+  territoryOwnerAt,
   tickConstruction,
   unitsAvailableInEra,
   unitsForCiv,

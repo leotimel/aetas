@@ -21,7 +21,7 @@ import { createUnitFromDef } from './units.js'
 import { unitsForCiv } from './civilizations.js'
 import { getBuildingDef, startConstruction } from './buildings.js'
 import { cityMaxHp, cityDefense } from './economy.js'
-import { eliminatePlayersWithNoCities } from './scoring.js'
+import { eliminatePlayersWithNoCities, finalizeIfDominated } from './scoring.js'
 
 // ─── Action model ─────────────────────────────────────────────────────────────
 
@@ -484,9 +484,11 @@ export function applyAction(
         units:  warState.units.map(u => u.id === unit.id ? { ...u, hasAttacked: true } : u),
       }
       // Capturing a city may leave its former owner with zero cities → eliminate
-      // them immediately (marks isEliminated and removes their units). endTurn's
-      // Step 5a then ends the game when only one active player remains.
-      return { ok: true, state: captured ? eliminatePlayersWithNoCities(nextState) : nextState }
+      // them immediately (marks isEliminated and removes their units). If that
+      // leaves a single active player, the game ends right here (instant
+      // domination victory) rather than waiting for the attacker to end their turn.
+      if (!captured) return { ok: true, state: nextState }
+      return { ok: true, state: finalizeIfDominated(eliminatePlayersWithNoCities(nextState)) }
     }
 
     case 'proposePact':

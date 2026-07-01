@@ -453,6 +453,32 @@ describe('sweepTimeouts: absent-player turns', () => {
     expect(summary.turnsAdvanced).toBe(0)
     expect(summary.conflicts).toBe(1)
   })
+
+  // ENT-2: an AI opponent that captures the last enemy city mid-batch wins by
+  // domination. foldActions must stop once the game is finished (the trailing
+  // endTurn would be rejected) and still COMMIT the won turn — not discard it.
+  it('commits an AI domination win that ends the game before its endTurn', async () => {
+    const aiAttacker = makeUnit('p0-siege', 'p0', { q: 0, r: 0 }, { attack: 20 })
+    const players = [
+      { ...makePlayer('p0'), aiDifficulty: 'normal' as const },
+      makePlayer('p1'),
+    ]
+    const enemyCity = { ...makeCity('c1', 'p1'), position: { q: 1, r: 0 }, hp: 3, maxHp: 10 }
+    const state = {
+      ...makeState({ players, units: [aiAttacker], currentPlayerId: 'p0' }),
+      cities: [enemyCity],
+    }
+
+    const repo = new FakeGameRepo()
+    repo.seed('g1', state, NOW - 1) // turn deadline already passed
+
+    const summary = await sweepTimeouts(repo, { now: NOW })
+    expect(summary.turnsAdvanced).toBe(1) // won turn committed, not discarded
+
+    const row = repo.current('g1')
+    expect(row.gameState.isFinished).toBe(true)
+    expect(row.gameState.winner).toBe('p0')
+  })
 })
 
 // ─── 7 & 8. Winner determination proves full hooks are wired ──────────────────

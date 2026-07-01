@@ -4,6 +4,7 @@ import {
   rankPlayers,
   determineWinner,
   eliminatePlayersWithNoCities,
+  finalizeIfDominated,
   TERRITORY_POINTS_PER_CITY,
   POPULATION_POINTS_PER_POP,
   DEVELOPMENT_POINTS_PER_LEVEL,
@@ -270,5 +271,36 @@ describe('eliminatePlayersWithNoCities — eliminação no meio da partida', () 
     }))
     expect(() => eliminatePlayersWithNoCities(state)).not.toThrow()
     expect(state.players[0]!.isEliminated).toBe(false) // original unchanged
+  })
+})
+
+// ─── finalizeIfDominated ──────────────────────────────────────────────────────
+
+describe('finalizeIfDominated — vitória por dominação (fonte única)', () => {
+  it('one active player left → finished with that player as winner', () => {
+    const state = makeState({
+      players: [makePlayer('p0'), makePlayer('p1', true)],
+    })
+    const result = finalizeIfDominated(state)
+    expect(result.isFinished).toBe(true)
+    expect(result.winner).toBe('p0')
+    expect(result.turnState).toBe(TurnState.Completed)
+  })
+
+  it('zero active players (mutual annihilation) → finished, winner null', () => {
+    const state = makeState({
+      players: [makePlayer('p0', true), makePlayer('p1', true)],
+    })
+    const result = finalizeIfDominated(state)
+    expect(result.isFinished).toBe(true)
+    expect(result.winner).toBeNull()
+  })
+
+  it('two or more active players → returns the same state (by reference), unchanged', () => {
+    const state = makeState({
+      players: [makePlayer('p0'), makePlayer('p1')],
+    })
+    expect(finalizeIfDominated(state)).toBe(state)
+    expect(state.isFinished).toBe(false)
   })
 })

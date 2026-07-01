@@ -124,6 +124,9 @@ const NOW = 5000
 function replayLegal(state: GameState, playerId: string, actions: GameAction[]): GameState {
   let s = state
   for (const a of actions) {
+    // A capture may end the game mid-batch (instant domination); once finished,
+    // trailing actions are legitimately rejected — stop replaying there.
+    if (s.isFinished) break
     const res = applyAction(s, playerId, a, NOW)
     expect(res.ok, `action ${JSON.stringify(a)} should apply`).toBe(true)
     if (!res.ok) throw new Error(res.reason)

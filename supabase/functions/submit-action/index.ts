@@ -48,25 +48,38 @@ Deno.serve(async (req) => {
 
     if (!result.ok) return json({ ok: false, kind: result.kind, reason: result.reason }, statusForKind(result.kind))
 
-    // Broadcast game_over so all clients can show the results screen immediately.
-    if (result.state.isFinished) {
+    // Chain: advance every consecutive AI-controlled turn in this request, so a human
+    // doesn't wait for the cron between AI turns (e.g. a large game with 3 AIs in a row).
+    // sweepTimeouts processes one turn per timed-out game, and each AI turn sets the next
+    // player's deadline to now_used + TURN_TIMEOUT_MS (24h). So each iteration must use a
+    // STRICTLY LARGER `now` than the previous — a 30-day stride clears that 24h bump.
+    let recheck = result.state
+    const DAY_MS = 24 * 60 * 60 * 1000
+    for (let i = 0; i < 10; i++) {
+      if (recheck.isFinished) break
+      const nextPlayer = recheck.players.find(p => p.id === recheck.currentPlayerId)
+      if (!nextPlayer?.isAIControlled) break
+
+      const farFuture = Date.now() + (i + 1) * 30 * DAY_MS
+      await sweepTimeouts(new SupabaseGameRepo(sc), { now: farFuture })
+
+      const { data: fresh } = await sc.from('games').select('game_state').eq('id', body.gameId).single()
+      const next = fresh?.game_state as typeof result.state | undefined
+      if (!next) break
+      recheck = next
+    }
+
+    // Broadcast game_over so all clients can show the results screen immediately —
+    // whether the human's action or a chained AI turn ended the game.
+    if (recheck.isFinished) {
       await sc.channel(`game:${body.gameId}`).send({
         type: 'broadcast',
         event: 'game_over',
-        payload: { winnerId: result.state.winner },
+        payload: { winnerId: recheck.winner },
       })
     }
 
-    // If the next player is AI-controlled, advance their turn immediately so human players
-    // don't need a cron job during development. Uses far-future 'now' so the freshly-set
-    // turn_deadline (now + TURN_TIMEOUT_MS) is already considered expired.
-    const nextPlayer = result.state.players.find(p => p.id === result.state.currentPlayerId)
-    if (!result.state.isFinished && nextPlayer?.isAIControlled) {
-      const farFuture = Date.now() + 30 * 24 * 60 * 60 * 1000
-      await sweepTimeouts(new SupabaseGameRepo(sc), { now: farFuture })
-    }
-
-    return json({ ok: true, state: result.state }, 200)
+    return json({ ok: true, state: recheck }, 200)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return json({ ok: false, kind: 'internal', reason: msg }, 500)

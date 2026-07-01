@@ -473,6 +473,57 @@ describe('applyAction — attackCity balance (E6)', () => {
   })
 })
 
+// ─── attackCity: instant domination victory (ENT-2) ──────────────────────────
+
+describe('applyAction — attackCity instant domination (ENT-2)', () => {
+  it('capturing the last enemy city (2 players) ends the game immediately', () => {
+    const city = makeCity('c1', 'p1', { q: 1, r: 0 })              // p1's only city
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 20 }) // captures
+    const state = makeState({ cities: [city], units: [attacker] })
+    const action: GameAction = { type: 'attackCity', unitId: 'a', cityId: 'c1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.isFinished).toBe(true)
+    expect(res.state.winner).toBe('p0')
+    expect(res.state.turnState).toBe(TurnState.Completed)
+  })
+
+  it('capturing one of the victim’s two cities does NOT end the game', () => {
+    const c1 = makeCity('c1', 'p1', { q: 1, r: 0 })
+    const c2 = makeCity('c2', 'p1', { q: 5, r: 0 })               // p1 still has c2
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 20 })
+    const state = makeState({ cities: [c1, c2], units: [attacker] })
+    const action: GameAction = { type: 'attackCity', unitId: 'a', cityId: 'c1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.isFinished).toBe(false)
+    expect(res.state.players.find(p => p.id === 'p1')!.isEliminated).toBe(false)
+  })
+
+  it('capturing one opponent’s last city while a third player survives does NOT end the game', () => {
+    const cityP1 = makeCity('c1', 'p1', { q: 1, r: 0 })           // p1's only city
+    const cityP2 = makeCity('c2', 'p2', { q: 5, r: 0 })           // p2 still alive
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 20 })
+    const state = makeState({
+      players: [makePlayer('p0'), makePlayer('p1'), makePlayer('p2')],
+      cities: [cityP1, cityP2],
+      units: [attacker],
+    })
+    const action: GameAction = { type: 'attackCity', unitId: 'a', cityId: 'c1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.isFinished).toBe(false)
+    expect(res.state.players.find(p => p.id === 'p1')!.isEliminated).toBe(true)
+    expect(res.state.players.find(p => p.id === 'p2')!.isEliminated).toBe(false)
+  })
+})
+
 // ─── constructBuilding ────────────────────────────────────────────────────────
 
 function playerWithProd(id: string, production: number): Player {

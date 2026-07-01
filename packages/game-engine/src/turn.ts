@@ -1,7 +1,7 @@
 import { TurnState, CombatDisputeStatus, Era } from './types.js'
 import type { GameState, Player, CombatDispute } from './types.js'
 import { updateFogOfWar } from './map.js'
-import { determineWinner as computeWinner } from './scoring.js'
+import { determineWinner as computeWinner, finalizeIfDominated } from './scoring.js'
 import { processTurnEconomy, applyUnitMaintenance, cityMaxHp } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
 import { getCityEraProgressBonus } from './buildings.js'
@@ -182,17 +182,10 @@ export function endTurn(
   const activeNow = activePlayers(players)
 
   // Step 5(a) — last player standing (or mutual annihilation) wins immediately.
+  // Shares finalizeIfDominated with actions.ts so the mid-turn (city capture)
+  // and end-of-turn paths apply an identical domination rule.
   if (activeNow.length <= 1) {
-    return {
-      ok: true,
-      state: {
-        ...working,
-        currentPlayerId: actorId,
-        turnState: TurnState.Completed,
-        isFinished: true,
-        winner: activeNow[0]?.id ?? null,
-      },
-    }
+    return { ok: true, state: finalizeIfDominated({ ...working, currentPlayerId: actorId }) }
   }
 
   // Step 5(b) — game ends after maxTurns complete rounds.

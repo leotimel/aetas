@@ -169,6 +169,11 @@ function foldActions(
 ): GameState | null {
   let s = state
   for (const action of actions) {
+    // A mid-batch action may end the game (instant domination victory when the
+    // AI captures the last enemy city). Once finished, remaining queued actions
+    // (including the trailing endTurn) would be rejected — stop and keep the
+    // won state so the turn is committed rather than discarded.
+    if (s.isFinished) break
     const res = applyAction(s, playerId, action, now, FULL_HOOKS)
     if (!res.ok) return null // AI guarantees legality; bail defensively if not
     s = res.state
