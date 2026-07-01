@@ -128,6 +128,10 @@ Deno.serve(async (req) => {
         resources: { gold: 10, food: 10, production: 10 },
         isEliminated: false,
         isAIControlled: true,
+        // Dedicated AI opponent: without this the orchestration falls back to the
+        // defensive substitute AI (decideSubstituteTurn) and the daily opponent
+        // never attacks or expands. 'normal' makes it play to win.
+        aiDifficulty: 'normal',
       },
     ],
     map: gameMap,
