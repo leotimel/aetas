@@ -32,6 +32,7 @@
     "errorLoad": "Failed to load game.",
     "back": "Back",
     "turnStatus": "Turn {{n}}/{{max}}",
+    "rankBadge": "#{{pos}}/{{total}}",
     "yourTurn": "● YOUR TURN",
     "theirTurn": "○ {{player}}'s turn",
     "finished": "★ {{winner}} won",

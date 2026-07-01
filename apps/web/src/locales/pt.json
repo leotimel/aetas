@@ -32,6 +32,7 @@
     "errorLoad": "Erro ao carregar partida.",
     "back": "Voltar",
     "turnStatus": "Turno {{n}}/{{max}}",
+    "rankBadge": "{{pos}}º/{{total}}",
     "yourTurn": "● SUA VEZ",
     "theirTurn": "○ vez de {{player}}",
     "finished": "★ {{winner}} venceu",

@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState } from '@aetas/game-engine'
-import { CIVILIZATIONS, scoreAll } from '@aetas/game-engine'
+import { CIVILIZATIONS, scoreAll, haveMadeContact } from '@aetas/game-engine'
+
+const MEDALS = ['🥇', '🥈', '🥉']
 
 interface Props {
   gameState:        GameState
@@ -62,8 +64,10 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
 
           <div className="flex flex-col gap-1">
             {ranked.map((player, i) => {
-              const s    = scores[player.id] ?? { territory: 0, population: 0, development: 0, total: 0 }
-              const isMe = player.id === myEnginePlayerId
+              const s          = scores[player.id] ?? { territory: 0, population: 0, development: 0, total: 0 }
+              const isMe       = player.id === myEnginePlayerId
+              const isContacted = isMe || haveMadeContact(gameState, myEnginePlayerId, player.id)
+              const medal      = MEDALS[i]
               return (
                 <div
                   key={player.id}
@@ -71,15 +75,15 @@ export default function ScoreModal({ gameState, myEnginePlayerId, onClose }: Pro
                     player.isEliminated
                       ? 'opacity-40'
                       : isMe
-                        ? 'bg-aetas-panel'
+                        ? 'bg-aetas-gold/10 ring-1 ring-aetas-gold/40'
                         : 'bg-aetas-raised'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-aetas-dim text-[10px] w-4 text-center">{i + 1}.</span>
-                    <span>{civFlag(gameState.players, player.id)}</span>
-                    <span className={`truncate ${player.isEliminated ? 'line-through text-aetas-dim' : 'text-aetas-text'}`}>
-                      {civName(gameState.players, player.id)}
+                    <span className="text-aetas-dim text-[10px] w-4 text-center">{medal ?? `${i + 1}.`}</span>
+                    <span>{isContacted ? civFlag(gameState.players, player.id) : '❓'}</span>
+                    <span className={`truncate ${player.isEliminated ? 'line-through text-aetas-dim' : isMe ? 'text-aetas-gold font-semibold' : 'text-aetas-text'}`}>
+                      {isContacted ? civName(gameState.players, player.id) : '???'}
                       {isMe && <span className="text-aetas-dim"> {t('ui.you')}</span>}
                     </span>
                   </div>

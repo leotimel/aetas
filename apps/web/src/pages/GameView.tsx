@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState, HexCoord, CitySpecialization, Unit, Resources } from '@aetas/game-engine'
-import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction } from '@aetas/game-engine'
+import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -367,6 +367,13 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
   const myPlayer = gameState?.players.find(p => p.id === enginePlayerId)
 
+  const myRank = useMemo(() => {
+    if (!gameState) return null
+    const ranked = rankPlayers(gameState)
+    const idx = ranked.findIndex(s => s.playerId === enginePlayerId)
+    return idx === -1 ? null : { position: idx + 1, total: ranked.length }
+  }, [gameState, enginePlayerId])
+
   const myIncome = useMemo((): Resources => {
     if (!gameState) return { gold: 0, food: 0, production: 0 }
     const myCities = gameState.cities.filter(c => c.ownerId === enginePlayerId)
@@ -652,6 +659,17 @@ export default function GameView({ gameId, userId, onBack }: Props) {
               ? t('game.yourTurn')
               : t('game.theirTurn', { player: civName(gameState.players, gameState.currentPlayerId) })}
         </span>
+
+        {/* Live rank position — click to open full scoreboard */}
+        {myRank && !isFinished && (
+          <button
+            onClick={() => setShowScoreModal(true)}
+            className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-aetas-gold bg-aetas-raised rounded-full px-2 py-1 hover:brightness-110 transition-colors"
+            title={t('score.title')}
+          >
+            🏆 {t('game.rankBadge', { pos: myRank.position, total: myRank.total })}
+          </button>
+        )}
 
         {/* Mobile: player scores badge */}
         <button
