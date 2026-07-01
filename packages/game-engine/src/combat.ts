@@ -305,3 +305,42 @@ export function resolveTimedOutDispute(dispute: CombatDispute, state: GameState)
 
   return applyCombatResult(state, result)
 }
+
+// ─── Resolution: immediate (attacking an AI opponent) ─────────────────────────
+
+/**
+ * Resolves an attack on the spot, with NO async dispute. Used when the defender
+ * is a dedicated AI opponent: there is no separate human session to wait for, so
+ * the "chess by mail" dispute model only adds a confusing empty step.
+ *
+ * Uses the exact same parameters as the client CombatPreviewModal and the
+ * timeout path (attacker-favored: `defenderActiveDefense: false`), so the
+ * outcome always matches the preview the player just confirmed. Marks the
+ * attacker `hasAttacked` and removes any destroyed unit. Never ends the game —
+ * unit combat cannot eliminate a player (only losing every city does).
+ */
+export function resolveCombatImmediate(
+  state: GameState,
+  attacker: Unit,
+  defender: Unit,
+): GameState {
+  const atkPlayer = state.players.find(p => p.id === attacker.ownerId)
+  const defPlayer = state.players.find(p => p.id === defender.ownerId)
+  const result = resolveCombat(attacker, defender, {
+    defenderTerrain:       terrainAt(state, defender.position),
+    attackerTerrain:       terrainAt(state, attacker.position),
+    defenderActiveDefense: false,
+    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
+  })
+
+  const applied = applyCombatResult(state, result)
+  // Persist hasAttacked on the (possibly surviving) attacker: applyCombatResult
+  // rewrote the unit from the pre-combat snapshot, where hasAttacked was false.
+  return {
+    ...applied,
+    units: applied.units.map(u =>
+      u.id === attacker.id ? { ...u, hasAttacked: true } : u,
+    ),
+  }
+}

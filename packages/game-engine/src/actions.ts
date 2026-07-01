@@ -3,6 +3,7 @@ import type { GameState, Unit, HexCoord, City, Resources } from './types.js'
 import { canSubmitAction, endTurn, getPlayerById, type TurnHooks } from './turn.js'
 import {
   createCombatDispute,
+  resolveCombatImmediate,
   resolveDisputeByAction,
   resolveTimedOutDispute,
 } from './combat.js'
@@ -348,6 +349,16 @@ export function applyAction(
       const defender = findUnit(state, action.defenderUnitId)!
       // Attacking a neutral civ declares war automatically.
       const warState = ensureWarDeclared(state, playerId, defender.ownerId)
+
+      // Against a dedicated AI opponent there is no separate human session to
+      // wait for — resolve the attack immediately (matching the client preview)
+      // instead of opening an async dispute. Human defenders keep the async
+      // "chess by mail" dispute model so an absent player can still respond.
+      const defenderPlayer = warState.players.find(p => p.id === defender.ownerId)
+      if (defenderPlayer?.isAIControlled) {
+        return { ok: true, state: resolveCombatImmediate(warState, attacker, defender) }
+      }
+
       const dispute = createCombatDispute(attacker, defender, now)
       const units = warState.units.map(u =>
         u.id === attacker.id ? { ...u, hasAttacked: true } : u,

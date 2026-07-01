@@ -1447,6 +1447,24 @@ function resolveTimedOutDispute(dispute, state) {
   });
   return applyCombatResult(state, result);
 }
+function resolveCombatImmediate(state, attacker, defender) {
+  const atkPlayer = state.players.find((p) => p.id === attacker.ownerId);
+  const defPlayer = state.players.find((p) => p.id === defender.ownerId);
+  const result = resolveCombat(attacker, defender, {
+    defenderTerrain: terrainAt(state, defender.position),
+    attackerTerrain: terrainAt(state, attacker.position),
+    defenderActiveDefense: false,
+    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
+    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
+  });
+  const applied = applyCombatResult(state, result);
+  return {
+    ...applied,
+    units: applied.units.map(
+      (u) => u.id === attacker.id ? { ...u, hasAttacked: true } : u
+    )
+  };
+}
 
 // ../game-engine/src/diplomacy.ts
 function haveMadeContact(state, playerAId, playerBId) {
@@ -1971,6 +1989,10 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       const attacker = findUnit2(state, action.attackerUnitId);
       const defender = findUnit2(state, action.defenderUnitId);
       const warState = ensureWarDeclared(state, playerId, defender.ownerId);
+      const defenderPlayer = warState.players.find((p) => p.id === defender.ownerId);
+      if (defenderPlayer?.isAIControlled) {
+        return { ok: true, state: resolveCombatImmediate(warState, attacker, defender) };
+      }
       const dispute = createCombatDispute(attacker, defender, now);
       const units = warState.units.map(
         (u) => u.id === attacker.id ? { ...u, hasAttacked: true } : u
@@ -2671,6 +2693,7 @@ export {
   rankPlayers,
   relationBetween,
   resolveCombat,
+  resolveCombatImmediate,
   resolveDispute,
   resolveDisputeByAction,
   resolveTimedOutDispute,

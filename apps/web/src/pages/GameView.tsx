@@ -431,11 +431,26 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   }
 
   const handleConfirmAttack = async (attackerUnitId: string, defenderUnitId: string) => {
+    const preState = gameState!
+    const preAtk = preState.units.find(u => u.id === attackerUnitId)
+    const preDef = preState.units.find(u => u.id === defenderUnitId)
     setCombatLoading(true)
     const res = await submitAction(gameId, { type: 'initiateCombat', attackerUnitId, defenderUnitId })
     setCombatLoading(false)
-    addLog(res.ok ? i18n.t('combat.initiated') : `✗ ${errorLabel(res.error)}`)
-    if (res.ok) { setCombatPreview(null); setSelectedUnitId(null); applyOrFetch(res.data?.state) }
+    if (!res.ok) { addLog(`✗ ${errorLabel(res.error)}`); return }
+
+    const post = res.data?.state
+    // Attacking an AI opponent resolves on the spot (no pending dispute); a human
+    // defender opens an async dispute instead. Log the actual outcome accordingly.
+    const stillPending = !!post?.combatDisputes.some(
+      d => d.attackerUnitId === attackerUnitId && d.status === CombatDisputeStatus.Pending,
+    )
+    if (post && preAtk && preDef && !stillPending) {
+      addLog(formatDisputeResolutionLog(preState, post, preAtk, preDef))
+    } else {
+      addLog(i18n.t('combat.initiated'))
+    }
+    setCombatPreview(null); setSelectedUnitId(null); applyOrFetch(post)
   }
 
   const handleResolveDispute = async (disputeId: string) => {

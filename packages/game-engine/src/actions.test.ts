@@ -228,6 +228,35 @@ describe('applyAction — initiateCombat', () => {
     expect(() => applyAction(state, 'p0', action, NOW)).not.toThrow()
     expect(applyAction(state, 'p0', action, NOW).ok).toBe(false)
   })
+
+  it('attacking a dedicated AI opponent resolves immediately — no dispute, lethal', () => {
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 20 })
+    const defender = makeUnit('d', 'p1', { q: 1, r: 0 }, { defense: 0, hp: 5 })
+    const aiPlayer = { ...makePlayer('p1'), isAIControlled: true }
+    const state = makeState({ players: [makePlayer('p0'), aiPlayer], units: [attacker, defender] })
+    const action: GameAction = { type: 'initiateCombat', attackerUnitId: 'a', defenderUnitId: 'd' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.combatDisputes).toHaveLength(0)             // resolved on the spot
+    expect(res.state.units.some(u => u.id === 'd')).toBe(false)  // defender destroyed
+    expect(res.state.units.find(u => u.id === 'a')!.hasAttacked).toBe(true)
+  })
+
+  it('immediate AI combat damages a surviving defender and marks hasAttacked', () => {
+    const attacker = makeUnit('a', 'p0', { q: 0, r: 0 }, { attack: 8 })
+    const defender = makeUnit('d', 'p1', { q: 1, r: 0 }, { defense: 2, hp: 20 })
+    const aiPlayer = { ...makePlayer('p1'), isAIControlled: true }
+    const state = makeState({ players: [makePlayer('p0'), aiPlayer], units: [attacker, defender] })
+
+    const res = applyAction(state, 'p0', { type: 'initiateCombat', attackerUnitId: 'a', defenderUnitId: 'd' }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.combatDisputes).toHaveLength(0)
+    expect(res.state.units.find(u => u.id === 'd')!.stats.hp).toBeLessThan(20) // took damage
+    expect(res.state.units.find(u => u.id === 'a')!.hasAttacked).toBe(true)
+  })
 })
 
 // ─── respondToDispute ─────────────────────────────────────────────────────────

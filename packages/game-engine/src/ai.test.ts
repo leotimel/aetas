@@ -284,7 +284,10 @@ describe('decideOpponentTurn — active but not suicidal', () => {
     const actions = decideOpponentTurn(state, 'p0', NOW)
     const final = replayLegal(state, 'p0', actions)
     expect(final.currentPlayerId).toBe('p1') // advanced once
-    expect(final.combatDisputes.some(d => d.attackerUnitId === 'p0-u')).toBe(true) // attack landed
+    // Both players are AI-controlled → the attack resolves immediately (no async
+    // dispute); the weak enemy (def 0, hp 3 vs attack 20) is destroyed on the spot.
+    expect(final.combatDisputes).toHaveLength(0)
+    expect(final.units.some(u => u.id === 'p1-e')).toBe(false) // attack landed
   })
 })
 
