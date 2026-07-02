@@ -2756,8 +2756,237 @@ crescente, IAs com personalidades distintas, uma maravilha construída e ao
 menos um evento disparado. Confirmar que nenhuma delas quebra o loop ou o
 equilíbrio a ponto de tornar a partida trivial ou impossível.
 
-> Após o CHECKPOINT ENT-FINAL, retomar a **FASE 5 (Android)** — a web ganha
-> este bloco de profundidade antes de duplicar a UI em Kotlin.
+> Após o CHECKPOINT ENT-FINAL, seguir para o **BLOCO UI-D** (redesign das 3
+> telas principais) e só então retomar a **FASE 5 (Android)** — a web recebe
+> o visual final antes de duplicar a UI em Kotlin.
+
+---
+
+## BLOCO UI-D — Redesign Home · Cidade · Novo Jogo
+
+Origem: spec de design em `docs/design/AETAS-design-spec.md` +
+`docs/design/aetas-2a-home.png`, `aetas-2d-city.png`, `aetas-2e-newgame.png`
+(referência épica/imperial estilo Civilization V, mobile-first). Decisões
+travadas via AskUserQuestions:
+
+- **Novo Jogo**: redesign completo, fiel ao mock (hero do líder + pickers).
+- **Home**: adota abas em pílula (My Turn / Their Turn / Finished).
+- **Painel de Cidade**: converte de modal/bottom-sheet para tela cheia + abas
+  Buildings/Units.
+- **Fundos**: `menu-bg.webp` e `game-bg.webp` continuam só na Home e no
+  GameView/mapa. CityModal e NewGamePage ficam com o fundo sólido escuro do
+  próprio spec — **não** estender fotos a essas telas.
+
+Estado real do código (auditado antes de escrever estes prompts):
+`GameListPage.tsx`, `CityModal.tsx` e `NewGamePage.tsx` já usam a base
+"Roma Antiga" (Cinzel, dourado, `SealButton`/`RomanDivider`/`AetasLogo`,
+`DailyCard` já tem cantos ornamentais + streak) — a base visual do UI-T/UI-V
+é compatível com o spec novo, mas os tokens exatos, a fonte Barlow/Garamond,
+e a estrutura de abas/tela-cheia ainda faltam. `NewGamePage.tsx` hoje é um
+formulário de 7 seções empilhadas (modo, jogadores, human slots, mapa,
+duração, dificuldade, grid de 10 civs, preview) — é o maior gap com o mock.
+
+---
+
+### UI-D1 — Tokens de design + componentes compartilhados novos · Sonnet 🧠
+
+```
+Atualize `apps/web/src/styles/tokens.css` para se aproximar da paleta do
+spec em `docs/design/AETAS-design-spec.md` §1, SEM descartar os tokens
+"Roma Antiga" já usados (--color-aetas-stone/bronze/parchment continuam).
+Adicione (não substitua nomes existentes que já funcionam):
+- Import da fonte Barlow (peso 400-700) para UI/números/corpo, e EB Garamond
+  italic para sabor/subtítulos, junto do import de Cinzel já existente em
+  `apps/web/src/index.css`.
+- Um tom de ouro "bright" para títulos/números importantes (~#ecc766, mais
+  claro que --color-aetas-gold-light atual — usar para números de recurso).
+- Token semântico "positivo" (~#6f8f4a, ganhos +gold/+food) — hoje só existe
+  --color-aetas-green (#1a3d1a, escuro demais pra texto).
+- Token semântico "streak/fogo" (~#e8a13a) — hoje o streak do DailyCard usa
+  `text-orange-400` do Tailwind direto, sem token.
+- Token "label" terracota (~#c9895a) para labels de seção em UPPERCASE.
+- Um box-shadow "glow" para botões primários dourados (halo sutil).
+
+Crie DOIS componentes compartilhados novos:
+1. `apps/web/src/components/ui/ResourceChip.tsx` — {icon: 'gold'|'food'|
+   'production', value: number, delta?: number}. Reaproveite os ícones SVG
+   de recurso já existentes em `CityModal.tsx` (RESOURCE_ICONS) — mova-os
+   pra dentro deste componente e importe de volta no CityModal (não duplique
+   os SVGs).
+2. `apps/web/src/components/ui/CivCrest.tsx` — brasão/escudo SVG parametrizado
+   por `civId` (usa `CIVILIZATIONS.find(c => c.id === civId)`, cor do civ.color
+   no gradiente do escudo, e o emoji `civ.flag` centralizado dentro — NÃO
+   desenhe 10 brasões únicos à mão; reaproveite o mesmo emoji que já
+   diferencia cada civ hoje). Props: {civId, size}. Baseie o SVG no exemplo
+   do spec §6 (escudo alado), adaptando `id` do gradiente pra ser único por
+   instância (usar civId no id).
+
+Rode `pnpm --filter @aetas/web build` pra garantir que compila. Não altere
+nenhuma tela ainda — este prompt só prepara a base pros próximos 3.
+```
+
+✅ **Commit:** `"feat(ui-d1): design tokens refresh + ResourceChip/CivCrest components"`
+
+---
+
+### UI-D2 — Home: abas + GameCard + header de perfil · Sonnet 🧠
+
+```
+Redesenhe `apps/web/src/pages/GameListPage.tsx` seguindo
+`docs/design/AETAS-design-spec.md` §3 e a imagem `aetas-2a-home.png`.
+Mantenha o fundo `/assets/menu-bg.webp` exatamente como está hoje (overlay
+inclusive) — o spec não altera isso.
+
+1. Header: mantenha o wordmark AETAS + AetasLogo à esquerda. À direita,
+   troque o bloco atual (LevelBadge + EN|PT + refresh + logout) por um
+   bloco de perfil no estilo do mock: nome do jogador (busque de
+   `profiles.display_name` se existir, senão mantenha um fallback) + label
+   "CONSUL · LVL {n}" (Barlow, --text-label terracota) + <CivCrest> do
+   componente novo (variante "estrela" simples — pode ser um circulo com
+   estrela, adaptando o SVG do §6). Esse bloco inteiro é um botão que abre
+   `onOpenProfile` (já existe). MOVA o seletor EN|PT e o botão de logout
+   para dentro de `ProfilePage.tsx` (não têm mais lugar no header) — audite
+   esse arquivo e adicione-os lá se ainda não existem.
+2. DailyCard: confira se o texto bate com o spec ("Same map for all ·
+   Resets in HH:MM:SS" — hoje pode estar em chaves de i18n diferentes,
+   ajuste as strings pt/en em `apps/web/src/locales/`). O streak já mostra
+   🔥 N — envolva em uma pílula com fundo `rgba(232,161,58,.14)` como no
+   spec, usando o novo token de streak.
+3. Substitua as 3 seções empilhadas (My Turn / Waiting / Finished-toggle)
+   por 3 ABAS em pílula: "My Turn · N" / "Their Turn · N" / "Finished".
+   Reaproveite o padrão de `Tabs` do spec §2 (pílula com aba ativa em
+   --gold-btn). Ao trocar de aba, troca a lista visível (não empilha mais).
+   Mantenha toda a lógica de filtro já existente (myTurnGames/activeGames/
+   finishedGames) — só muda a apresentação.
+4. GameCard: MANTENHA o `MapPreviewMini` real (é um mapa gerado de verdade,
+   mais útil que um mosaico decorativo) mas ajuste o container pra caber no
+   estilo do mock. Mude o layout: título "vs {oponente} · {civ}" em cima,
+   "Turn X/Y · {tempo}" embaixo, progress bar, e o botão "Play →" FICA
+   INLINE à direita (não empilhado abaixo da progress bar como hoje).
+5. Confirme/adicione a animação `glowpulse` (pulso de brilho ~3.5s) no FAB
+   "+ New Game" — procure em `apps/web/src/styles/animations.css` se já
+   existe algo assim; se não, crie a keyframe.
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-d2): Home redesign — pill tabs, profile header, GameCard layout"`
+
+---
+
+### UI-D3 — Painel de Cidade: tela cheia + abas Buildings/Units · **Opus** 🔴 🧠
+
+```
+Converta `apps/web/src/components/CityModal.tsx` de bottom-sheet modal para
+VIEW DE TELA CHEIA, seguindo `docs/design/AETAS-design-spec.md` §4 e a
+imagem `aetas-2d-city.png`. É uma mudança de padrão de navegação — trate com
+cuidado pra não regredir o fluxo "clicar cidade no mapa → ver painel →
+fechar → voltar pro mapa" que já funciona hoje.
+
+1. Troque o backdrop+bottom-sheet por um container que ocupa 100% da
+   viewport quando aberto (ainda controlado pelo mesmo estado `selectedCityId`
+   em `GameView.tsx` — só muda COMO renderiza, não QUANDO abre/fecha).
+2. Header: fundo com gradiente âmbar (`--bg-amber-grad`), <CivCrest> (44px,
+   componente do UI-D1) do dono da cidade + label "EGÍPCIOS · YOU · LVL 2"
+   (civ · you/AI · nível) + nome da cidade (Cinzel 800, 25px) + botão fechar
+   circular vermelho no canto sup. direito (reaproveitar SealButton variant
+   red já existente).
+3. Strip de recursos: barra horizontal com 3 <ResourceChip> (gold/food/
+   production) do componente novo, cada um com delta por turno. Para o
+   delta por-cidade, reaproveite `computeCityProduction(city, ...)` do
+   `@aetas/game-engine` (já usado em GameView.tsx pra somar o income total —
+   aqui é só pra ESTA cidade, não a soma).
+4. Linha dupla: card de Especialização (ícone + "+X% Recurso") e card de
+   Nível (Pop X/Y → LZ com progress bar) lado a lado (2 colunas), em vez de
+   blocos empilhados full-width como hoje.
+5. Abas "🏛 Buildings" / "⚔ Units" (reaproveite o padrão de Tabs do UI-D2).
+   Divida o conteúdo que hoje está tudo num scroll só: edifícios na aba
+   Buildings, unidades treináveis (+ unidades bloqueadas da próxima era) na
+   aba Units. As linhas de edifício (3 estados: disponível/construindo/
+   construído) e de unidade já estão bem próximas do spec — só restilize,
+   não precisa redesenhar a lógica.
+6. NÃO toque em nenhuma lógica de `onTrainUnit`/`onConstructBuilding`/
+   `onFortifyCity` — é troca de UI, zero mudança de comportamento de jogo.
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-d3): City panel — full-screen view + Buildings/Units tabs"`
+
+🛑 **CHECKPOINT UI-D3:** Clicar uma cidade no mapa → painel abre em tela
+cheia; fechar volta ao mapa sem perder estado (seleção de unidade, etc.);
+ambas as abas funcionam; treinar unidade e construir edifício continuam
+funcionando exatamente como antes.
+
+---
+
+### UI-D4 — Novo Jogo: redesign completo (hero + pickers) · **Opus** 🔴 🧠
+
+```
+Redesenhe `apps/web/src/pages/NewGamePage.tsx` por completo, seguindo
+`docs/design/AETAS-design-spec.md` §5 e a imagem `aetas-2e-newgame.png`.
+É o maior redesign do bloco — o formulário atual tem 7 seções empilhadas
+(modo, jogadores, human slots, mapa, duração, dificuldade, grid de civs,
+preview) que precisam ser reorganizadas SEM perder nenhuma capacidade
+existente. Planeje antes de codar (🧠): mapeie cada estado atual
+(gameMode, playerCount, humanSlots, mapSize, duration, difficulty, seed,
+selectedCiv) para onde ele mora na nova estrutura, e SÓ DEPOIS implemente.
+
+1. Hero do líder (~250px, `--bg-amber-grad` + textura diagonal): botão
+   voltar `←`; <CivCrest> grande (86px, componente do UI-D1) do civ
+   selecionado; label "CHOOSE YOUR LEADER"; nome do civ (Cinzel 800, 32px);
+   subtítulo itálico (EB Garamond) usando `civ.description` como "epíteto"
+   (não existe campo de epíteto separado no engine — reusar description).
+2. Card de habilidade única: cantos ornamentais em L (reaproveitar o padrão
+   já usado no DailyCard); "◆ UNIQUE ABILITY · {ability.name}"; descrição
+   com números-chave destacados em ouro bright. Busque de
+   `CIVILIZATION_CATALOG.get(civId)?.abilities` (já usado no form atual) —
+   mostre a primeira habilidade em destaque; se houver uma segunda, liste
+   abaixo em texto menor.
+3. Fileira de líderes: os 10 civs (não 4 como no mock — scroll horizontal
+   com snap, tiles quadrados ~1:1). Civs bloqueadas (level-gated, lógica já
+   existe) ficam com opacidade reduzida e desabilitadas, igual hoje. Civ
+   selecionada ganha borda dourada + fundo `--bg-raise`.
+4. Três linhas de configuração, cada uma abre uma folha (bottom sheet) ao
+   tocar, com um resumo curto + `›`:
+   - "Opponents · {resumo}" → abre sheet com TUDO que hoje está em Game
+     Mode + Players + Human Slots (modo mixed) + AI Difficulty — mantenha
+     a lógica exata de handleModeChange/handlePlayerCountChange existente,
+     só move a UI pra dentro da sheet. Resumo: algo como "{aiCount} AI" ou
+     "{humanSlots}H/{aiCount}IA" dependendo do modo.
+   - "Map · {mapSize}" → abre sheet com o seletor de tamanho (3 opções +
+     hints, lógica já existe) + botão "New Map" (regenerar seed) + o
+     `MapPreviewMini` ao vivo (que sai da tela principal e vai pra dentro
+     desta sheet, já que o mock não reserva espaço pra preview na tela
+     principal).
+   - "Turn limit · {duration}" → abre sheet com as 3 opções de duração
+     (Short/Medium/Long com contagem de turnos, lógica já existe).
+   Crie um componente `SettingRow` (label + valor + `›`) e um wrapper
+   genérico de bottom sheet reutilizável pelas 3 linhas.
+5. CTA final "Begin Reign →" substitui o texto atual — MANTENHA a lógica
+   exata de `handleCreate`/`onLobby`/`onGameCreated` (inclusive a distinção
+   share-flow vs. direct-start por `res.data.status === 'lobby'`).
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-d4): New Game redesign — leader hero + Opponents/Map/Turn sheets"`
+
+🛑 **CHECKPOINT UI-D4 (o mais crítico do bloco):** Criar uma partida em CADA
+um dos 3 modos (solo / mixed / multiplayer) pela nova tela — confirmar que
+contagem de jogadores, human slots, dificuldade de IA, tamanho de mapa,
+regeneração de seed e duração chegam corretas em `createTestGame` (nenhuma
+config perdida no redesign). Confirmar que civs bloqueadas continuam
+bloqueando. Confirmar que o fluxo de compartilhamento (multiplayer)
+continua disparando.
+
+---
+
+🛑 **CHECKPOINT UI-D FINAL:** Navegar as 3 telas em sequência num celular
+real (ou DevTools mobile): Home → Novo Jogo → (criar partida) → Cidade.
+Confirmar que os fundos de Home e do mapa (GameView) não mudaram, e que
+Cidade/Novo Jogo têm o visual sólido escuro do spec. Comparar lado a lado
+com as 3 imagens de referência em `docs/design/`.
 
 ---
 
@@ -3354,13 +3583,15 @@ caros de errar neste projeto.
 ```
 
 **Estado atual:** Fases 0–4 + Bloco 4.5 E1–E8 + UI-T1/T2/T3 commitados e deployados. Engine balanceado, cidades com level-up, visual romano base entregue.
-**Próximo:** BLOCO BAL ✅ concluído (BAL-1 a BAL-5). Agora BLOCO ENT →
-ENT-1 (placar ao vivo · Sonnet) → ENT-2 (vitória por dominação · **Opus** 🔴) →
-🛑 CHECKPOINT ENT-A → ENT-3 (custo crescente de expansão · Sonnet) →
+**Próximo:** BLOCO BAL ✅ concluído (BAL-1 a BAL-5). BLOCO ENT em andamento
+(ENT-1/2/3 ✅; faltam ENT-4/5/6) →
 ENT-4 (personalidade de IA por civ · **Opus** 🔴) → 🛑 CHECKPOINT ENT-B →
 ENT-5 (Maravilhas do Mundo · **Opus** 🔴 motor + Sonnet UI) → 🛑 CHECKPOINT ENT-C →
 ENT-6 (Eventos Mundiais determinísticos · **Opus** 🔴) → 🛑 CHECKPOINT ENT-FINAL →
-Fase 5 Android
+BLOCO UI-D (redesign Home/Cidade/Novo Jogo) → UI-D1 (tokens+componentes ·
+Sonnet) → UI-D2 (Home · Sonnet) → UI-D3 (Cidade · **Opus** 🔴) →
+🛑 CHECKPOINT UI-D3 → UI-D4 (Novo Jogo · **Opus** 🔴) →
+🛑 CHECKPOINT UI-D4 → 🛑 CHECKPOINT UI-D FINAL → Fase 5 Android
 (comece pelos PRÉ-REQUISITOS MANUAIS de cada UI-V, depois pelos da Fase 5).
 
 **Quatro regras que não mudam:**
