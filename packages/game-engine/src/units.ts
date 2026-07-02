@@ -1,4 +1,4 @@
-import type { HexCoord } from './types.js'
+import type { HexCoord, Resources } from './types.js'
 import { UnitType, Era } from './types.js'
 import type { Unit, UnitStats } from './types.js'
 
@@ -127,6 +127,30 @@ export function canTrainUnit(unitType: UnitType, currentEra: Era): boolean {
 /** All unit definitions available to train in `era` (cumulative — earlier eras included). */
 export function unitsAvailableInEra(era: Era): readonly UnitDefinition[] {
   return CATALOG_ENTRIES.filter(d => canTrainUnit(d.type, era))
+}
+
+/**
+ * Effective training cost after expansion/civ modifiers. Single source of truth
+ * shared by validateAction, applyAction and the CityModal so UI and engine never
+ * disagree.
+ * - Settler scales with the player's current city count: +50% per owned city
+ *   (ENT-3 anti-snowball). base 40 → 1 cidade 60, 2 → 80, 3 → 100.
+ * - Ottoman Catapults cost 30% less (BAL-3), preserved with Math.floor.
+ * Food/gold derive from the effective production cost (ceil/2, ceil/3).
+ */
+export function trainingCost(
+  unitDef:        { type: string; productionCost: number },
+  ownedCityCount: number,
+  civId:          string,
+): Resources {
+  const base = unitDef.productionCost
+  let production = base
+  if (unitDef.type === UnitType.Settler) {
+    production = Math.round(base * (1 + 0.5 * ownedCityCount))
+  } else if (civId === 'ottomans' && unitDef.type === UnitType.Catapult) {
+    production = Math.floor(base * 0.7)
+  }
+  return { production, food: Math.ceil(production / 2), gold: Math.ceil(production / 3) }
 }
 
 /**

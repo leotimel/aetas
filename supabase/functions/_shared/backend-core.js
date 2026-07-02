@@ -757,6 +757,16 @@ function canTrainUnit(unitType, currentEra) {
 function unitsAvailableInEra(era) {
   return CATALOG_ENTRIES2.filter((d) => canTrainUnit(d.type, era));
 }
+function trainingCost(unitDef, ownedCityCount, civId) {
+  const base = unitDef.productionCost;
+  let production = base;
+  if (unitDef.type === "settler" /* Settler */) {
+    production = Math.round(base * (1 + 0.5 * ownedCityCount));
+  } else if (civId === "ottomans" && unitDef.type === "catapult" /* Catapult */) {
+    production = Math.floor(base * 0.7);
+  }
+  return { production, food: Math.ceil(production / 2), gold: Math.ceil(production / 3) };
+}
 function createUnitInstance(id, type, ownerId, position) {
   const def = getUnitDef(type);
   return {
@@ -1846,15 +1856,13 @@ function validateAction(state, playerId, action, _now) {
       const allUnits = unitsForCiv(player.civilizationId, state.era);
       const unitDef = allUnits.find((u) => u.type === action.unitType);
       if (!unitDef) return { valid: false, reason: "unit not available in this era" };
-      const rawCost = unitDef.productionCost;
-      const effectiveCost = player.civilizationId === "ottomans" && unitDef.type === "catapult" ? Math.floor(rawCost * 0.7) : rawCost;
-      if (player.resources.production < effectiveCost) {
+      const cityCount = state.cities.filter((c) => c.ownerId === playerId).length;
+      const cost = trainingCost(unitDef, cityCount, player.civilizationId);
+      if (player.resources.production < cost.production) {
         return { valid: false, reason: "insufficient production" };
       }
-      const foodCost = Math.ceil(effectiveCost / 2);
-      const goldCost = Math.ceil(effectiveCost / 3);
-      if (player.resources.food < foodCost) return { valid: false, reason: "insufficient food" };
-      if (player.resources.gold < goldCost) return { valid: false, reason: "insufficient gold" };
+      if (player.resources.food < cost.food) return { valid: false, reason: "insufficient food" };
+      if (player.resources.gold < cost.gold) return { valid: false, reason: "insufficient gold" };
       const totalPop = state.cities.filter((c) => c.ownerId === playerId).reduce((s, c) => s + c.population, 0);
       const currentUnits = state.units.filter((u) => u.ownerId === playerId).length;
       if (currentUnits >= totalPop) return { valid: false, reason: "insufficient population" };
@@ -2012,18 +2020,16 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       const allUnits = unitsForCiv(player.civilizationId, state.era);
       const unitDef = allUnits.find((u) => u.type === action.unitType);
       const newUnit = createUnitFromDef(action.unitId, unitDef, playerId, city.position);
-      const rawCost = unitDef.productionCost;
-      const effectiveCost = player.civilizationId === "ottomans" && unitDef.type === "catapult" ? Math.floor(rawCost * 0.7) : rawCost;
-      const foodCost = Math.ceil(effectiveCost / 2);
-      const goldCost = Math.ceil(effectiveCost / 3);
+      const cityCount = state.cities.filter((c) => c.ownerId === playerId).length;
+      const cost = trainingCost(unitDef, cityCount, player.civilizationId);
       const updatedPlayers = state.players.map(
         (p) => p.id !== playerId ? p : {
           ...p,
           resources: {
             ...p.resources,
-            production: p.resources.production - effectiveCost,
-            food: p.resources.food - foodCost,
-            gold: p.resources.gold - goldCost
+            production: p.resources.production - cost.production,
+            food: p.resources.food - cost.food,
+            gold: p.resources.gold - cost.gold
           }
         }
       );
@@ -2709,6 +2715,7 @@ export {
   terrainDefenseBonus,
   territoryOwnerAt,
   tickConstruction,
+  trainingCost,
   unitsAvailableInEra,
   unitsForCiv,
   unlockedCivs,

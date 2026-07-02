@@ -6,6 +6,7 @@ import {
   canTrainUnit,
   unitsAvailableInEra,
   createUnitInstance,
+  trainingCost,
 } from './units.js'
 
 // ─── Suite 1 — Integridade do catálogo ───────────────────────────────────────
@@ -188,5 +189,36 @@ describe('createUnitInstance', () => {
   it('posição é copiada corretamente', () => {
     const u = createUnitInstance('u1', UnitType.Archer, 'p1', POS)
     expect(u.position).toEqual(POS)
+  })
+})
+
+// ─── trainingCost — custo escalado (ENT-3 + BAL-3) ────────────────────────────
+
+describe('trainingCost', () => {
+  const settler = getUnitDef(UnitType.Settler)    // base 40
+  const catapult = getUnitDef(UnitType.Catapult)  // base 45
+  const warrior = getUnitDef(UnitType.Warrior)
+
+  it('Colono escala +50% por cidade possuída', () => {
+    expect(trainingCost(settler, 0, 'romans').production).toBe(settler.productionCost)      // 40
+    expect(trainingCost(settler, 1, 'romans').production).toBe(60)
+    expect(trainingCost(settler, 2, 'romans').production).toBe(80)
+    expect(trainingCost(settler, 3, 'romans').production).toBe(100)
+  })
+
+  it('food e gold derivam do custo de produção efetivo do Colono', () => {
+    const cost = trainingCost(settler, 3, 'romans') // production 100
+    expect(cost.food).toBe(50)  // ceil(100/2)
+    expect(cost.gold).toBe(34)  // ceil(100/3)
+  })
+
+  it('Catapulta Otomana custa 30% menos; não-Otomana custa o base', () => {
+    expect(trainingCost(catapult, 2, 'ottomans').production).toBe(Math.floor(catapult.productionCost * 0.7))
+    expect(trainingCost(catapult, 2, 'romans').production).toBe(catapult.productionCost)
+  })
+
+  it('unidades que não são Colono não escalam com o nº de cidades', () => {
+    expect(trainingCost(warrior, 0, 'romans').production).toBe(warrior.productionCost)
+    expect(trainingCost(warrior, 5, 'romans').production).toBe(warrior.productionCost)
   })
 })

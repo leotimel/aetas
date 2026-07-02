@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
-import { Era, CitySpecialization, BuildingType, unitsForCiv, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp } from '@aetas/game-engine'
+import { Era, CitySpecialization, BuildingType, unitsForCiv, trainingCost, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp } from '@aetas/game-engine'
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
 import { SealButton } from './ui/SealButton'
 import { RomanDivider } from './ui/RomanDivider'
@@ -78,6 +78,10 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
   const available = isMyCity && myPlayer
     ? unitsForCiv(myPlayer.civilizationId, gameState.era)
     : []
+  // Effective training cost depends on how many cities I already own (Settler
+  // scales) and my civ (Ottoman catapult discount). Same helper the engine uses.
+  const myCityCount = gameState.cities.filter(c => c.ownerId === myEnginePlayerId).length
+  const myCivId = myPlayer?.civilizationId ?? ''
 
   const eraIdx = ERA_ORDER_UI.indexOf(gameState.era)
   const nextEra = ERA_ORDER_UI[eraIdx + 1] as Era | undefined
@@ -290,12 +294,11 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
               {available.length === 0
                 ? <p className="text-xs text-aetas-dim">{t('city.noUnits')}</p>
                 : available.map(def => {
-                    const foodCost = Math.ceil(def.productionCost / 2)
-                    const goldCost = Math.ceil(def.productionCost / 3)
+                    const cost = trainingCost(def, myCityCount, myCivId)
                     const canAfford =
-                      (myResources?.production ?? 0) >= def.productionCost &&
-                      (myResources?.food ?? 0) >= foodCost &&
-                      (myResources?.gold ?? 0) >= goldCost
+                      (myResources?.production ?? 0) >= cost.production &&
+                      (myResources?.food ?? 0) >= cost.food &&
+                      (myResources?.gold ?? 0) >= cost.gold
                     return (
                       <div key={def.type} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
                         <div className="flex-1 min-w-0">
@@ -304,7 +307,7 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
                             ⚔{def.stats.attack} 🛡{def.stats.defense} ❤{def.stats.maxHp} 💨{def.stats.movement}
                           </p>
                         </div>
-                        <span className="flex-shrink-0 text-aetas-muted text-xs whitespace-nowrap">⚙{def.productionCost} 🌾{foodCost} 💰{goldCost}</span>
+                        <span className="flex-shrink-0 text-aetas-muted text-xs whitespace-nowrap">⚙{cost.production} 🌾{cost.food} 💰{cost.gold}</span>
                         <button
                           onClick={() => onTrainUnit(city.id, def.type)}
                           disabled={!canAfford || hexOccupied}

@@ -423,6 +423,51 @@ describe('applyAction — trainUnit', () => {
   })
 })
 
+// ─── trainUnit: rising Settler cost per owned city (ENT-3) ─────────────────────
+
+describe('applyAction — trainUnit Settler expansion cost (ENT-3)', () => {
+  it('Settler with 1 owned city deducts base*1.5 (40→60)', () => {
+    const city = makeCity('c1', 'p0', { q: 0, r: 0 })
+    const state = makeState({ players: [romanPlayer('p0', 200), makePlayer('p1')], cities: [city] })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'settler', unitId: 's1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.players.find(p => p.id === 'p0')!.resources.production).toBe(140) // 200 - 60
+  })
+
+  it('Settler with 3 owned cities deducts base*2.5 (40→100)', () => {
+    const cities = [
+      makeCity('c1', 'p0', { q: 0, r: 0 }),
+      makeCity('c2', 'p0', { q: 4, r: 0 }),
+      makeCity('c3', 'p0', { q: 0, r: 4 }),
+    ]
+    const state = makeState({ players: [romanPlayer('p0', 200), makePlayer('p1')], cities })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'settler', unitId: 's1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.players.find(p => p.id === 'p0')!.resources.production).toBe(100) // 200 - 100
+  })
+
+  it('the scaling does not leak to other units — Archer still costs base with 3 cities', () => {
+    const cities = [
+      makeCity('c1', 'p0', { q: 0, r: 0 }),
+      makeCity('c2', 'p0', { q: 4, r: 0 }),
+      makeCity('c3', 'p0', { q: 0, r: 4 }),
+    ]
+    const state = makeState({ players: [romanPlayer('p0', 200), makePlayer('p1')], cities })
+    const action: GameAction = { type: 'trainUnit', cityId: 'c1', unitType: 'archer', unitId: 'a1' }
+
+    const res = applyAction(state, 'p0', action, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.players.find(p => p.id === 'p0')!.resources.production).toBe(175) // 200 - 25 (archer base)
+  })
+})
+
 // ─── trainUnit: food + gold cost + population cap (E6) ─────────────────────────
 
 describe('validateAction — trainUnit economy gates (E6)', () => {
