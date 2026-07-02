@@ -16,12 +16,23 @@ Só após o 🛑 CHECKPOINT GX seguir para o Bloco C → Android (Fase 5).
   arquitetura não coberta neste playbook DEVE ser resolvida via perguntas
   ao usuário antes de codar — nunca assuma. Se o Claude Code iniciar uma
   sessão nova, pergunte antes de partir para código.
-- **Modelo sugerido em cada prompt** (regra): comece em **Sonnet 4.6**
-  (daily driver); troque para **Opus 4.8** só em prompts marcados 🔴
-  (estado distribuído, concorrência, algoritmos complexos). Nunca troque
+- **Modelo sugerido em cada prompt** (regra): comece em **Sonnet 5**
+  (daily driver — quase-Opus em código/agêntico e mais barato); troque para
+  **Opus 4.8** só em prompts marcados 🔴 (estado distribuído, concorrência,
+  algoritmos complexos). **Haiku 4.5** para docs/boilerplate. Nunca troque
   o projeto inteiro de modelo — troque o prompt específico.
-- **Rode os testes** (`npx vitest run` no `game-engine`) depois de cada
+  - **⚡ Escalação p/ Fable 5 (raro):** se um bug de concorrência/estado
+    distribuído travar mesmo no Opus 4.8, escale pro **Fable 5** só naquele
+    prompt. É o modelo mais capaz, mas custa ~2× o Opus — use como exceção,
+    não como padrão.
+- **Rode os testes** (`pnpm --filter @aetas/game-engine test`) depois de cada
   mudança em regras de jogo.
+- **🔻 Deploy do backend após mudar o `game-engine`:** o motor roda nas Edge
+  Functions através do bundle `supabase/functions/_shared/backend-core.js`. Ele
+  NÃO se regenera sozinho e o Vercel só publica a web. Todo prompt que altera
+  `packages/game-engine` DEVE terminar com:
+  `pnpm --filter @aetas/backend-core bundle && npx supabase functions deploy`.
+  (Foi por pular isso que BAL-1/2/3 não foram ao ar por várias sessões.)
 - **Commit por fase.**
 - 🧠 = peça pro Claude **planejar antes de codar**.
 - 🔴 = prompt onde **Opus 4.8 é recomendado**, não Sonnet.
@@ -2635,6 +2646,10 @@ Testes em `ai.test.ts`:
 - Determinismo: rodar 2x a mesma decisão → resultado idêntico.
 
 pnpm --filter @aetas/game-engine test
+
+# 🔻 Mudou o motor → regenerar bundle e deployar o backend (senão não vai ao ar):
+pnpm --filter @aetas/backend-core bundle
+npx supabase functions deploy
 ```
 
 ✅ **Commit:** `"feat(ent-4): per-civ AI personalities (aggressor/builder/diplomat)"`
@@ -2680,6 +2695,10 @@ botão Construir com o padrão pill existente. Ícone especial no mapa/cidade
 que possui uma maravilha.
 
 pnpm --filter @aetas/game-engine test
+
+# 🔻 PARTE A mudou o motor → regenerar bundle e deployar o backend:
+pnpm --filter @aetas/backend-core bundle
+npx supabase functions deploy
 ```
 
 ✅ **Commit (A):** `"feat(ent-5a): World Wonders system (globally unique builds)"`
@@ -2719,6 +2738,10 @@ Novo arquivo `packages/game-engine/src/events.ts`:
   hex válido (terreno não-água, dentro do mapa).
 
 pnpm --filter @aetas/game-engine test
+
+# 🔻 Mudou o motor → regenerar bundle e deployar o backend:
+pnpm --filter @aetas/backend-core bundle
+npx supabase functions deploy
 ```
 
 ✅ **Commit:** `"feat(ent-6): deterministic world events (barbarians/plague/golden age)"`
@@ -3340,10 +3363,14 @@ ENT-6 (Eventos Mundiais determinísticos · **Opus** 🔴) → 🛑 CHECKPOINT E
 Fase 5 Android
 (comece pelos PRÉ-REQUISITOS MANUAIS de cada UI-V, depois pelos da Fase 5).
 
-**Três regras que não mudam:**
+**Quatro regras que não mudam:**
 1. **AskUserQuestions é obrigatório** antes de decisão de design não coberta.
-2. **Sonnet 4.6 é o padrão.** Opus 4.8 somente nos prompts marcados 🔴.
-3. **Checkpoints não são opcionais** — cada um existe porque o custo de um
+2. **Sonnet 5 é o padrão.** Opus 4.8 só nos prompts 🔴; Haiku 4.5 em docs;
+   Fable 5 só como escalação de exceção (bug de concorrência encravado).
+3. **Mudou o `game-engine`? Regenere o bundle e deploye as Edge Functions**
+   (`pnpm --filter @aetas/backend-core bundle && npx supabase functions deploy`)
+   — senão a regra nova roda só nos testes, nunca em produção.
+4. **Checkpoints não são opcionais** — cada um existe porque o custo de um
    bug descoberto tarde é multiplicado pelo número de UIs a corrigir.
 
 **Lembretes práticos de publicação:**

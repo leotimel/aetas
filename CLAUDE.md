@@ -103,10 +103,11 @@ Android vem antes de iOS porque não requer Mac. iOS fica por último.
 
 | Tarefa | Modelo |
 |---|---|
-| Scaffold, configs, schema Postgres, UI de qualquer client | Sonnet 4.6 |
-| `types.ts`, `economy.ts`, `diplomacy.ts`, `scoring.ts` | Sonnet 4.6 |
-| Geração de mapa hex + fog of war | Sonnet 4.6 |
-| Edge Functions simples (auth, read-only) | Sonnet 4.6 |
+| Scaffold, configs, schema Postgres, UI de qualquer client | Sonnet 5 |
+| `types.ts`, `economy.ts`, `diplomacy.ts`, `scoring.ts` | Sonnet 5 |
+| Geração de mapa hex + fog of war | Sonnet 5 |
+| Edge Functions simples (auth, read-only) | Sonnet 5 |
+| Docs, boilerplate, tarefas mecânicas de alto volume | Haiku 4.5 |
 | **`turn.ts` — máquina de estados do turno sequencial** | **Opus 4.8** |
 | **`combat.ts` — disputa assíncrona + timeout** | **Opus 4.8** |
 | **`ai.ts` — IA seguradora de posição + oponente** | **Opus 4.8** |
@@ -114,8 +115,17 @@ Android vem antes de iOS porque não requer Mac. iOS fica por último.
 | **Debugging de sincronização entre clients** | **Opus 4.8** |
 | **Diplomacia (estado de relação multi-jogador)** | **Opus 4.8** |
 
-Regra prática: **comece em Sonnet 4.6**; troque para Opus 4.8 só no prompt
+Regra prática: **comece em Sonnet 5**; troque para Opus 4.8 só no prompt
 específico que mexe com estado distribuído ou condições de corrida.
+**Escalação de exceção:** se um bug de concorrência travar mesmo no Opus 4.8,
+escale pro **Fable 5** só naquele prompt — é o modelo mais capaz da Anthropic,
+mas custa ~2× o Opus, então é exceção rara, não padrão.
+
+**Deploy do motor:** o `game-engine` roda nas Edge Functions via bundle
+(`supabase/functions/_shared/backend-core.js`), que não se regenera sozinho e
+não é publicado pelo Vercel. Todo prompt que altera `packages/game-engine`
+termina com `pnpm --filter @aetas/backend-core bundle && npx supabase
+functions deploy` — senão a regra nova só existe nos testes, não em produção.
 
 ---
 

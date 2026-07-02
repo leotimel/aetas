@@ -105,11 +105,14 @@ em Swift e Kotlin.
 ## Recomendação de modelo Claude por tipo de tarefa
 
 Baseado na documentação oficial da Anthropic (claude.com/resources/tutorials/
-choosing-the-right-claude-model): **Sonnet 4.6 é o daily driver para coding**
-— cobre a maioria das tarefas deste projeto. **Opus 4.8** vale especificamente
-para raciocínio sustentado e complexo — o que este projeto tem mais do que
-o Taut/Longshot, por causa do estado distribuído entre turnos assíncronos.
-**Haiku 4.5** serve tarefas leves e mecânicas.
+choosing-the-right-claude-model): **Sonnet 5 é o daily driver para coding**
+— cobre a maioria das tarefas deste projeto (quase-Opus em código/agêntico,
+mais barato que Opus). **Opus 4.8** vale especificamente para raciocínio
+sustentado e complexo — o que este projeto tem mais do que o Taut/Longshot,
+por causa do estado distribuído entre turnos assíncronos. **Haiku 4.5** serve
+tarefas leves e mecânicas. **Fable 5** — o modelo mais capaz da Anthropic —
+fica reservado como escalação de exceção quando um bug de concorrência trava
+mesmo no Opus 4.8; custa ~2× o Opus, então nunca é o padrão de um prompt.
 
 | Tipo de tarefa | Modelo sugerido | Por quê |
 |---|---|---|
@@ -128,11 +131,19 @@ o Taut/Longshot, por causa do estado distribuído entre turnos assíncronos.
 | Testes (Vitest, XCTest, etc.) | Sonnet | Direto, ainda que extenso |
 | Documentação, README | Haiku ou Sonnet | Baixo risco, alto volume de texto |
 
-Regra prática pro playbook: comece todo prompt em Sonnet. Se a resposta
+Regra prática pro playbook: comece todo prompt em Sonnet 5. Se a resposta
 "parecer" funcionar mas você tiver dúvida sobre um edge case de concorrência
 (dois jogadores agindo quase ao mesmo tempo, timeout disparando no limite),
 peça pro Claude Code trocar para Opus nesse prompt específico — não troque
-o projeto inteiro, troque o prompt.
+o projeto inteiro, troque o prompt. Se mesmo o Opus travar no mesmo bug,
+escale pro Fable 5 como último recurso, também só naquele prompt.
+
+**Deploy do motor:** o `game-engine` roda nas Edge Functions via
+`supabase/functions/_shared/backend-core.js`, um bundle que precisa ser
+regenerado manualmente e publicado com `supabase functions deploy` — o Vercel
+só publica a web. Qualquer prompt que altera `packages/game-engine` deve
+terminar com `pnpm --filter @aetas/backend-core bundle && npx supabase
+functions deploy`.
 
 ## Glossário compartilhado (a criar na Fase 0 do playbook)
 
