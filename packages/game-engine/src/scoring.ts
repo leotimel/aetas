@@ -1,5 +1,6 @@
 ﻿import { TurnState } from './types.js'
-import type { GameState, City } from './types.js'
+import type { GameState, City, BuiltWonder } from './types.js'
+import { WONDER_CATALOG } from './wonders.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -20,14 +21,25 @@ export interface PlayerScore {
 // ─── Core scoring functions ───────────────────────────────────────────────────
 
 /**
- * Computes the score for `playerId` given the full cities array.
- * Pure: only the cities owned by `playerId` are counted.
+ * Computes the score for `playerId` given the full cities array. Pure: only the
+ * cities owned by `playerId` are counted. `wonders` is optional (backward compat,
+ * like computeCityProduction's allCities/tiles); when supplied, each scoreBonus
+ * wonder the player owns folds into the development component.
  */
-export function computePlayerScore(playerId: string, cities: readonly City[]): PlayerScore {
+export function computePlayerScore(
+  playerId: string,
+  cities: readonly City[],
+  wonders: readonly BuiltWonder[] = [],
+): PlayerScore {
   const owned = cities.filter(c => c.ownerId === playerId)
   const territory   = owned.length * TERRITORY_POINTS_PER_CITY
   const population  = owned.reduce((s, c) => s + c.population, 0) * POPULATION_POINTS_PER_POP
-  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL
+  const wonderPts   = wonders.reduce((s, w) => {
+    if (w.ownerId !== playerId) return s
+    const e = WONDER_CATALOG.get(w.wonderId)?.effect
+    return e?.type === 'scoreBonus' ? s + e.value : s
+  }, 0)
+  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL + wonderPts
   return { playerId, territory, population, development, total: territory + population + development }
 }
 
@@ -36,7 +48,7 @@ export function computePlayerScore(playerId: string, cities: readonly City[]): P
  * Used by web components that have the state available.
  */
 export function scorePlayer(state: GameState, playerId: string): PlayerScore {
-  return computePlayerScore(playerId, state.cities)
+  return computePlayerScore(playerId, state.cities, state.wonders ?? [])
 }
 
 /**
@@ -44,7 +56,7 @@ export function scorePlayer(state: GameState, playerId: string): PlayerScore {
  */
 export function scoreAll(state: GameState): Record<string, PlayerScore> {
   return Object.fromEntries(
-    state.players.map(p => [p.id, computePlayerScore(p.id, state.cities)])
+    state.players.map(p => [p.id, computePlayerScore(p.id, state.cities, state.wonders ?? [])])
   )
 }
 
@@ -55,7 +67,7 @@ export function scoreAll(state: GameState): Record<string, PlayerScore> {
 export function rankPlayers(state: GameState): PlayerScore[] {
   return state.players
     .filter(p => !p.isEliminated)
-    .map(p => computePlayerScore(p.id, state.cities))
+    .map(p => computePlayerScore(p.id, state.cities, state.wonders ?? []))
     .sort((a, b) =>
       b.total !== a.total
         ? b.total - a.total

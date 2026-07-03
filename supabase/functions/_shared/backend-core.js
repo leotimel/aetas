@@ -613,27 +613,138 @@ function processTurnEconomy(cities, existingResources, tiles = []) {
   };
 }
 
+// ../game-engine/src/wonders.ts
+var ERA_RANK = {
+  ["ancient" /* Ancient */]: 0,
+  ["classical" /* Classical */]: 1,
+  ["medieval" /* Medieval */]: 2
+};
+function eraAtLeast(current, required) {
+  return ERA_RANK[current] >= ERA_RANK[required];
+}
+var CATALOG_ENTRIES2 = [
+  {
+    id: "hanging_gardens",
+    name: "Jardins Suspensos",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 90,
+    effect: { type: "foodMultiplier", value: 1.3 },
+    description: "+30% de comida em todas as cidades do dono."
+  },
+  {
+    id: "grand_bazaar",
+    name: "Grande Bazar",
+    eraRequired: "ancient" /* Ancient */,
+    productionCost: 90,
+    effect: { type: "goldMultiplier", value: 1.25 },
+    description: "+25% de ouro em todas as cidades do dono."
+  },
+  {
+    id: "great_forge",
+    name: "Grande Forja",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 110,
+    effect: { type: "productionMultiplier", value: 1.25 },
+    description: "+25% de produ\xE7\xE3o em todas as cidades do dono."
+  },
+  {
+    id: "great_library",
+    name: "Grande Biblioteca",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 100,
+    effect: { type: "eraProgressBonus", value: 2 },
+    description: "+2 de pesquisa por turno na cidade que a abriga."
+  },
+  {
+    id: "colosseum",
+    name: "Coliseu",
+    eraRequired: "classical" /* Classical */,
+    productionCost: 100,
+    effect: { type: "scoreBonus", value: 15 },
+    description: "+15 pontos de pontua\xE7\xE3o para o dono."
+  },
+  {
+    id: "art_of_war",
+    name: "Arte da Guerra",
+    eraRequired: "medieval" /* Medieval */,
+    productionCost: 130,
+    effect: { type: "combatMultiplier", value: 1.15 },
+    description: "+15% de dano em combate para todas as unidades do dono."
+  }
+];
+var WONDER_CATALOG = new Map(
+  CATALOG_ENTRIES2.map((w) => [w.id, w])
+);
+var WONDERS = CATALOG_ENTRIES2;
+function getWonderDef(id) {
+  return WONDER_CATALOG.get(id);
+}
+function ownedEffects(state, ownerId) {
+  const out = [];
+  for (const built of state.wonders ?? []) {
+    if (built.ownerId !== ownerId) continue;
+    const def = WONDER_CATALOG.get(built.wonderId);
+    if (def) out.push(def.effect);
+  }
+  return out;
+}
+function wonderEconomyMultipliers(state, ownerId) {
+  let gold = 1, food = 1, production = 1;
+  for (const e of ownedEffects(state, ownerId)) {
+    if (e.type === "goldMultiplier") gold *= e.value;
+    if (e.type === "foodMultiplier") food *= e.value;
+    if (e.type === "productionMultiplier") production *= e.value;
+  }
+  return { gold, food, production };
+}
+function wonderEraProgressBonus(state, cityId) {
+  let sum = 0;
+  for (const built of state.wonders ?? []) {
+    if (built.cityId !== cityId) continue;
+    const def = WONDER_CATALOG.get(built.wonderId);
+    if (def?.effect.type === "eraProgressBonus") sum += def.effect.value;
+  }
+  return sum;
+}
+function wonderScoreBonus(state, ownerId) {
+  return ownedEffects(state, ownerId).reduce(
+    (sum, e) => e.type === "scoreBonus" ? sum + e.value : sum,
+    0
+  );
+}
+function wonderCombatMultiplier(state, ownerId) {
+  return ownedEffects(state, ownerId).reduce(
+    (acc, e) => e.type === "combatMultiplier" ? acc * e.value : acc,
+    1
+  );
+}
+
 // ../game-engine/src/scoring.ts
 var TERRITORY_POINTS_PER_CITY = 10;
 var POPULATION_POINTS_PER_POP = 3;
 var DEVELOPMENT_POINTS_PER_LEVEL = 5;
-function computePlayerScore(playerId, cities) {
+function computePlayerScore(playerId, cities, wonders = []) {
   const owned = cities.filter((c) => c.ownerId === playerId);
   const territory = owned.length * TERRITORY_POINTS_PER_CITY;
   const population = owned.reduce((s, c) => s + c.population, 0) * POPULATION_POINTS_PER_POP;
-  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL;
+  const wonderPts = wonders.reduce((s, w) => {
+    if (w.ownerId !== playerId) return s;
+    const e = WONDER_CATALOG.get(w.wonderId)?.effect;
+    return e?.type === "scoreBonus" ? s + e.value : s;
+  }, 0);
+  const development = owned.reduce((s, c) => s + c.level, 0) * DEVELOPMENT_POINTS_PER_LEVEL + wonderPts;
   return { playerId, territory, population, development, total: territory + population + development };
 }
 function scorePlayer(state, playerId) {
-  return computePlayerScore(playerId, state.cities);
+  return computePlayerScore(playerId, state.cities, state.wonders ?? []);
 }
 function scoreAll(state) {
   return Object.fromEntries(
-    state.players.map((p) => [p.id, computePlayerScore(p.id, state.cities)])
+    state.players.map((p) => [p.id, computePlayerScore(p.id, state.cities, state.wonders ?? [])])
   );
 }
 function rankPlayers(state) {
-  return state.players.filter((p) => !p.isEliminated).map((p) => computePlayerScore(p.id, state.cities)).sort(
+  return state.players.filter((p) => !p.isEliminated).map((p) => computePlayerScore(p.id, state.cities, state.wonders ?? [])).sort(
     (a, b) => b.total !== a.total ? b.total - a.total : a.playerId.localeCompare(b.playerId)
   );
 }
@@ -674,7 +785,7 @@ var ERA_ORDER = {
   ["classical" /* Classical */]: 1,
   ["medieval" /* Medieval */]: 2
 };
-var CATALOG_ENTRIES2 = [
+var CATALOG_ENTRIES3 = [
   // ── Era Ancient ──────────────────────────────────────────────────────────
   {
     type: "warrior" /* Warrior */,
@@ -743,7 +854,7 @@ var CATALOG_ENTRIES2 = [
   }
 ];
 var UNIT_CATALOG = new Map(
-  CATALOG_ENTRIES2.map((d) => [d.type, d])
+  CATALOG_ENTRIES3.map((d) => [d.type, d])
 );
 function getUnitDef(type) {
   const def = UNIT_CATALOG.get(type);
@@ -755,7 +866,7 @@ function canTrainUnit(unitType, currentEra) {
   return ERA_ORDER[currentEra] >= ERA_ORDER[def.eraRequired];
 }
 function unitsAvailableInEra(era) {
-  return CATALOG_ENTRIES2.filter((d) => canTrainUnit(d.type, era));
+  return CATALOG_ENTRIES3.filter((d) => canTrainUnit(d.type, era));
 }
 function trainingCost(unitDef, ownedCityCount, civId) {
   const base = unitDef.productionCost;
@@ -930,7 +1041,7 @@ var SPECIAL_UNITS = [
 var SPECIAL_UNIT_CATALOG = new Map(
   SPECIAL_UNITS.map((u) => [u.type, u])
 );
-var CATALOG_ENTRIES3 = [
+var CATALOG_ENTRIES4 = [
   {
     id: "romans",
     name: "Romanos",
@@ -1092,7 +1203,7 @@ var CATALOG_ENTRIES3 = [
   }
 ];
 var CIVILIZATION_CATALOG = new Map(
-  CATALOG_ENTRIES3.map((c) => [c.id, c])
+  CATALOG_ENTRIES4.map((c) => [c.id, c])
 );
 function getCivilization(id) {
   const civ = CIVILIZATION_CATALOG.get(id);
@@ -1206,10 +1317,11 @@ function endTurn(state, playerId, now, hooks = {}) {
     const updatedById = new Map(updatedCities.map((c) => [c.id, c]));
     cities = cities.map((c) => updatedById.get(c.id) ?? c);
     const m = getCivEconomyMultipliers(actor.civilizationId);
+    const wm = wonderEconomyMultipliers(state, actorId);
     actor.resources = {
-      gold: Math.round(preResources.gold + (updatedResources.gold - preResources.gold) * m.gold),
-      food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food),
-      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production)
+      gold: Math.round(preResources.gold + (updatedResources.gold - preResources.gold) * m.gold * wm.gold),
+      food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food * wm.food),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production)
     };
     if (actor.conquestBonusProduction) {
       actor.resources = {
@@ -1278,7 +1390,7 @@ function endTurn(state, playerId, now, hooks = {}) {
     const threshold = ERA_SCIENCE_THRESHOLDS[eraIdx];
     const actorCities = working.cities.filter((c) => c.ownerId === actorId);
     const science = 1 + actorCities.reduce(
-      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []),
+      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []) + wonderEraProgressBonus(working, c.id),
       0
     );
     nextEraProgress += science;
@@ -1304,6 +1416,9 @@ function endTurn(state, playerId, now, hooks = {}) {
 }
 
 // ../game-engine/src/combat.ts
+function combatMult(state, player) {
+  return player ? getCivCombatMultiplier(player.civilizationId) * wonderCombatMultiplier(state, player.id) : 1;
+}
 var COMBAT_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var MIN_DAMAGE = 1;
 var ACTIVE_DEFENSE_BONUS = 2;
@@ -1432,8 +1547,8 @@ function resolveDisputeByAction(state, disputeId, actingPlayerId, _now) {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
     defenderActiveDefense: actingPlayerId === dispute.defenderPlayerId,
-    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
+    attackerCivMultiplier: combatMult(state, atkPlayer),
+    defenderCivMultiplier: combatMult(state, defPlayer)
   });
   const applied = applyCombatResult(state, result);
   return {
@@ -1452,8 +1567,8 @@ function resolveTimedOutDispute(dispute, state) {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
     defenderActiveDefense: false,
-    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
+    attackerCivMultiplier: combatMult(state, atkPlayer),
+    defenderCivMultiplier: combatMult(state, defPlayer)
   });
   return applyCombatResult(state, result);
 }
@@ -1464,8 +1579,8 @@ function resolveCombatImmediate(state, attacker, defender) {
     defenderTerrain: terrainAt(state, defender.position),
     attackerTerrain: terrainAt(state, attacker.position),
     defenderActiveDefense: false,
-    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1
+    attackerCivMultiplier: combatMult(state, atkPlayer),
+    defenderCivMultiplier: combatMult(state, defPlayer)
   });
   const applied = applyCombatResult(state, result);
   return {
@@ -1901,6 +2016,24 @@ function validateAction(state, playerId, action, _now) {
       }
       return { valid: true };
     }
+    case "buildWonder": {
+      const city = state.cities.find((c) => c.id === action.cityId);
+      if (!city) return { valid: false, reason: "city not found" };
+      if (city.ownerId !== playerId) return { valid: false, reason: "not your city" };
+      const wonderDef = getWonderDef(action.wonderId);
+      if (!wonderDef) return { valid: false, reason: "unknown wonder" };
+      if ((state.wonders ?? []).some((w) => w.wonderId === action.wonderId)) {
+        return { valid: false, reason: "wonder already built" };
+      }
+      if (!eraAtLeast(state.era, wonderDef.eraRequired)) {
+        return { valid: false, reason: "era not reached" };
+      }
+      const player = getPlayerById(state, playerId);
+      if (player.resources.production < wonderDef.productionCost) {
+        return { valid: false, reason: "insufficient production" };
+      }
+      return { valid: true };
+    }
     case "moveUnit": {
       const unit = findUnit2(state, action.unitId);
       if (!unit) return { valid: false, reason: "unit not found" };
@@ -2056,6 +2189,25 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
       return {
         ok: true,
         state: { ...state, cities: updatedCities, players: updatedPlayers }
+      };
+    }
+    case "buildWonder": {
+      const wonderDef = getWonderDef(action.wonderId);
+      const updatedPlayers = state.players.map(
+        (p) => p.id !== playerId ? p : {
+          ...p,
+          resources: { ...p.resources, production: p.resources.production - wonderDef.productionCost }
+        }
+      );
+      const built = {
+        wonderId: action.wonderId,
+        ownerId: playerId,
+        cityId: action.cityId,
+        builtAtTurn: state.turnNumber
+      };
+      return {
+        ok: true,
+        state: { ...state, players: updatedPlayers, wonders: [...state.wonders ?? [], built] }
       };
     }
     case "moveUnit": {
@@ -2666,6 +2818,8 @@ export {
   UNIT_MAINTENANCE_GOLD,
   UNIT_VISION_RADIUS,
   UnitType,
+  WONDERS,
+  WONDER_CATALOG,
   XP_DAILY_BASE,
   XP_DAILY_WIN,
   XP_FOR_PLAYING,
@@ -2696,6 +2850,7 @@ export {
   diffDisputes,
   eliminatePlayersWithNoCities,
   endTurn,
+  eraAtLeast,
   finalizeIfDominated,
   generateMap,
   getBuildingDef,
@@ -2712,6 +2867,7 @@ export {
   getPlayerById,
   getSpecialUnit,
   getUnitDef,
+  getWonderDef,
   growthThreshold,
   haveMadeContact,
   hexDistance,
@@ -2749,6 +2905,10 @@ export {
   unlockedCivs,
   updateFogOfWar,
   validateAction,
+  wonderCombatMultiplier,
+  wonderEconomyMultipliers,
+  wonderEraProgressBonus,
+  wonderScoreBonus,
   xpForNextLevel,
   xpProgress,
   xpToLevel

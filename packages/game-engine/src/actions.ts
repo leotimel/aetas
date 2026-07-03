@@ -23,6 +23,7 @@ import { unitsForCiv } from './civilizations.js'
 import { getBuildingDef, startConstruction } from './buildings.js'
 import { cityMaxHp, cityDefense } from './economy.js'
 import { eliminatePlayersWithNoCities, finalizeIfDominated } from './scoring.js'
+import { getWonderDef, eraAtLeast } from './wonders.js'
 
 // ─── Action model ─────────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ export type GameAction =
   | { type: 'initiateCombat'; attackerUnitId: string; defenderUnitId: string }
   | { type: 'trainUnit'; cityId: string; unitType: string; unitId: string }
   | { type: 'constructBuilding'; cityId: string; buildingType: BuildingType }
+  | { type: 'buildWonder'; cityId: string; wonderId: string }
   | { type: 'moveUnit'; unitId: string; targetCoord: HexCoord }
   | { type: 'foundCity'; unitId: string; cityId: string; cityName: string; specialization: CitySpecialization }
   | { type: 'attackCity'; unitId: string; cityId: string }
@@ -204,6 +206,30 @@ export function validateAction(
       }
       if (player.resources.gold < buildingDef.goldCost) {
         return { valid: false, reason: 'insufficient gold' }
+      }
+
+      return { valid: true }
+    }
+
+    case 'buildWonder': {
+      const city = state.cities.find(c => c.id === action.cityId)
+      if (!city) return { valid: false, reason: 'city not found' }
+      if (city.ownerId !== playerId) return { valid: false, reason: 'not your city' }
+
+      const wonderDef = getWonderDef(action.wonderId)
+      if (!wonderDef) return { valid: false, reason: 'unknown wonder' }
+
+      // Global uniqueness: the first builder anywhere locks it for everyone.
+      if ((state.wonders ?? []).some(w => w.wonderId === action.wonderId)) {
+        return { valid: false, reason: 'wonder already built' }
+      }
+      if (!eraAtLeast(state.era, wonderDef.eraRequired)) {
+        return { valid: false, reason: 'era not reached' }
+      }
+
+      const player = getPlayerById(state, playerId)!
+      if (player.resources.production < wonderDef.productionCost) {
+        return { valid: false, reason: 'insufficient production' }
       }
 
       return { valid: true }
@@ -410,6 +436,26 @@ export function applyAction(
       return {
         ok: true,
         state: { ...state, cities: updatedCities, players: updatedPlayers },
+      }
+    }
+
+    case 'buildWonder': {
+      const wonderDef = getWonderDef(action.wonderId)!
+      const updatedPlayers = state.players.map(p =>
+        p.id !== playerId ? p : {
+          ...p,
+          resources: { ...p.resources, production: p.resources.production - wonderDef.productionCost },
+        },
+      )
+      const built = {
+        wonderId:    action.wonderId,
+        ownerId:     playerId,
+        cityId:      action.cityId,
+        builtAtTurn: state.turnNumber,
+      }
+      return {
+        ok: true,
+        state: { ...state, players: updatedPlayers, wonders: [...(state.wonders ?? []), built] },
       }
     }
 

@@ -298,6 +298,16 @@ export interface DailyChallenge {
   readonly gameId: string
 }
 
+// ─── Wonders ──────────────────────────────────────────────────────────────────
+
+/** A World Wonder that has been built. Globally unique: at most one per wonderId. */
+export interface BuiltWonder {
+  readonly wonderId:    string
+  readonly ownerId:     string
+  readonly cityId:      string
+  readonly builtAtTurn: number
+}
+
 // ─── GameState ───────────────────────────────────────────────────────────────
 
 /**
@@ -321,6 +331,7 @@ export interface GameState {
   combatDisputes:             CombatDispute[]
   nonAggressionPacts:         NonAggressionPact[]
   wars?:                      War[]   // active wars; absent = none (backward compat)
+  wonders?:                   BuiltWonder[]  // built World Wonders; absent = none (backward compat)
   diplomaticProposals:        DiplomaticProposal[]
   fogOfWar:                   PlayerFogOfWar[]
   /** Set when the game ends; null while in progress. */

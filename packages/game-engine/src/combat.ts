@@ -1,7 +1,16 @@
 import { TerrainType, CombatDisputeStatus } from './types.js'
-import type { Unit, CombatDispute, GameState, HexCoord } from './types.js'
+import type { Unit, CombatDispute, GameState, HexCoord, Player } from './types.js'
 import { hexKey } from './map.js'
 import { getCivCombatMultiplier } from './civilizations.js'
+import { wonderCombatMultiplier } from './wonders.js'
+
+/**
+ * Combined combat damage multiplier for a player: civ ability × owned wonders.
+ * Returns 1 for an absent player. Used at every combat-resolution site.
+ */
+function combatMult(state: GameState, player: Player | undefined): number {
+  return player ? getCivCombatMultiplier(player.civilizationId) * wonderCombatMultiplier(state, player.id) : 1
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -260,8 +269,8 @@ export function resolveDisputeByAction(
     defenderTerrain:        terrainAt(state, defender.position),
     attackerTerrain:        terrainAt(state, attacker.position),
     defenderActiveDefense:  actingPlayerId === dispute.defenderPlayerId,
-    attackerCivMultiplier:  atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier:  defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
+    attackerCivMultiplier:  combatMult(state, atkPlayer),
+    defenderCivMultiplier:  combatMult(state, defPlayer),
   })
 
   const applied = applyCombatResult(state, result)
@@ -299,8 +308,8 @@ export function resolveTimedOutDispute(dispute: CombatDispute, state: GameState)
     defenderTerrain:       terrainAt(state, defender.position),
     attackerTerrain:       terrainAt(state, attacker.position),
     defenderActiveDefense: false,
-    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
+    attackerCivMultiplier: combatMult(state, atkPlayer),
+    defenderCivMultiplier: combatMult(state, defPlayer),
   })
 
   return applyCombatResult(state, result)
@@ -330,8 +339,8 @@ export function resolveCombatImmediate(
     defenderTerrain:       terrainAt(state, defender.position),
     attackerTerrain:       terrainAt(state, attacker.position),
     defenderActiveDefense: false,
-    attackerCivMultiplier: atkPlayer ? getCivCombatMultiplier(atkPlayer.civilizationId) : 1,
-    defenderCivMultiplier: defPlayer ? getCivCombatMultiplier(defPlayer.civilizationId) : 1,
+    attackerCivMultiplier: combatMult(state, atkPlayer),
+    defenderCivMultiplier: combatMult(state, defPlayer),
   })
 
   const applied = applyCombatResult(state, result)

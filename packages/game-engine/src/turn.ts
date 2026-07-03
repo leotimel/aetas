@@ -5,6 +5,7 @@ import { determineWinner as computeWinner, finalizeIfDominated } from './scoring
 import { processTurnEconomy, applyUnitMaintenance, cityMaxHp } from './economy.js'
 import { getCivEconomyMultipliers } from './civilizations.js'
 import { getCityEraProgressBonus } from './buildings.js'
+import { wonderEconomyMultipliers, wonderEraProgressBonus } from './wonders.js'
 
 const ERA_ORDER = [Era.Ancient, Era.Classical, Era.Medieval] as const
 const ERA_SCIENCE_THRESHOLDS = [5, 5] as const // Ancient→Classical: 5, Classical→Medieval: 5
@@ -143,10 +144,12 @@ export function endTurn(
     const updatedById = new Map(updatedCities.map(c => [c.id, c]))
     cities = cities.map(c => updatedById.get(c.id) ?? c)
     const m = getCivEconomyMultipliers(actor.civilizationId)
+    // Wonders (ENT-5) stack on top of the civ multiplier, owner-wide.
+    const wm = wonderEconomyMultipliers(state, actorId)
     actor.resources = {
-      gold:       Math.round(preResources.gold       + (updatedResources.gold       - preResources.gold)       * m.gold),
-      food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food),
-      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production),
+      gold:       Math.round(preResources.gold       + (updatedResources.gold       - preResources.gold)       * m.gold       * wm.gold),
+      food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food       * wm.food),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production),
     }
     // Aztec Expansão Ritual: flat production bonus per captured city
     if (actor.conquestBonusProduction) {
@@ -237,7 +240,7 @@ export function endTurn(
     const threshold = ERA_SCIENCE_THRESHOLDS[eraIdx]
     const actorCities = working.cities.filter(c => c.ownerId === actorId)
     const science = 1 + actorCities.reduce(
-      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []), 0,
+      (s, c) => s + getCityEraProgressBonus(c.buildings ?? []) + wonderEraProgressBonus(working, c.id), 0,
     )
     nextEraProgress += science
     if (nextEraProgress >= threshold) {
