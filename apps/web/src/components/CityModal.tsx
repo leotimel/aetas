@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import type { City, GameState, BuildingEffect } from '@aetas/game-engine'
-import { Era, CitySpecialization, BuildingType, unitsForCiv, trainingCost, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp } from '@aetas/game-engine'
+import type { City, GameState, BuildingEffect, WonderEffect } from '@aetas/game-engine'
+import { Era, CitySpecialization, BuildingType, unitsForCiv, trainingCost, BUILDING_CATALOG, getBuildingsBySpecialization, CIVILIZATIONS, cityMaxHp, WONDERS, eraAtLeast } from '@aetas/game-engine'
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
 import { SealButton } from './ui/SealButton'
 import { RomanDivider } from './ui/RomanDivider'
@@ -54,6 +54,17 @@ function effectLabel(effect: BuildingEffect): string {
   }
 }
 
+function wonderEffectLabel(effect: WonderEffect): string {
+  switch (effect.type) {
+    case 'productionMultiplier': return i18n.t('building.productionMultiplier', { pct: Math.round((effect.value - 1) * 100) })
+    case 'goldMultiplier':       return i18n.t('building.goldMultiplier',       { pct: Math.round((effect.value - 1) * 100) })
+    case 'foodMultiplier':       return i18n.t('building.foodMultiplier',       { pct: Math.round((effect.value - 1) * 100) })
+    case 'eraProgressBonus':     return i18n.t('building.eraProgressBonus',     { value: effect.value })
+    case 'scoreBonus':           return i18n.t('building.scoreBonus',           { value: effect.value })
+    case 'combatMultiplier':     return i18n.t('building.combatMultiplier',     { pct: Math.round((effect.value - 1) * 100) })
+  }
+}
+
 interface Props {
   city: City
   gameState: GameState
@@ -62,9 +73,10 @@ interface Props {
   onTrainUnit?: (cityId: string, unitType: string) => void
   onConstructBuilding?: (cityId: string, buildingType: BuildingType) => void
   onFortifyCity?: (cityId: string, goldAmount: number) => void
+  onBuildWonder?: (cityId: string, wonderId: string) => void
 }
 
-export default function CityModal({ city, gameState, myEnginePlayerId, onClose, onTrainUnit, onConstructBuilding, onFortifyCity }: Props) {
+export default function CityModal({ city, gameState, myEnginePlayerId, onClose, onTrainUnit, onConstructBuilding, onFortifyCity, onBuildWonder }: Props) {
   const { t } = useTranslation()
 
   const isMyCity = city.ownerId === myEnginePlayerId
@@ -280,6 +292,70 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             {isMyCity && builtSet.size === buildingsForSpec.length && !constructing && (
               <p className="text-xs text-aetas-dim">{t('city.allBuilt')}</p>
             )}
+          </div>
+
+          {/* World Wonders — global catalog, not filtered by specialization */}
+          <div className="mt-4 border-t border-aetas-border pt-4">
+            <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-2">{t('city.wonders.title')}</p>
+            <div className="flex flex-col gap-0.5">
+              {WONDERS.map(def => {
+                const built = (gameState.wonders ?? []).find(w => w.wonderId === def.id)
+
+                if (built && built.cityId === city.id) {
+                  return (
+                    <div key={def.id} className="flex items-center gap-2 py-0.5 text-xs">
+                      <span className="text-emerald-500">✓</span>
+                      <span className="text-aetas-muted">{def.name}</span>
+                      <span className="text-aetas-dim ml-auto">{wonderEffectLabel(def.effect)}</span>
+                    </div>
+                  )
+                }
+
+                if (built) {
+                  const builtOwner = gameState.players.find(p => p.id === built.ownerId)
+                  const builtCivName = CIVILIZATIONS.find(c => c.id === builtOwner?.civilizationId)?.name ?? builtOwner?.id.slice(0, 8)
+                  const builtCityName = gameState.cities.find(c => c.id === built.cityId)?.name ?? '?'
+                  return (
+                    <div key={def.id} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-aetas-dim">{def.name}</span>
+                        <span className="text-aetas-dim text-xs ml-2">{wonderEffectLabel(def.effect)}</span>
+                      </div>
+                      <span className="text-xs text-aetas-dim opacity-60 whitespace-nowrap">
+                        {t('city.wonders.builtBy', { civ: builtCivName, city: builtCityName })}
+                      </span>
+                    </div>
+                  )
+                }
+
+                const eraLocked = !eraAtLeast(gameState.era, def.eraRequired)
+                const canAfford = (myResources?.production ?? 0) >= def.productionCost
+                return (
+                  <div key={def.id} className="flex items-center gap-2 py-1.5 border-b border-aetas-border/50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm font-medium ${eraLocked ? 'text-aetas-dim' : 'text-aetas-text'}`}>{def.name}</span>
+                      <span className="text-aetas-dim text-xs ml-2">{wonderEffectLabel(def.effect)}</span>
+                    </div>
+                    {eraLocked ? (
+                      <span className="text-xs text-aetas-dim opacity-60 whitespace-nowrap">
+                        {t('city.wonders.requiresEra', { era: t(ERA_NAME_KEY[def.eraRequired]) })}
+                      </span>
+                    ) : isMyCity && onBuildWonder ? (
+                      <>
+                        <span className="text-aetas-muted text-xs whitespace-nowrap">⚙ {def.productionCost}</span>
+                        <button
+                          onClick={() => onBuildWonder(city.id, def.id)}
+                          disabled={!canAfford}
+                          className="px-2.5 py-1 rounded-sm text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed bg-aetas-gold text-aetas-bg hover:brightness-110"
+                        >
+                          {t('city.buildBtn')}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Unit production (own cities only) */}

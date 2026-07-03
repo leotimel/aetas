@@ -480,24 +480,27 @@ export default function HexMap({
         </g>
 
         {/* Layer: Cities — spring-in on city founded */}
-        {cities.map(city => {
-          const key = hexKey(city.position)
-          const isVisible = godMode || visibleSet.has(key)
-          if (!isVisible) return null
-          const [px, py] = hexToPixel(city.position.q, city.position.r)
-          const color = playerColorMap.get(city.ownerId) ?? '#888'
-          return (
-            <g key={city.id}
-               className={
-                 newCityIds.has(city.id) ? 'anim-city-spring' :
-                 capturedCityIds.has(city.id) ? 'anim-city-capture' : undefined
-               }
-               style={{ transform: `translate(${px}px, ${py}px)`, cursor: 'pointer' }}
-               onClick={() => handleHexClick(city.position)}>
-              <CityIcon cx={0} cy={0} color={color} level={city.level} hp={city.hp} maxHp={city.maxHp} />
-            </g>
-          )
-        })}
+        {(() => {
+          const wonderCityIds = new Set((gameState.wonders ?? []).map(w => w.cityId))
+          return cities.map(city => {
+            const key = hexKey(city.position)
+            const isVisible = godMode || visibleSet.has(key)
+            if (!isVisible) return null
+            const [px, py] = hexToPixel(city.position.q, city.position.r)
+            const color = playerColorMap.get(city.ownerId) ?? '#888'
+            return (
+              <g key={city.id}
+                 className={
+                   newCityIds.has(city.id) ? 'anim-city-spring' :
+                   capturedCityIds.has(city.id) ? 'anim-city-capture' : undefined
+                 }
+                 style={{ transform: `translate(${px}px, ${py}px)`, cursor: 'pointer' }}
+                 onClick={() => handleHexClick(city.position)}>
+                <CityIcon cx={0} cy={0} color={color} level={city.level} hp={city.hp} maxHp={city.maxHp} hasWonder={wonderCityIds.has(city.id)} />
+              </g>
+            )
+          })
+        })()}
 
         {/* Layer: Live units — CSS transition slides unit on move */}
         {units.map(unit => {
@@ -538,8 +541,8 @@ export default function HexMap({
   )
 }
 
-function CityIcon({ cx, cy, color, level, hp, maxHp }: {
-  cx: number; cy: number; color: string; level: number; hp?: number; maxHp?: number
+function CityIcon({ cx, cy, color, level, hp, maxHp, hasWonder }: {
+  cx: number; cy: number; color: string; level: number; hp?: number; maxHp?: number; hasWonder?: boolean
 }) {
   const Sprite = level >= 3 ? CapitalSprite : CitySprite
   const showHpBar = hp !== undefined && maxHp !== undefined && hp < maxHp
@@ -553,6 +556,13 @@ function CityIcon({ cx, cy, color, level, hp, maxHp }: {
       {/* Level badge */}
       <circle cx={cx + 7} cy={cy + 7} r={5} fill="#0e0c09" />
       <text x={cx + 7} y={cy + 11} fontSize={7} fill="#c9a84c" textAnchor="middle" fontWeight="bold">{level}</text>
+      {/* Wonder badge — this city owns a World Wonder */}
+      {hasWonder && (
+        <>
+          <circle cx={cx - 7} cy={cy - 7} r={5} fill="#0e0c09" />
+          <text x={cx - 7} y={cy - 4.5} fontSize={7} fill="#c9a84c" textAnchor="middle" fontWeight="bold">★</text>
+        </>
+      )}
       {/* HP bar — only when damaged */}
       {showHpBar && (
         <>

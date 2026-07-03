@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState, HexCoord, CitySpecialization, Unit, Resources } from '@aetas/game-engine'
-import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers } from '@aetas/game-engine'
+import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers, getWonderDef } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -483,6 +483,12 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
+  const handleBuildWonder = async (cityId: string, wonderId: string) => {
+    const res = await submitAction(gameId, { type: 'buildWonder', cityId, wonderId })
+    addLog(res.ok ? i18n.t('city.wonders.built', { wonder: getWonderDef(wonderId)?.name }) : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) applyOrFetch(res.data?.state)
+  }
+
   const handleFortifyCity = async (cityId: string, goldAmount: number) => {
     const res = await submitAction(gameId, { type: 'fortifyCity', cityId, goldAmount })
     addLog(res.ok ? i18n.t('action.fortified') : `✗ ${errorLabel(res.error)}`)
@@ -816,6 +822,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             onConstructBuilding={(c, b) => { void handleConstructBuilding(c, b) }}
             onTrainUnit={(c, u) => { void handleTrainUnit(c, u) }}
             onFortifyCity={(c, g) => { void handleFortifyCity(c, g) }}
+            onBuildWonder={(c, w) => { void handleBuildWonder(c, w) }}
           />
         ) : null
       })()}

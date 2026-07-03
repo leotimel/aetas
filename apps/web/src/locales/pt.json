@@ -74,6 +74,12 @@
       "militaryDesc": "+Produção, +Ataque de unidades",
       "commercialDesc": "+Ouro, +Comércio",
       "scientificDesc": "+Crescimento de população, +Era"
+    },
+    "wonders": {
+      "title": "Maravilhas do Mundo",
+      "builtBy": "Construída por {{civ}} · {{city}}",
+      "requiresEra": "🔒 Requer Era {{era}}",
+      "built": "{{wonder}} construída!"
     }
   },
   "building": {
@@ -82,7 +88,8 @@
     "foodMultiplier": "+{{pct}}% comida",
     "cityDefenseBonus": "+{{value}} defesa",
     "eraProgressBonus": "+{{value}} pesquisa/turno",
-    "scoreBonus": "+{{value}} pts"
+    "scoreBonus": "+{{value}} pts",
+    "combatMultiplier": "+{{pct}}% combate"
   },
   "unit": {
     "exhausted": "Esgotado",
