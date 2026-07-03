@@ -2172,6 +2172,27 @@ function isFavorableAttack(state, attacker, defender, hard = false) {
   });
   return result.defenderDestroyed && !result.attackerDestroyed;
 }
+var PERSONALITY_BY_CIV = {
+  vikings: "aggressor",
+  mongols: "aggressor",
+  aztecs: "aggressor",
+  japanese: "aggressor",
+  romans: "builder",
+  china: "builder",
+  egyptians: "builder",
+  ottomans: "builder",
+  greeks: "diplomat",
+  persians: "diplomat"
+};
+function civPersonality(civId) {
+  return PERSONALITY_BY_CIV[civId] ?? "builder";
+}
+var WEIGHTS = {
+  aggressor: { attackHard: true, attackOnlyDeclaredEnemies: false, trainCapMul: 1.5, proposePacts: false },
+  builder: { attackHard: false, attackOnlyDeclaredEnemies: false, trainCapMul: 1, proposePacts: true },
+  diplomat: { attackHard: false, attackOnlyDeclaredEnemies: true, trainCapMul: 0.7, proposePacts: true }
+};
+var NEUTRAL_WEIGHTS = WEIGHTS.builder;
 var byId = (a, b) => a.id.localeCompare(b.id);
 function defendableDisputes(state, playerId) {
   return state.combatDisputes.filter((d) => d.status === "pending" /* Pending */ && d.defenderPlayerId === playerId).slice().sort(byId);
@@ -2198,6 +2219,9 @@ function warmongers(state) {
     if (state.turnNumber - war.declaredAtTurn <= WARMONGER_WINDOW) set.add(war.declarerId);
   }
   return set;
+}
+function isDeclaredEnemy(state, playerId, otherId) {
+  return relationBetween(state, playerId, otherId) === "war" || warmongers(state).has(otherId);
 }
 function planDiplomaticResponses(state, playerId, now) {
   let s = state;
@@ -2233,7 +2257,7 @@ function aiFavorableTrade(me) {
   request[askKey] = 3;
   return { offer, request };
 }
-function planDiplomaticInitiatives(state, playerId, now) {
+function planDiplomaticInitiatives(state, playerId, now, proposePacts = true) {
   const me = state.players.find((p) => p.id === playerId);
   if (!me) return { state, actions: [] };
   const aggressors = warmongers(state);
@@ -2246,7 +2270,7 @@ function planDiplomaticInitiatives(state, playerId, now) {
     const relation = relationBetween(state, playerId, other.id);
     let candidate = null;
     if (relation === "neutral") {
-      if (aggressors.has(other.id)) continue;
+      if (!proposePacts || aggressors.has(other.id)) continue;
       const alreadyOfferedPact = state.diplomaticProposals.some(
         (p) => (p.kind ?? (p.terms ? "trade" : "pact")) === "pact" && p.proposerId === playerId && p.targetId === other.id
       );
@@ -2270,7 +2294,7 @@ function decideSubstituteTurn(state, playerId, now) {
   if (!canSubmitAction(state, playerId).valid) return [];
   const defensive = planDefensiveResponses(state, playerId, now);
   const diplomatic = planDiplomaticResponses(defensive.state, playerId, now);
-  const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now);
+  const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now, NEUTRAL_WEIGHTS.proposePacts);
   return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN];
 }
 var MAP_CENTER = { q: 0, r: 0 };
@@ -2322,14 +2346,14 @@ function planMovement(state, playerId, now) {
   }
   return { state: s, actions };
 }
-function planCityAttack(state, playerId, now) {
+function planCityAttack(state, playerId, now, weights = NEUTRAL_WEIGHTS) {
   let s = state;
   const actions = [];
   const myUnits = s.units.filter((u) => u.ownerId === playerId).slice().sort(byId);
   for (const unit of myUnits) {
     const current = s.units.find((u) => u.id === unit.id);
     if (!current || current.hasAttacked) continue;
-    const targets = s.cities.filter((c) => c.ownerId !== playerId && hexDistance(current.position, c.position) === 1).slice().sort(byId);
+    const targets = s.cities.filter((c) => c.ownerId !== playerId && hexDistance(current.position, c.position) === 1).filter((c) => !weights.attackOnlyDeclaredEnemies || isDeclaredEnemy(s, playerId, c.ownerId)).slice().sort(byId);
     for (const city of targets) {
       const maxHp = cityMaxHp(city.level);
       const hp = city.hp ?? maxHp;
@@ -2349,10 +2373,10 @@ function planCityAttack(state, playerId, now) {
   }
   return { state: s, actions };
 }
-function planUnitTraining(state, playerId, now) {
+function planUnitTraining(state, playerId, now, trainCapMul = 1) {
   let s = state;
   const actions = [];
-  const cap = Math.max(3, Math.ceil(s.maxTurns / 2));
+  const cap = Math.max(3, Math.ceil(s.maxTurns / 2 * trainCapMul));
   const myUnitCount = s.units.filter((u) => u.ownerId === playerId).length;
   if (myUnitCount >= cap) return { state: s, actions };
   const player = s.players.find((p) => p.id === playerId);
@@ -2400,6 +2424,9 @@ function planBuildingConstruction(state, playerId, now) {
 }
 function decideOpponentTurn(state, playerId, now, hard = false) {
   if (!canSubmitAction(state, playerId).valid) return [];
+  const me = state.players.find((p) => p.id === playerId);
+  const weights = WEIGHTS[civPersonality(me?.civilizationId ?? "")] ?? NEUTRAL_WEIGHTS;
+  const attackHard = hard || weights.attackHard;
   const defensive = planDefensiveResponses(state, playerId, now);
   const diplomatic = planDiplomaticResponses(defensive.state, playerId, now);
   const movement = planMovement(diplomatic.state, playerId, now);
@@ -2409,14 +2436,14 @@ function decideOpponentTurn(state, playerId, now, hard = false) {
   for (const unit of myUnits) {
     const current = s.units.find((u) => u.id === unit.id);
     if (!current) continue;
-    const enemies = s.units.filter((e) => e.ownerId !== playerId && hexDistance(current.position, e.position) === 1).slice().sort(byId);
+    const enemies = s.units.filter((e) => e.ownerId !== playerId && hexDistance(current.position, e.position) === 1).filter((e) => !weights.attackOnlyDeclaredEnemies || isDeclaredEnemy(s, playerId, e.ownerId)).slice().sort(byId);
     for (const enemy of enemies) {
       const action = {
         type: "initiateCombat",
         attackerUnitId: current.id,
         defenderUnitId: enemy.id
       };
-      if (isFavorableAttack(s, current, enemy, hard) && validateAction(s, playerId, action, now).valid) {
+      if (isFavorableAttack(s, current, enemy, attackHard) && validateAction(s, playerId, action, now).valid) {
         actions.push(action);
         const applied = applyAction(s, playerId, action, now);
         if (applied.ok) s = applied.state;
@@ -2424,16 +2451,16 @@ function decideOpponentTurn(state, playerId, now, hard = false) {
       }
     }
   }
-  const cityAttack = planCityAttack(s, playerId, now);
+  const cityAttack = planCityAttack(s, playerId, now, weights);
   s = cityAttack.state;
   actions.push(...cityAttack.actions);
-  const training = planUnitTraining(s, playerId, now);
+  const training = planUnitTraining(s, playerId, now, weights.trainCapMul);
   s = training.state;
   actions.push(...training.actions);
   const building = planBuildingConstruction(s, playerId, now);
   s = building.state;
   actions.push(...building.actions);
-  const initiatives = planDiplomaticInitiatives(s, playerId, now);
+  const initiatives = planDiplomaticInitiatives(s, playerId, now, weights.proposePacts);
   return [...actions, ...initiatives.actions, END_TURN];
 }
 
@@ -2654,6 +2681,7 @@ export {
   canTrainUnit,
   cityDefense,
   cityMaxHp,
+  civPersonality,
   computeCityProduction,
   computeCityTerritoryBonus,
   computePlayerScore,

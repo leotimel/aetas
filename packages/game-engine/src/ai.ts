@@ -42,6 +42,47 @@ export function isFavorableAttack(state: GameState, attacker: Unit, defender: Un
   return result.defenderDestroyed && !result.attackerDestroyed
 }
 
+// ─── Per-civ personality (ENT-4) ──────────────────────────────────────────────
+//
+// Three archetypes that MODULATE the weights of decisions the opponent AI already
+// makes — no new action paths. Pure function of civId, so it stays deterministic.
+// BUILDER is the exact baseline (== behaviour before ENT-4); AGGRESSOR pushes
+// harder, DIPLOMAT stays peaceful. Applied ONLY to decideOpponentTurn; the absent-
+// player substitute AI keeps NEUTRAL_WEIGHTS so its conservative role is unchanged.
+
+export type AIPersonality = 'aggressor' | 'builder' | 'diplomat'
+
+const PERSONALITY_BY_CIV: Record<string, AIPersonality> = {
+  vikings: 'aggressor', mongols: 'aggressor', aztecs: 'aggressor', japanese: 'aggressor',
+  romans:  'builder',   china:   'builder',   egyptians: 'builder', ottomans: 'builder',
+  greeks:  'diplomat',  persians: 'diplomat',
+}
+
+/** The archetype for a civilization. Unknown civs fall back to the neutral builder. */
+export function civPersonality(civId: string): AIPersonality {
+  return PERSONALITY_BY_CIV[civId] ?? 'builder'
+}
+
+interface AIWeights {
+  /** Skip the pessimistic +2 defender active-defense assumption → attacks on thinner margins. */
+  readonly attackHard:                boolean
+  /** Diplomat gate: only attack players who are warmongers or already at war. */
+  readonly attackOnlyDeclaredEnemies: boolean
+  /** Multiplier on the reinforcement-training cap (militarization). */
+  readonly trainCapMul:               number
+  /** Proactively offer non-aggression pacts to neutral contacts. */
+  readonly proposePacts:              boolean
+}
+
+const WEIGHTS: Record<AIPersonality, AIWeights> = {
+  aggressor: { attackHard: true,  attackOnlyDeclaredEnemies: false, trainCapMul: 1.5, proposePacts: false },
+  builder:   { attackHard: false, attackOnlyDeclaredEnemies: false, trainCapMul: 1.0, proposePacts: true  },
+  diplomat:  { attackHard: false, attackOnlyDeclaredEnemies: true,  trainCapMul: 0.7, proposePacts: true  },
+}
+
+/** Neutral weights == today's baseline; used by the substitute AI (no personality). */
+const NEUTRAL_WEIGHTS = WEIGHTS.builder
+
 const byId = <T extends { id: string }>(a: T, b: T): number => a.id.localeCompare(b.id)
 
 /** Pending disputes where `playerId` is the defender, in deterministic order. */
@@ -94,6 +135,15 @@ function warmongers(state: GameState): Set<string> {
     if (state.turnNumber - war.declaredAtTurn <= WARMONGER_WINDOW) set.add(war.declarerId)
   }
   return set
+}
+
+/**
+ * Whether `otherId` is a legitimate target for a peaceful (diplomat) AI: already
+ * at war with us, or a recent aggressor. The diplomat won't start a fresh war,
+ * but it will hit back at someone who already declared one.
+ */
+function isDeclaredEnemy(state: GameState, playerId: string, otherId: string): boolean {
+  return relationBetween(state, playerId, otherId) === 'war' || warmongers(state).has(otherId)
 }
 
 /**
@@ -167,6 +217,7 @@ function planDiplomaticInitiatives(
   state: GameState,
   playerId: string,
   now: number,
+  proposePacts = true,
 ): { state: GameState; actions: GameAction[] } {
   const me = state.players.find(p => p.id === playerId)
   if (!me) return { state, actions: [] }
@@ -187,9 +238,10 @@ function planDiplomaticInitiatives(
     let candidate: GameAction | null = null
 
     if (relation === 'neutral') {
-      // Don't ally with a recent aggressor — by skipping them, pacts flow to the
-      // peaceful neighbours instead, forming a coalition against the warmonger.
-      if (aggressors.has(other.id)) continue
+      // Aggressor personalities don't propose pacts at all (proposePacts=false).
+      // Don't ally with a recent aggressor either — by skipping them, pacts flow
+      // to the peaceful neighbours, forming a coalition against the warmonger.
+      if (!proposePacts || aggressors.has(other.id)) continue
       const alreadyOfferedPact = state.diplomaticProposals.some(
         p => (p.kind ?? (p.terms ? 'trade' : 'pact')) === 'pact' &&
              p.proposerId === playerId && p.targetId === other.id,
@@ -225,7 +277,8 @@ export function decideSubstituteTurn(state: GameState, playerId: string, now: nu
   if (!canSubmitAction(state, playerId).valid) return []
   const defensive = planDefensiveResponses(state, playerId, now)
   const diplomatic = planDiplomaticResponses(defensive.state, playerId, now)
-  const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now)
+  // Neutral weights: the substitute has no personality — it just insures position.
+  const initiatives = planDiplomaticInitiatives(diplomatic.state, playerId, now, NEUTRAL_WEIGHTS.proposePacts)
   return [...defensive.actions, ...diplomatic.actions, ...initiatives.actions, END_TURN]
 }
 
@@ -316,6 +369,7 @@ function planCityAttack(
   state: GameState,
   playerId: string,
   now: number,
+  weights: AIWeights = NEUTRAL_WEIGHTS,
 ): { state: GameState; actions: GameAction[] } {
   let s = state
   const actions: GameAction[] = []
@@ -327,6 +381,8 @@ function planCityAttack(
 
     const targets = s.cities
       .filter(c => c.ownerId !== playerId && hexDistance(current.position, c.position) === 1)
+      // Diplomat: only besiege a city whose owner is already a declared enemy.
+      .filter(c => !weights.attackOnlyDeclaredEnemies || isDeclaredEnemy(s, playerId, c.ownerId))
       .slice()
       .sort(byId)
 
@@ -363,11 +419,12 @@ function planUnitTraining(
   state: GameState,
   playerId: string,
   now: number,
+  trainCapMul = 1,
 ): { state: GameState; actions: GameAction[] } {
   let s = state
   const actions: GameAction[] = []
 
-  const cap = Math.max(3, Math.ceil(s.maxTurns / 2))
+  const cap = Math.max(3, Math.ceil(s.maxTurns / 2 * trainCapMul))
   const myUnitCount = s.units.filter(u => u.ownerId === playerId).length
   if (myUnitCount >= cap) return { state: s, actions }
 
@@ -452,6 +509,11 @@ function planBuildingConstruction(
 export function decideOpponentTurn(state: GameState, playerId: string, now: number, hard = false): GameAction[] {
   if (!canSubmitAction(state, playerId).valid) return []
 
+  // Personality weights from the civ (ENT-4). Builder == today's baseline.
+  const me = state.players.find(p => p.id === playerId)
+  const weights = WEIGHTS[civPersonality(me?.civilizationId ?? '')] ?? NEUTRAL_WEIGHTS
+  const attackHard = hard || weights.attackHard
+
   const defensive  = planDefensiveResponses(state, playerId, now)
   const diplomatic = planDiplomaticResponses(defensive.state, playerId, now)
   const movement   = planMovement(diplomatic.state, playerId, now)
@@ -466,6 +528,8 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
 
     const enemies = s.units
       .filter(e => e.ownerId !== playerId && hexDistance(current.position, e.position) === 1)
+      // Diplomat: only strike a unit whose owner is already a declared enemy.
+      .filter(e => !weights.attackOnlyDeclaredEnemies || isDeclaredEnemy(s, playerId, e.ownerId))
       .slice()
       .sort(byId)
 
@@ -475,7 +539,7 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
         attackerUnitId: current.id,
         defenderUnitId: enemy.id,
       }
-      if (isFavorableAttack(s, current, enemy, hard) && validateAction(s, playerId, action, now).valid) {
+      if (isFavorableAttack(s, current, enemy, attackHard) && validateAction(s, playerId, action, now).valid) {
         actions.push(action)
         const applied = applyAction(s, playerId, action, now)
         if (applied.ok) s = applied.state
@@ -484,11 +548,11 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
     }
   }
 
-  const cityAttack = planCityAttack(s, playerId, now)
+  const cityAttack = planCityAttack(s, playerId, now, weights)
   s = cityAttack.state
   actions.push(...cityAttack.actions)
 
-  const training = planUnitTraining(s, playerId, now)
+  const training = planUnitTraining(s, playerId, now, weights.trainCapMul)
   s = training.state
   actions.push(...training.actions)
 
@@ -496,6 +560,6 @@ export function decideOpponentTurn(state: GameState, playerId: string, now: numb
   s = building.state
   actions.push(...building.actions)
 
-  const initiatives = planDiplomaticInitiatives(s, playerId, now)
+  const initiatives = planDiplomaticInitiatives(s, playerId, now, weights.proposePacts)
   return [...actions, ...initiatives.actions, END_TURN]
 }

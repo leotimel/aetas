@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decideSubstituteTurn, decideOpponentTurn, isFavorableAttack } from './ai.js'
+import { decideSubstituteTurn, decideOpponentTurn, isFavorableAttack, civPersonality } from './ai.js'
 import { validateAction, applyAction, type GameAction } from './actions.js'
 import { createCombatDispute } from './combat.js'
 import { hexDistance, hexesInRadius } from './map.js'
@@ -13,6 +13,7 @@ import type {
   Player,
   City,
   CombatDispute,
+  PlayerFogOfWar,
 } from './types.js'
 
 // ─── Builders ─────────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ function makeState(opts: {
   currentPlayerId?: string
   turnState?: TurnState
   isFinished?: boolean
+  fogOfWar?: PlayerFogOfWar[]
 } = {}): GameState {
   return {
     gameId: 'g1',
@@ -104,10 +106,15 @@ function makeState(opts: {
     combatDisputes: opts.disputes ?? [],
     nonAggressionPacts: [],
     diplomaticProposals: [],
-    fogOfWar: [],
+    fogOfWar: opts.fogOfWar ?? [],
     winner: null,
     isFinished: opts.isFinished ?? false,
   }
+}
+
+/** Player p0 with a chosen civilization (personality driver for ENT-4). */
+function civPlayer(id: string, civilizationId: string): Player {
+  return { ...makePlayer(id), civilizationId }
 }
 
 function deepFreeze<T>(obj: T): T {
@@ -507,5 +514,88 @@ describe('decideX — guards, determinism, purity', () => {
     expect(() => decideOpponentTurn(state, 'p0', NOW)).not.toThrow()
     expect(state.units.find(u2 => u2.id === 'p0-u')!.hasAttacked).toBe(false)
     expect(state.combatDisputes).toHaveLength(0)
+  })
+})
+
+// ─── Per-civ personality (ENT-4) ──────────────────────────────────────────────
+
+describe('civPersonality', () => {
+  it('maps every civ to its archetype', () => {
+    for (const id of ['vikings', 'mongols', 'aztecs', 'japanese']) {
+      expect(civPersonality(id), id).toBe('aggressor')
+    }
+    for (const id of ['romans', 'china', 'egyptians', 'ottomans']) {
+      expect(civPersonality(id), id).toBe('builder')
+    }
+    for (const id of ['greeks', 'persians']) {
+      expect(civPersonality(id), id).toBe('diplomat')
+    }
+  })
+
+  it('falls back to builder for an unknown civ', () => {
+    expect(civPersonality('atlantis')).toBe('builder')
+  })
+})
+
+describe('decideOpponentTurn — personality modulates existing decisions', () => {
+  const RICH = { gold: 100, food: 100, production: 100 }
+
+  // attack 8 vs def 2 hp 6: kills WITHOUT the +2 (8-2=6), survives WITH it (8-4=4).
+  function marginalCombat(civId: string): GameState {
+    const u = makeUnit('p0-u', 'p0', { q: 0, r: 0 }, { attack: 8 })
+    const enemy = makeUnit('p1-e', 'p1', { q: 1, r: 0 }, { defense: 2, hp: 6 })
+    return makeState({ units: [u, enemy], players: [civPlayer('p0', civId), makePlayer('p1')] })
+  }
+
+  it('AGGRESSOR (vikings) takes a marginal attack the BUILDER (romans) refuses', () => {
+    const aggressor = decideOpponentTurn(marginalCombat('vikings'), 'p0', NOW)
+    expect(aggressor.some(a => a.type === 'initiateCombat')).toBe(true)
+
+    const builder = decideOpponentTurn(marginalCombat('romans'), 'p0', NOW)
+    expect(builder.some(a => a.type === 'initiateCombat')).toBe(false)
+  })
+
+  // Contact + neutral relation so planDiplomaticInitiatives can offer a pact.
+  function neutralContact(civId: string): GameState {
+    const mine = makeUnit('p0-u', 'p0', { q: 0, r: 0 })
+    const theirs = makeUnit('p1-u', 'p1', { q: 3, r: 0 }) // non-adjacent → no combat
+    const fog: PlayerFogOfWar[] = [
+      { playerId: 'p0', visibleHexes: [{ q: 3, r: 0 }], exploredHexes: [{ q: 3, r: 0 }] },
+    ]
+    return makeState({ units: [mine, theirs], players: [civPlayer('p0', civId), makePlayer('p1')], fogOfWar: fog })
+  }
+
+  it('DIPLOMAT/BUILDER propose a pact to a neutral contact; AGGRESSOR does not', () => {
+    const hasPact = (civId: string) =>
+      decideOpponentTurn(neutralContact(civId), 'p0', NOW).some(a => a.type === 'proposePact')
+
+    expect(hasPact('greeks'), 'diplomat proposes').toBe(true)
+    expect(hasPact('romans'), 'builder proposes').toBe(true)
+    expect(hasPact('vikings'), 'aggressor does not').toBe(false)
+  })
+
+  it('AGGRESSOR trains past the builder cap (higher militarization)', () => {
+    // Builder cap = max(3, ceil(10/2)) = 5; aggressor cap = ceil(10/2*1.5) = 8.
+    // 5 existing units; city pop 8 so the population gate (units >= pop) isn't hit.
+    const units = Array.from({ length: 5 }, (_, i) => makeUnit(`p0-u${i}`, 'p0', { q: i + 2, r: 0 }))
+    const city = makeCity('p0-city', 'p0', { q: 0, r: 0 }, { population: 8 })
+    const richViking = { ...makePlayer('p0', false, RICH), civilizationId: 'vikings' }
+
+    const aggressorState: GameState = {
+      ...makeState({ players: [richViking, makePlayer('p1')], units }),
+      cities: [{ ...city }],
+    }
+    expect(decideOpponentTurn(aggressorState, 'p0', NOW).some(a => a.type === 'trainUnit')).toBe(true)
+
+    const builderState: GameState = {
+      ...makeState({ players: [makePlayer('p0', false, RICH), makePlayer('p1')], units }),
+      cities: [{ ...city }],
+    }
+    expect(decideOpponentTurn(builderState, 'p0', NOW).some(a => a.type === 'trainUnit')).toBe(false)
+  })
+
+  it('is deterministic for a personality civ (aggressor)', () => {
+    const state = deepFreeze(marginalCombat('vikings'))
+    expect(decideOpponentTurn(state, 'p0', NOW)).toEqual(decideOpponentTurn(state, 'p0', NOW))
   })
 })
