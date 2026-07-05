@@ -30,7 +30,16 @@ export type TurnValidation =
 export interface TurnHooks {
   resolveTimedOutDispute?: (dispute: CombatDispute, state: GameState) => GameState
   determineWinner?: (state: GameState) => string | null
+  /**
+   * Resolves deterministic world events at a round boundary (ENT-6). Injected —
+   * not imported here — because its implementation (events.ts) pulls in combat.ts,
+   * which turn.ts intentionally avoids depending on directly. Absent → no events.
+   */
+  resolveWorldEvents?: (state: GameState, round: number) => GameState
 }
+
+/** Golden Age (ENT-6): +20% income for all players while active. */
+const GOLDEN_AGE_INCOME_MULT = 1.20
 
 export type EndTurnResult =
   | { ok: true; state: GameState }
@@ -146,10 +155,12 @@ export function endTurn(
     const m = getCivEconomyMultipliers(actor.civilizationId)
     // Wonders (ENT-5) stack on top of the civ multiplier, owner-wide.
     const wm = wonderEconomyMultipliers(state, actorId)
+    // Golden Age (ENT-6): global +20% income for all players while active.
+    const ga = (state.goldenAgeTurnsRemaining ?? 0) > 0 ? GOLDEN_AGE_INCOME_MULT : 1
     actor.resources = {
-      gold:       Math.round(preResources.gold       + (updatedResources.gold       - preResources.gold)       * m.gold       * wm.gold),
-      food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food       * wm.food),
-      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production),
+      gold:       Math.round(preResources.gold       + (updatedResources.gold       - preResources.gold)       * m.gold       * wm.gold       * ga),
+      food:       Math.round(preResources.food       + (updatedResources.food       - preResources.food)       * m.food       * wm.food       * ga),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production * ga),
     }
     // Aztec Expansão Ritual: flat production bonus per captured city
     if (actor.conquestBonusProduction) {
@@ -249,18 +260,25 @@ export function endTurn(
     }
   }
 
-  return {
-    ok: true,
-    state: {
-      ...working,
-      units,
-      cities: nextCities,
-      fogOfWar: nextFogOfWar,
-      era: nextEra,
-      eraProgress: nextEraProgress,
-      currentPlayerId: nextId ?? actorId,
-      turnNumber: state.turnNumber + (wrap ? 1 : 0),
-      turnState: TurnState.WaitingForAction,
-    },
+  const advanced: GameState = {
+    ...working,
+    units,
+    cities: nextCities,
+    fogOfWar: nextFogOfWar,
+    era: nextEra,
+    eraProgress: nextEraProgress,
+    currentPlayerId: nextId ?? actorId,
+    turnNumber: state.turnNumber + (wrap ? 1 : 0),
+    turnState: TurnState.WaitingForAction,
   }
+
+  // Step 7 — world events (ENT-6): once per round, at the wrap boundary, over the
+  // already-advanced state. Runs only when the hook is injected (orchestration);
+  // absent in bare-engine tests → no events. Fires on the NEW round number so
+  // "turn N" events are visible as round N begins.
+  const finalState = wrap && hooks.resolveWorldEvents
+    ? hooks.resolveWorldEvents(advanced, advanced.turnNumber)
+    : advanced
+
+  return { ok: true, state: finalState }
 }

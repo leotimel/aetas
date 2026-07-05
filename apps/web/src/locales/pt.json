@@ -194,6 +194,11 @@
     "cityFounded": "Cidade fundada!",
     "combatWon": "Combate vencido!"
   },
+  "event": {
+    "barbarians": "☄️ Bárbaros surgiram perto de {{city}}!",
+    "plague": "🦠 Praga atingiu {{city}} — população caiu.",
+    "goldenAge": "☀️ Era Dourada! +20% de renda para todos ({{turns}} turnos)."
+  },
   "error": {
     "unknown": "ação inválida",
     "unitAlreadyAttacked": "unidade já atacou neste turno",

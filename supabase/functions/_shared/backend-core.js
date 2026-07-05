@@ -88,8 +88,9 @@ var BuildingType = /* @__PURE__ */ ((BuildingType3) => {
   BuildingType3["Temple"] = "temple";
   return BuildingType3;
 })(BuildingType || {});
+var BARBARIAN_OWNER_ID = "barbarians";
 
-// ../game-engine/src/map.ts
+// ../game-engine/src/prng.ts
 function djb2(str) {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -109,6 +110,11 @@ function mulberry32(seed) {
 function createRng(seed) {
   return mulberry32(djb2(seed));
 }
+function rngForTurn(seed, round) {
+  return mulberry32(djb2(`${seed}:evt:${round}`));
+}
+
+// ../game-engine/src/map.ts
 var HEX_DIRECTIONS = [
   { q: 1, r: 0 },
   { q: 1, r: -1 },
@@ -1266,6 +1272,7 @@ var ERA_ORDER2 = ["ancient" /* Ancient */, "classical" /* Classical */, "medieva
 var ERA_SCIENCE_THRESHOLDS = [5, 5];
 var ERA_ORDER_ARRAY = ERA_ORDER2;
 var ERA_SCIENCE_THRESHOLDS_ARRAY = ERA_SCIENCE_THRESHOLDS;
+var GOLDEN_AGE_INCOME_MULT = 1.2;
 function getPlayerById(state, id) {
   return state.players.find((p) => p.id === id);
 }
@@ -1318,10 +1325,11 @@ function endTurn(state, playerId, now, hooks = {}) {
     cities = cities.map((c) => updatedById.get(c.id) ?? c);
     const m = getCivEconomyMultipliers(actor.civilizationId);
     const wm = wonderEconomyMultipliers(state, actorId);
+    const ga = (state.goldenAgeTurnsRemaining ?? 0) > 0 ? GOLDEN_AGE_INCOME_MULT : 1;
     actor.resources = {
-      gold: Math.round(preResources.gold + (updatedResources.gold - preResources.gold) * m.gold * wm.gold),
-      food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food * wm.food),
-      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production)
+      gold: Math.round(preResources.gold + (updatedResources.gold - preResources.gold) * m.gold * wm.gold * ga),
+      food: Math.round(preResources.food + (updatedResources.food - preResources.food) * m.food * wm.food * ga),
+      production: Math.round(preResources.production + (updatedResources.production - preResources.production) * m.production * wm.production * ga)
     };
     if (actor.conquestBonusProduction) {
       actor.resources = {
@@ -1399,20 +1407,19 @@ function endTurn(state, playerId, now, hooks = {}) {
       nextEraProgress -= threshold;
     }
   }
-  return {
-    ok: true,
-    state: {
-      ...working,
-      units,
-      cities: nextCities,
-      fogOfWar: nextFogOfWar,
-      era: nextEra,
-      eraProgress: nextEraProgress,
-      currentPlayerId: nextId ?? actorId,
-      turnNumber: state.turnNumber + (wrap ? 1 : 0),
-      turnState: "waitingForAction" /* WaitingForAction */
-    }
+  const advanced = {
+    ...working,
+    units,
+    cities: nextCities,
+    fogOfWar: nextFogOfWar,
+    era: nextEra,
+    eraProgress: nextEraProgress,
+    currentPlayerId: nextId ?? actorId,
+    turnNumber: state.turnNumber + (wrap ? 1 : 0),
+    turnState: "waitingForAction" /* WaitingForAction */
   };
+  const finalState = wrap && hooks.resolveWorldEvents ? hooks.resolveWorldEvents(advanced, advanced.turnNumber) : advanced;
+  return { ok: true, state: finalState };
 }
 
 // ../game-engine/src/combat.ts
@@ -2653,9 +2660,106 @@ function getCiv(id) {
   return CIVILIZATIONS.find((c) => c.id === id) ?? CIVILIZATIONS[0];
 }
 
+// ../game-engine/src/events.ts
+var EVENT_START_TURN = 5;
+var EVENT_CHANCE = 0.3;
+var GOLDEN_AGE_DURATION = 3;
+var BARB_CITY_DAMAGE = 3;
+var TYPE_WEIGHTS = [
+  ["barbarians", 0.4],
+  ["plague", 0.35],
+  ["goldenAge", 0.25]
+];
+function pickType(roll) {
+  let acc = 0;
+  for (const [type, w] of TYPE_WEIGHTS) {
+    acc += w;
+    if (roll < acc) return type;
+  }
+  return TYPE_WEIGHTS[TYPE_WEIGHTS.length - 1][0];
+}
+function isLand(state, coord) {
+  const tile = state.map.tiles.find((t) => hexKey(t.coord) === hexKey(coord));
+  return tile !== void 0 && tile.terrainType !== "water" /* Water */ && tile.terrainType !== "mountain" /* Mountain */;
+}
+function resolveBarbarianAttacks(state) {
+  let s = state;
+  const barbIds = s.units.filter((u) => u.ownerId === BARBARIAN_OWNER_ID).map((u) => u.id).sort();
+  for (const barbId of barbIds) {
+    const barb = s.units.find((u) => u.id === barbId);
+    if (!barb) continue;
+    const targets = s.units.filter((u) => u.ownerId !== BARBARIAN_OWNER_ID && hexDistance(barb.position, u.position) === 1).sort((a, b) => a.stats.hp - b.stats.hp || a.id.localeCompare(b.id));
+    if (targets[0]) {
+      s = resolveCombatImmediate(s, barb, targets[0]);
+      continue;
+    }
+    const city = s.cities.filter((c) => hexDistance(barb.position, c.position) === 1).sort((a, b) => a.id.localeCompare(b.id))[0];
+    if (city) {
+      const curHp = city.hp ?? cityMaxHp(city.level);
+      const nextHp = Math.max(1, curHp - BARB_CITY_DAMAGE);
+      s = {
+        ...s,
+        cities: s.cities.map(
+          (c) => c.id === city.id ? { ...c, hp: nextHp, maxHp: cityMaxHp(c.level) } : c
+        )
+      };
+    }
+  }
+  return s;
+}
+function spawnBarbarian(state, round, rng) {
+  if (state.cities.length === 0) return { state };
+  const city = state.cities[Math.floor(rng() * state.cities.length)];
+  const occupied = /* @__PURE__ */ new Set([
+    ...state.units.map((u) => hexKey(u.position)),
+    ...state.cities.map((c) => hexKey(c.position))
+  ]);
+  const candidates = hexesInRadius(city.position, 2).filter((h) => hexDistance(city.position, h) >= 1).filter((h) => isLand(state, h) && !occupied.has(hexKey(h))).sort((a, b) => hexKey(a).localeCompare(hexKey(b)));
+  if (candidates.length === 0) return { state };
+  const spot = candidates[Math.floor(rng() * candidates.length)];
+  const barb = createUnitInstance(`barb-${round}-${city.id}`, "warrior" /* Warrior */, BARBARIAN_OWNER_ID, spot);
+  return {
+    state: { ...state, units: [...state.units, barb] },
+    event: { type: "barbarians", round, cityId: city.id, cityName: city.name }
+  };
+}
+function applyPlague(state, round, rng) {
+  if (state.cities.length === 0) return { state };
+  const city = state.cities[Math.floor(rng() * state.cities.length)];
+  const cities = state.cities.map(
+    (c) => c.id === city.id ? { ...c, population: Math.max(1, c.population - 1) } : c
+  );
+  return {
+    state: { ...state, cities },
+    event: { type: "plague", round, cityId: city.id, cityName: city.name }
+  };
+}
+function applyGoldenAge(state, round) {
+  return {
+    state: { ...state, goldenAgeTurnsRemaining: GOLDEN_AGE_DURATION },
+    event: { type: "goldenAge", round }
+  };
+}
+function resolveWorldEvents(state, round) {
+  let s = resolveBarbarianAttacks(state);
+  const remaining = s.goldenAgeTurnsRemaining ?? 0;
+  if (remaining > 0) s = { ...s, goldenAgeTurnsRemaining: remaining - 1 };
+  const events = [];
+  if (round >= EVENT_START_TURN) {
+    const rng = rngForTurn(s.map.seed, round);
+    if (rng() < EVENT_CHANCE) {
+      const type = pickType(rng());
+      const applied = type === "barbarians" ? spawnBarbarian(s, round, rng) : type === "plague" ? applyPlague(s, round, rng) : applyGoldenAge(s, round);
+      s = applied.state;
+      if (applied.event) events.push(applied.event);
+    }
+  }
+  return { ...s, lastEvents: events };
+}
+
 // src/orchestration.ts
 var TURN_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
-var FULL_HOOKS = { resolveTimedOutDispute, determineWinner };
+var FULL_HOOKS = { resolveTimedOutDispute, determineWinner, resolveWorldEvents };
 var NOT_FOUND = (reason) => ({ ok: false, kind: "not_found", reason });
 var FORBIDDEN = (reason) => ({ ok: false, kind: "forbidden", reason });
 var REJECTED = (reason) => ({ ok: false, kind: "rejected", reason });
@@ -2786,6 +2890,8 @@ async function sweepTimeouts(repo, params) {
 }
 export {
   ACTIVE_DEFENSE_BONUS,
+  BARBARIAN_OWNER_ID,
+  BARB_CITY_DAMAGE,
   BASE_FOOD_PER_POP,
   BASE_GOLD_PER_POP,
   BASE_PRODUCTION_PER_POP,
@@ -2801,8 +2907,11 @@ export {
   DiplomaticProposalStatus,
   ERA_ORDER_ARRAY,
   ERA_SCIENCE_THRESHOLDS_ARRAY,
+  EVENT_CHANCE,
+  EVENT_START_TURN,
   Era,
   FOOD_PER_POPULATION_GROWTH,
+  GOLDEN_AGE_DURATION,
   LEVEL_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,
   MAP_SIZES,
@@ -2841,6 +2950,7 @@ export {
   computePlayerScore,
   computeVisibleHexes,
   createCombatDispute,
+  createRng,
   createUnitFromDef,
   createUnitInstance,
   decideOpponentTurn,
@@ -2848,6 +2958,7 @@ export {
   declareWar,
   determineWinner,
   diffDisputes,
+  djb2,
   eliminatePlayersWithNoCities,
   endTurn,
   eraAtLeast,
@@ -2875,6 +2986,7 @@ export {
   hexNeighbors,
   hexesInRadius,
   isFavorableAttack,
+  mulberry32,
   nextActivePlayerId,
   processTurnEconomy,
   proposeNonAggressionPact,
@@ -2887,9 +2999,11 @@ export {
   resolveDispute,
   resolveDisputeByAction,
   resolveTimedOutDispute,
+  resolveWorldEvents,
   respondToNonAggressionPact,
   respondToProposal,
   respondToResourceTrade,
+  rngForTurn,
   scoreAll,
   scorePlayer,
   startConstruction,

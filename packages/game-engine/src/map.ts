@@ -1,32 +1,10 @@
 import { TerrainType } from './types.js'
 import type { HexCoord, HexTile, GameMap, Unit, City, PlayerFogOfWar } from './types.js'
+import { createRng } from './prng.js'
 
-// ─── Internal PRNG ────────────────────────────────────────────────────────────
-// djb2 string → uint32, then mulberry32 for the sequence.
-// Every exported function that uses RNG creates a fresh generator from the seed,
-// so externally all functions are pure: same args → same result.
-
-function djb2(str: string): number {
-  let h = 5381
-  for (let i = 0; i < str.length; i++) {
-    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0
-  }
-  return h >>> 0
-}
-
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0
-  return (): number => {
-    s = (s + 0x6d2b79f5) >>> 0
-    let z = Math.imul(s ^ (s >>> 15), 1 | s)
-    z = (z + Math.imul(z ^ (z >>> 7), 61 | z)) >>> 0
-    return ((z ^ (z >>> 14)) >>> 0) / 0x100000000
-  }
-}
-
-function createRng(seed: string): () => number {
-  return mulberry32(djb2(seed))
-}
+// PRNG (djb2 + mulberry32) lives in prng.ts, shared with events.ts. Every
+// exported function that uses RNG creates a fresh generator from the seed, so
+// externally all functions are pure: same args → same result.
 
 // ─── Coordinate constants ─────────────────────────────────────────────────────
 

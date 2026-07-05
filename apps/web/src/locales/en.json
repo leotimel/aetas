@@ -194,6 +194,11 @@
     "cityFounded": "City founded!",
     "combatWon": "Combat won!"
   },
+  "event": {
+    "barbarians": "☄️ Barbarians appeared near {{city}}!",
+    "plague": "🦠 Plague struck {{city}} — population fell.",
+    "goldenAge": "☀️ Golden Age! +20% income for all ({{turns}} turns)."
+  },
   "error": {
     "unknown": "unknown error",
     "unitAlreadyAttacked": "unit has already attacked this turn",

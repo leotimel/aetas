@@ -2,6 +2,7 @@ import {
   applyAction,
   resolveDisputeByAction,
   resolveTimedOutDispute,
+  resolveWorldEvents,
   determineWinner,
   decideSubstituteTurn,
   decideOpponentTurn,
@@ -33,8 +34,9 @@ import { diffDisputes } from './disputes.js'
 /** How long an absent player's turn waits before the substitute AI takes over. */
 export const TURN_TIMEOUT_MS = 24 * 60 * 60 * 1000
 
-/** Full hooks for endTurn: WITHOUT determineWinner, a maxTurns finish has winner=null. */
-const FULL_HOOKS: TurnHooks = { resolveTimedOutDispute, determineWinner }
+/** Full hooks for endTurn: WITHOUT determineWinner, a maxTurns finish has winner=null.
+ *  resolveWorldEvents (ENT-6) fires deterministic events at round boundaries. */
+const FULL_HOOKS: TurnHooks = { resolveTimedOutDispute, determineWinner, resolveWorldEvents }
 
 /** Actions a player submits on their own turn. Dispute responses use resolveDispute(). */
 export type SubmitableAction = Exclude<GameAction, { type: 'respondToDispute' }>

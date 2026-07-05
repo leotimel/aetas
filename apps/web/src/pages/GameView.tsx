@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState, HexCoord, CitySpecialization, Unit, Resources } from '@aetas/game-engine'
-import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers, getWonderDef } from '@aetas/game-engine'
+import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers, getWonderDef, GOLDEN_AGE_DURATION } from '@aetas/game-engine'
 import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
@@ -16,6 +16,7 @@ import GameOverScreen from '../components/GameOverScreen.tsx'
 import ScoreModal from '../components/ScoreModal.tsx'
 import EraModal, { ERA_ICONS } from '../components/EraModal.tsx'
 import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
+import EventToast, { type EventToastItem } from '../components/EventToast.tsx'
 import LevelUpModal from '../components/LevelUpModal.tsx'
 import ResourceBar from '../components/ResourceBar.tsx'
 import TutorialOverlay from '../components/TutorialOverlay.tsx'
@@ -210,6 +211,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const [showScoreModal, setShowScoreModal] = useState(false)
   const [newUnitIds, setNewUnitIds] = useState<Set<string>>(new Set())
   const [xpToasts, setXpToasts] = useState<XpToastItem[]>([])
+  const [eventToasts, setEventToasts] = useState<EventToastItem[]>([])
   const [levelUpData, setLevelUpData] = useState<number | null>(null)
   const [tutorialStep, setTutorialStep] = useState<number>(() =>
     localStorage.getItem('aetas-tutorial-done') ? -1 : 0
@@ -218,6 +220,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
   const gameStateRef    = useRef<GameState | null>(null)
   const prevEraRef      = useRef<Era | null>(null)
   const knownUnitIdsRef = useRef<Set<string>>(new Set())
+  const seenEventKeysRef = useRef<Set<string>>(new Set())
   useEffect(() => { gameStateRef.current = gameState }, [gameState])
 
   // Detect era advancement to show the celebration modal
@@ -234,6 +237,23 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     const ts = new Date().toISOString().slice(11, 19)
     setLog(l => [`${ts} ${msg}`, ...l].slice(0, 40))
   }
+
+  // World events (ENT-6): surface the last round's deterministic events as a log
+  // line + a floating toast. Dedup by key so refetch/realtime never double-fires.
+  useEffect(() => {
+    const events = gameState?.lastEvents
+    if (!events || events.length === 0) return
+    for (const ev of events) {
+      const key = `${ev.round}:${ev.type}:${ev.cityId ?? ''}`
+      if (seenEventKeysRef.current.has(key)) continue
+      seenEventKeysRef.current.add(key)
+      const label = i18n.t(`event.${ev.type}`, { city: ev.cityName ?? '', turns: GOLDEN_AGE_DURATION })
+      addLog(label)
+      const toastId = crypto.randomUUID()
+      setEventToasts(ts => [...ts, { id: toastId, type: ev.type, city: ev.cityName, turns: GOLDEN_AGE_DURATION }])
+      setTimeout(() => setEventToasts(ts => ts.filter(t => t.id !== toastId)), 4000)
+    }
+  }, [gameState?.lastEvents]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skipTutorial = () => {
     localStorage.setItem('aetas-tutorial-done', '1')
@@ -922,6 +942,7 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
       {/* ── XP toasts ── */}
       <XpToast toasts={xpToasts} />
+      <EventToast toasts={eventToasts} />
 
       {/* ── Level-up modal ── */}
       {levelUpData !== null && (

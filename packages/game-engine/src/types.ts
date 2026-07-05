@@ -308,6 +308,25 @@ export interface BuiltWonder {
   readonly builtAtTurn: number
 }
 
+// ─── World Events ─────────────────────────────────────────────────────────────
+
+/** Fake owner id for hostile barbarian units — never a real player. */
+export const BARBARIAN_OWNER_ID = 'barbarians'
+
+export type WorldEventType = 'barbarians' | 'plague' | 'goldenAge'
+
+/**
+ * A world event that fired at a round boundary. Deterministic by (map seed,
+ * round). `lastEvents` on GameState carries the most recent round's events so
+ * clients can surface a toast/log; it is advisory, not a rule input.
+ */
+export interface WorldEvent {
+  readonly type:      WorldEventType
+  readonly round:     number
+  readonly cityId?:   string
+  readonly cityName?: string
+}
+
 // ─── GameState ───────────────────────────────────────────────────────────────
 
 /**
@@ -332,6 +351,10 @@ export interface GameState {
   nonAggressionPacts:         NonAggressionPact[]
   wars?:                      War[]   // active wars; absent = none (backward compat)
   wonders?:                   BuiltWonder[]  // built World Wonders; absent = none (backward compat)
+  /** Global Golden Age: rounds of +20% income remaining for ALL players; absent/0 = inactive. */
+  goldenAgeTurnsRemaining?:   number
+  /** Advisory: world events that fired at the last round boundary, for client toasts. */
+  lastEvents?:                WorldEvent[]
   diplomaticProposals:        DiplomaticProposal[]
   fogOfWar:                   PlayerFogOfWar[]
   /** Set when the game ends; null while in progress. */

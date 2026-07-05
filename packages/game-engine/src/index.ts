@@ -1,6 +1,7 @@
 // @aetas/game-engine — pure TS, no I/O, no DB, no network.
 // All game rules live here. Clients never re-implement this logic.
 export * from './types.js'
+export * from './prng.js'
 export * from './map.js'
 export * from './economy.js'
 export * from './turn.js'
@@ -14,3 +15,4 @@ export * from './units.js'
 export * from './buildings.js'
 export * from './civilizations.js'
 export * from './wonders.js'
+export * from './events.js'
