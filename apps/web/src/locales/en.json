@@ -269,7 +269,13 @@
   },
   "list": {
     "myTurn": "My Turn",
+    "theirTurn": "Their Turn",
+    "finished": "Finished",
     "empty": "No civilization awaits your decision…",
+    "emptyTheirTurn": "No games waiting on opponents.",
+    "emptyFinished": "No finished games yet.",
+    "rankLabel": "CONSUL · LVL {{n}}",
+    "playerFallback": "Player",
     "waiting": "Waiting for opponent",
     "hideFinished": "↑ Hide finished",
     "showFinished": "View {{count}} finished games →",

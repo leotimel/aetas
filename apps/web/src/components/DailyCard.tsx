@@ -222,7 +222,12 @@ export default function DailyCard({ userId, onEnterGame }: Props) {
             )}
             <h2 className="font-display text-aetas-gold font-semibold text-sm tracking-wide">{t('daily.title')}</h2>
             {streak >= 2 && (
-              <span className="text-orange-400 text-xs font-semibold">🔥 {streak}</span>
+              <span
+                className="text-aetas-streak text-xs font-semibold rounded-full px-1.5 py-0.5"
+                style={{ background: 'rgba(232,161,58,0.14)' }}
+              >
+                🔥 {streak}
+              </span>
             )}
             <span className="text-aetas-dim text-xs">{formatDateLabel(today, i18n.language)}</span>
             {!!daily && typeof daily !== 'string' && (

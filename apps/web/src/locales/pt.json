@@ -269,7 +269,13 @@
   },
   "list": {
     "myTurn": "Minha Vez",
+    "theirTurn": "Vez Deles",
+    "finished": "Finalizadas",
     "empty": "Nenhuma civilização aguarda sua decisão…",
+    "emptyTheirTurn": "Nenhuma partida aguardando adversários.",
+    "emptyFinished": "Nenhuma partida finalizada ainda.",
+    "rankLabel": "CÔNSUL · NÍVEL {{n}}",
+    "playerFallback": "Jogador",
     "waiting": "Aguardando adversário",
     "hideFinished": "↑ Ocultar finalizadas",
     "showFinished": "Ver {{count}} partidas finalizadas →",

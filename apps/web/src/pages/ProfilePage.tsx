@@ -60,6 +60,8 @@ export default function ProfilePage({ userId, onClose }: Props) {
     localStorage.setItem('aetas-lang', next)
   }
 
+  const signOut = () => void supabase.auth.signOut()
+
   if (!profile) {
     return (
       <div className="fixed inset-0 z-50 bg-aetas-bg flex items-center justify-center">
@@ -93,6 +95,10 @@ export default function ProfilePage({ userId, onClose }: Props) {
           >
             EN | PT
           </button>
+          <button
+            onClick={signOut}
+            className="text-sm text-aetas-dim hover:text-red-400 transition-colors"
+          >{t('ui.logout')}</button>
         </div>
       </header>
 

@@ -4,8 +4,8 @@ import { supabase } from '../supabase.ts'
 import DailyCard from '../components/DailyCard.tsx'
 import MapPreviewMini from '../components/MapPreviewMini.tsx'
 import { AetasLogo } from '../components/ui/AetasLogo'
-import { RomanDivider } from '../components/ui/RomanDivider'
 import { SealButton } from '../components/ui/SealButton'
+import { CivCrest } from '../components/ui/CivCrest'
 import i18n from '../i18n.ts'
 import {
   CIVILIZATIONS,
@@ -47,23 +47,36 @@ interface Props {
 }
 
 export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNewGame }: Props) {
-  const { t, i18n: i18nHook } = useTranslation()
+  const { t } = useTranslation()
   const [rows,         setRows]         = useState<GameRow[]>([])
   const [loading,      setLoading]      = useState(true)
   const [xp,           setXp]           = useState<number>(0)
-  const [showFinished, setShowFinished] = useState(false)
+  const [selectedCiv,  setSelectedCiv]  = useState<string>('romans')
+  const [displayName,  setDisplayName]  = useState<string | null>(null)
+  const [activeTab,    setActiveTab]    = useState<'myTurn' | 'theirTurn' | 'finished'>('myTurn')
 
   useEffect(() => {
     void supabase
       .from('profiles')
-      .select('xp')
+      .select('xp, selected_civ')
       .eq('user_id', userId)
       .single()
       .then(({ data }) => {
         if (data) {
-          const d = data as { xp: number }
+          const d = data as { xp: number; selected_civ: string }
           setXp(d.xp)
+          setSelectedCiv(d.selected_civ)
         }
+      })
+    // display_name lives on user_profiles (OAuth-populated), a different
+    // table from profiles (xp/selected_civ).
+    void supabase
+      .from('user_profiles')
+      .select('display_name')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => {
+        if (data) setDisplayName((data as { display_name: string }).display_name)
       })
   }, [userId])
 
@@ -84,14 +97,6 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
   const finishedGames = rows.filter(r => r.games.is_finished)
 
   const handleAbandoned = (gameId: string) => setRows(prev => prev.filter(r => r.game_id !== gameId))
-
-  const signOut = () => void supabase.auth.signOut()
-
-  const toggleLang = () => {
-    const next = i18nHook.language === 'en' ? 'pt' : 'en'
-    void i18nHook.changeLanguage(next)
-    localStorage.setItem('aetas-lang', next)
-  }
 
   return (
     <div className="min-h-screen text-aetas-text relative">
@@ -120,21 +125,24 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           </button>
           <div className="flex items-center gap-2">
             <button
-              onClick={toggleLang}
-              className="h-10 px-3 flex items-center text-[10px] text-aetas-dim border border-aetas-border rounded hover:border-aetas-border-strong hover:text-aetas-text transition-colors"
-            >
-              EN | PT
-            </button>
-            <LevelBadge xp={xp} />
-            <button
               onClick={() => void fetchGames()}
               className="p-2 rounded-lg text-aetas-dim hover:text-aetas-muted hover:bg-aetas-raised transition-colors"
               title={t('ui.refresh')}
             >↺</button>
             <button
-              onClick={signOut}
-              className="text-sm text-aetas-dim hover:text-red-400 transition-colors"
-            >{t('ui.logout')}</button>
+              onClick={onOpenProfile}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
+              <div className="text-right leading-tight">
+                <p className="font-body font-semibold text-sm text-aetas-text">
+                  {displayName ?? t('list.playerFallback')}
+                </p>
+                <p className="font-body text-aetas-label text-[10px] uppercase tracking-wider">
+                  {t('list.rankLabel', { n: xpToLevel(xp) })}
+                </p>
+              </div>
+              <CivCrest civId={selectedCiv} size={36} variant="star" />
+            </button>
           </div>
         </div>
         <XpMiniBar xp={xp} />
@@ -150,12 +158,31 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
           </div>
         ) : (
           <>
-            {/* ── My Turn ── */}
-            <Section label={t('list.myTurn')} count={myTurnGames.length}>
-              {myTurnGames.length === 0 ? (
-                <p className="text-aetas-dim text-sm py-2">
-                  {t('list.empty')}
-                </p>
+            {/* ── Tabs (pill) ── */}
+            <div className="flex gap-1 bg-aetas-panel border border-aetas-border rounded-full p-1">
+              {([
+                ['myTurn', `${t('list.myTurn')} · ${myTurnGames.length}`],
+                ['theirTurn', `${t('list.theirTurn')} · ${activeGames.length}`],
+                ['finished', t('list.finished')],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold font-body transition-colors ${
+                    activeTab === tab
+                      ? 'bg-aetas-gold text-aetas-bg'
+                      : 'text-aetas-dim hover:text-aetas-muted'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Active tab's list ── */}
+            {activeTab === 'myTurn' && (
+              myTurnGames.length === 0 ? (
+                <p className="text-aetas-dim text-sm py-2">{t('list.empty')}</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {myTurnGames.map(row => (
@@ -169,12 +196,13 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                     />
                   ))}
                 </div>
-              )}
-            </Section>
+              )
+            )}
 
-            {/* ── Waiting for opponent (hidden if empty) ── */}
-            {activeGames.length > 0 && (
-              <Section label={t('list.waiting')} count={activeGames.length} dim>
+            {activeTab === 'theirTurn' && (
+              activeGames.length === 0 ? (
+                <p className="text-aetas-dim text-sm py-2">{t('list.emptyTheirTurn')}</p>
+              ) : (
                 <div className="flex flex-col gap-2">
                   {activeGames.map(row => (
                     <GameCard
@@ -187,42 +215,33 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
                     />
                   ))}
                 </div>
-              </Section>
+              )
             )}
 
-            {/* ── Finished (toggle) ── */}
-            {finishedGames.length > 0 && (
-              <div>
-                <button
-                  onClick={() => setShowFinished(v => !v)}
-                  className="text-xs text-aetas-dim hover:text-aetas-muted transition-colors"
-                >
-                  {showFinished
-                    ? t('list.hideFinished')
-                    : t('list.showFinished', { count: finishedGames.length })}
-                </button>
-                {showFinished && (
-                  <div className="mt-3 flex flex-col gap-2">
-                    {finishedGames.map(row => (
-                      <GameCard
-                        key={row.game_id}
-                        row={row}
-                        isMyTurn={false}
-                        players={row.games.game_state?.players ?? []}
-                        onEnter={() => onEnterGame(row.game_id)}
-                        onAbandoned={handleAbandoned}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+            {activeTab === 'finished' && (
+              finishedGames.length === 0 ? (
+                <p className="text-aetas-dim text-sm py-2">{t('list.emptyFinished')}</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {finishedGames.map(row => (
+                    <GameCard
+                      key={row.game_id}
+                      row={row}
+                      isMyTurn={false}
+                      players={row.games.game_state?.players ?? []}
+                      onEnter={() => onEnterGame(row.game_id)}
+                      onAbandoned={handleAbandoned}
+                    />
+                  ))}
+                </div>
+              )
             )}
           </>
         )}
       </main>
 
       {/* FAB */}
-      <div className="fixed bottom-6 right-6 z-30">
+      <div className="fixed bottom-6 right-6 z-30 anim-glowpulse">
         <SealButton variant="gold" size="lg" onClick={onNewGame}>
           <span className="font-display text-center text-[10px] uppercase tracking-widest leading-snug">+ New<br/>Game</span>
         </SealButton>
@@ -232,32 +251,6 @@ export default function GameListPage({ userId, onEnterGame, onOpenProfile, onNew
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function Section({ label, count, dim, children }: {
-  label: string
-  count: number
-  dim?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className={dim ? 'opacity-70' : ''}>
-      <div className="mb-3">
-        <RomanDivider className="mb-2" />
-        <div className="flex items-center gap-2 px-1">
-          <span className="font-display text-xs uppercase tracking-widest text-aetas-gold/80">
-            {label}
-          </span>
-          {count > 0 && (
-            <SealButton variant="gold" size="sm" className="pointer-events-none cursor-default text-[10px]">
-              {count}
-            </SealButton>
-          )}
-        </div>
-      </div>
-      {children}
-    </div>
-  )
-}
 
 function buildOpponentLabel(players: GamePlayer[], selfId: string): string {
   const opponents = players.filter(p => p.id !== selfId)
@@ -367,55 +360,57 @@ function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
           )}
         </div>
 
-        {/* Info column */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1 mb-0.5">
-            <span className="text-aetas-muted text-xs font-medium truncate">
-              {opponentLabel || row.game_id.slice(0, 8) + '…'}
-            </span>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <span className="text-aetas-muted text-xs">{updatedAgo}</span>
-              {!g.is_finished && (
-                <button
-                  onClick={e => { e.stopPropagation(); setShowConfirm(true) }}
-                  className="text-aetas-border-strong hover:text-aetas-muted text-sm px-1 leading-none"
-                  title={t('list.abandon')}
-                >⋯</button>
+        {/* Info column + inline action button */}
+        <div className="flex-1 min-w-0 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-aetas-muted text-xs font-medium truncate">
+                {opponentLabel || row.game_id.slice(0, 8) + '…'}
+              </span>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-aetas-muted text-xs">{updatedAgo}</span>
+                {!g.is_finished && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowConfirm(true) }}
+                    className="text-aetas-border-strong hover:text-aetas-muted text-sm px-1 leading-none"
+                    title={t('list.abandon')}
+                  >⋯</button>
+                )}
+              </div>
+            </div>
+
+            <div className="text-xs text-aetas-dim">
+              {t('game.turnStatus', { n: g.turn_number, max: g.max_turns })}
+              {g.is_finished && (
+                iWon
+                  ? <span className="ml-2 text-amber-400">{t('list.youWon')}</span>
+                  : g.winner_id
+                    ? <span className="ml-2">{t('list.defeat')}</span>
+                    : null
               )}
             </div>
-          </div>
 
-          <div className="text-xs text-aetas-dim">
-            {t('game.turnStatus', { n: g.turn_number, max: g.max_turns })}
-            {g.is_finished && (
-              iWon
-                ? <span className="ml-2 text-amber-400">{t('list.youWon')}</span>
-                : g.winner_id
-                  ? <span className="ml-2">{t('list.defeat')}</span>
-                  : null
-            )}
-          </div>
-
-          {/* Turn progress bar */}
-          <div className="mt-1.5 h-1 bg-aetas-raised rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${turnPct}%`, backgroundColor: isMyTurn ? myCivColor : 'rgba(100,110,120,0.4)' }}
-            />
+            {/* Turn progress bar */}
+            <div className="mt-1.5 h-1 bg-aetas-raised rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${turnPct}%`, backgroundColor: isMyTurn ? myCivColor : 'rgba(100,110,120,0.4)' }}
+              />
+            </div>
           </div>
 
           {!g.is_finished && (
             isMyTurn ? (
               <button
                 onClick={onEnter}
-                className="mt-2 px-3 py-1.5 rounded-sm bg-aetas-gold text-aetas-bg text-xs font-semibold hover:brightness-110 transition-colors"
+                className="flex-shrink-0 px-3 py-1.5 rounded-sm bg-aetas-gold text-aetas-bg text-xs font-semibold hover:brightness-110 transition-colors"
               >
                 Play →
               </button>
             ) : (
               <button
                 onClick={onEnter}
-                className="mt-2 px-3 py-1 rounded-sm text-xs font-semibold bg-aetas-raised text-aetas-muted hover:bg-aetas-panel transition-colors"
+                className="flex-shrink-0 px-3 py-1 rounded-sm text-xs font-semibold bg-aetas-raised text-aetas-muted hover:bg-aetas-panel transition-colors"
               >
                 {t('list.view')}
               </button>
@@ -459,16 +454,6 @@ function GameCard({ row, isMyTurn, players, onEnter, onAbandoned }: {
       </div>
     )}
     </>
-  )
-}
-
-function LevelBadge({ xp }: { xp: number }) {
-  const level = xpToLevel(xp)
-  return (
-    <span className="flex items-center gap-1">
-      <span className="w-5 h-5 rounded-md bg-aetas-gold/20 border border-aetas-gold/40 flex items-center justify-center text-xs font-bold text-aetas-gold">{level}</span>
-      <span className="text-aetas-muted text-xs hidden sm:inline">{xp} XP</span>
-    </span>
   )
 }
 
