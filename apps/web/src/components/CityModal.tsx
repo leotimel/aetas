@@ -4,6 +4,7 @@ import { Era, CitySpecialization, BuildingType, unitsForCiv, trainingCost, BUILD
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
 import { SealButton } from './ui/SealButton'
 import { RomanDivider } from './ui/RomanDivider'
+import { RESOURCE_ICONS } from './ui/ResourceChip'
 import i18n from '../i18n.ts'
 
 const PLAYER_COLORS = [
@@ -436,29 +437,6 @@ function StatBox({ label, value }: { label: string; value: number }) {
       <p className="text-aetas-dim uppercase tracking-widest text-[10px] mt-1">{label}</p>
     </div>
   )
-}
-
-const RESOURCE_ICONS: Record<string, JSX.Element> = {
-  gold: (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
-      <circle cx="10" cy="10" r="7" />
-      <text x="10" y="14" textAnchor="middle" fontSize="8" fontFamily="Cinzel,Georgia,serif" fill="var(--color-aetas-gold)" stroke="none">G</text>
-    </svg>
-  ),
-  food: (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
-      <rect x="4" y="9" width="12" height="8" rx="1" opacity="0.7" />
-      <line x1="4" y1="12" x2="16" y2="12" opacity="0.5" />
-      <line x1="7" y1="9" x2="5" y2="4" /><line x1="10" y1="9" x2="10" y2="3" /><line x1="13" y1="9" x2="15" y2="4" />
-    </svg>
-  ),
-  production: (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--color-aetas-gold)" strokeWidth="1.5" strokeLinecap="round">
-      <rect x="5" y="6" width="10" height="5" rx="0.5" opacity="0.7" />
-      <polygon points="6,11 14,11 13,16 7,16" fill="none" opacity="0.7" />
-      <line x1="10" y1="3" x2="10" y2="6" />
-    </svg>
-  ),
 }
 
 function ResourcePill({ icon, label, value }: { icon: string; label: string; value: number }) {

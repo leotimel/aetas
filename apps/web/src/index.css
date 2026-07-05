@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Barlow:wght@400;500;600;700&family=EB+Garamond:ital@1&display=swap');
 @import "tailwindcss";
 @import "./styles/tokens.css";
 @import "./styles/animations.css";

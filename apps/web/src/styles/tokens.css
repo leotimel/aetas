@@ -37,4 +37,19 @@
   --color-aetas-stone:     #bfaa87;
   --color-aetas-bronze:    #7a4f1e;
   --color-aetas-parchment: #c8a552;
+
+  /* Fontes (UI-D1) */
+  --font-family-body:   'Barlow', system-ui, sans-serif;   /* UI/números/corpo */
+  --font-family-flavor: 'EB Garamond', Georgia, serif;     /* sabor, usar com italic */
+
+  /* Ouro "bright" — títulos e números importantes (UI-D1) */
+  --color-aetas-gold-bright: #ecc766;
+
+  /* Semânticos (UI-D1) */
+  --color-aetas-positive: #6f8f4a;  /* ganhos +gold/+food */
+  --color-aetas-streak:   #e8a13a;  /* streak / fogo */
+  --color-aetas-label:    #c9895a;  /* labels de seção UPPERCASE, terracota */
+
+  /* Sombra de brilho — botões primários dourados (UI-D1) */
+  --shadow-glow: 0 4px 14px rgba(216,180,90,0.30);
 }
