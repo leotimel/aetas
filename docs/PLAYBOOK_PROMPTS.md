@@ -2990,6 +2990,298 @@ com as 3 imagens de referência em `docs/design/`.
 
 ---
 
+## BLOCO UI-E — Iteração 2: HUD do jogo · Topo da cidade · Retratos de líder
+
+Origem: `docs/design/AETAS-design-spec-2.md` + `aetas-3a-game.png`,
+`aetas-3c-city-top.png`, `aetas-3d-newgame.png`. Complementa o spec anterior
+(tokens/componentes do UI-D continuam valendo). É a primeira iteração que
+**toca a tela de jogo** (`GameView.tsx`), que o UI-D não mexeu. Decisões
+travadas via AskUserQuestions:
+
+- **Tela de jogo — só o HUD ao redor do mapa.** `HexMap.tsx` e `game-bg.webp`
+  ficam **intocados** (regra explícita do usuário: "só os detalhes em volta,
+  não o mapa central").
+- **Fortificar unidade = mecânica NOVA de verdade** (não é o `fortifyCity`
+  existente) → vira o primeiro prompt (motor), dependência do HUD.
+- **"Desfazer" (Undo) fica FORA** do menu por agora (não existe no motor nem
+  na UI; não criar botão falso).
+- **Medidores de traços** (Militar/Econ./Expansão, 1–5) são derivados
+  automaticamente das habilidades reais do `CIVILIZATION_CATALOG` (tabela no
+  UI-E1) — não inventar lore.
+- **Retratos de líder**: construir a peça `LeaderPortrait` + placeholder SVG
+  agora; nomear os 10 líderes históricos agora; a arte real vem depois (nota
+  manual no fim do bloco). O hero do Novo Jogo passa a usar retrato (não mais
+  o escudo) para a "cara" do líder ser consistente entre Cidade e Novo Jogo.
+
+Estado real auditado: `GameView.tsx` já tem top bar (voltar, vs, turno, era,
+rank 🏆 via `ScoreModal`, badge de diplomacia com `incomingProposals`,
+refresh, God mode DEV), `ResourceBar`, `PlayerBar` (desktop), `ActionSheet`
+(bottom sheet mobile + sidebar desktop com unidade/diplomacia/disputas/log).
+`fortifyCity` existe (cura HP de cidade por ouro) — **não** confundir com
+fortificar unidade. `civs.ts` NÃO tem `traits`, `colorLight`, `leaderName`
+nem `portraitId`.
+
+---
+
+### UI-E0 — Fortificar unidade: nova ação de motor · **Opus** 🔴 🧠
+
+```
+Adicione a mecânica de FORTIFICAR UNIDADE ao motor (`packages/game-engine`).
+É uma ação nova, distinta de `fortifyCity` (que cura HP de cidade por ouro —
+não confundir).
+
+Regra de design (v1, mínima e determinística):
+- Uma unidade parada pode se fortificar, ganhando um bônus de DEFESA enquanto
+  permanecer fortificada. A fortificação PERSISTE entre turnos e se limpa
+  automaticamente quando a unidade se move.
+
+Passos:
+1. `types.ts`: adicionar `isFortified?: boolean` em `Unit` (opcional,
+   backward-compat como os demais campos `?`).
+2. `actions.ts`: nova variante em `GameAction`:
+   `{ type: 'fortifyUnit'; unitId: string }`.
+   - validate: unidade existe, é do jogador, é a vez dele, ainda NÃO se moveu
+     neste turno (`!hasMoved`) e ainda não está fortificada. Reusar os padrões
+     de validação das ações existentes (`moveUnit`/`fortifyCity`).
+   - apply: seta `isFortified: true` na unidade e consome a ação do turno dela
+     (marcar `hasMoved: true` e `hasAttacked: true`, para não fortificar +
+     atacar no mesmo turno — decisão v1, simples).
+   - No apply de `moveUnit`: garantir que a unidade movida volte a
+     `isFortified: false` (mover quebra a fortificação).
+3. `combat.ts`: em `resolveCombat`, somar um `FORTIFY_DEFENSE_BONUS` (ex.: +3,
+   constante exportada perto de `ACTIVE_DEFENSE_BONUS`) à defesa do DEFENSOR
+   quando `defender.isFortified`. ATENÇÃO: já existe `ACTIVE_DEFENSE_BONUS`
+   (+2) e o parâmetro `defenderActiveDefense` — verificar como/onde é usado e
+   NÃO duplicar; o bônus de fortificação é um efeito PERSISTENTE somado à
+   defesa, independente do active-defense pontual.
+4. Testes:
+   - `actions.test.ts`: fortifyUnit válido seta `isFortified` e esgota a ação;
+     rejeita se já se moveu; mover uma unidade fortificada limpa a flag.
+   - `combat.test.ts`: um defensor fortificado sofre menos dano / sobrevive a
+     um ataque que o mataria sem fortificação (mesmo atacante).
+5. Rodar `pnpm --filter @aetas/game-engine test` — os testes novos passam e as
+   3 falhas pré-existentes (checkpoint full-sim, combat 24/25) seguem como
+   estão.
+
+NÃO tocar UI neste prompt (o botão entra no UI-E2). NÃO alterar `HexMap.tsx`.
+
+pnpm --filter @aetas/game-engine test
+
+# 🔻 Mudou o motor → regenerar bundle e deployar o backend:
+pnpm --filter @aetas/backend-core bundle
+npx supabase functions deploy
+```
+
+✅ **Commit:** `"feat(ui-e0): fortify-unit action (persistent defense bonus)"`
+
+🛑 **CHECKPOINT UI-E0:** Numa partida, fortificar uma unidade parada; no turno
+seguinte ela continua fortificada; ao movê-la a flag some; um ataque contra a
+unidade fortificada causa menos dano do que causaria sem fortificação.
+
+---
+
+### UI-E1 — Dados de líder + traços + `LeaderPortrait` · Sonnet 🧠
+
+```
+Prep de dados e componente para a iteração 2 — NÃO altera nenhuma tela ainda
+(mesmo espírito do UI-D1).
+
+1. `packages/game-engine/src/civs.ts` — estender `CivDefinition` e as 10
+   entradas de `CIVILIZATIONS` com 4 campos novos (todos os civs; NÃO quebrar
+   os campos existentes):
+   - `colorLight: string` — tom claro da cor da civ, para texto sobre fundo
+     escuro. Fixos pelo spec-2 §D nos 4: persas `#c9a6f0`, astecas `#7cf0d0`,
+     japoneses `#f0a6c9`, otomanos `#c9e0a6`. Para os outros 6, derivar um tom
+     claro do `color` atual (≈ clarear ~40%): romanos `#f0a6a6`, gregos
+     `#a6c4f0`, vikings `#c9ced6`, egípcios `#f0d29a`, mongóis `#9af0b4`,
+     china `#f0a29a`.
+   - `leaderName: string` — líder histórico: romanos "Augusto", gregos
+     "Alexandre, o Grande", vikings "Ragnar Lodbrok", egípcios "Ramessés II",
+     mongóis "Genghis Khan", china "Kublai Khan", persas "Ciro, o Grande",
+     astecas "Moctezuma", japoneses "Oda Nobunaga", otomanos "Solimão".
+   - `portraitId: string` — igual ao `id` da civ (o arquivo de arte será
+     `/leaders/{portraitId}.png`; ainda não existe → placeholder).
+   - `traits: { military: number; economy: number; expansion: number }` —
+     valores 1–5 (tabela derivada das habilidades reais):
+       romanos 3/5/3 · mongóis 5/3/4 · egípcios 3/5/3 · gregos 4/3/4 ·
+       vikings 5/3/5 · china 3/5/3 · persas 3/4/3 · astecas 3/3/5 ·
+       japoneses 5/3/3 · otomanos 5/3/3.
+   Rodar `pnpm --filter @aetas/game-engine test` (não há assert de shape que
+   quebre; se algum teste de civs falhar por campo novo, ajustar o fixture).
+
+2. `apps/web/src/components/ui/LeaderPortrait.tsx` (NOVO) — medalhão redondo
+   do spec-2 §D.1: `{ civId: string; size?: number }`. Moldura dourada em
+   `conic-gradient(#c9a44e,#8a6a26,#f0d488,#8a6a26,#c9a44e)` com padding ~2.5px;
+   miolo com `radial-gradient` da cor da civ (`civ.color` → um tom escuro
+   derivado); dentro, tenta `<img src={`/leaders/${civ.portraitId}.png`}
+   onError→esconde> e, como fallback (§D.2), uma SILHUETA de busto em SVG na
+   `civ.colorLight`. Busca a civ via `CIVILIZATIONS.find`. NÃO usar em tela
+   nenhuma ainda.
+
+3. `pnpm --filter @aetas/web build` para garantir que compila.
+
+# 🔻 civs.ts ∈ game-engine → regenerar bundle (higiene; deploy opcional):
+pnpm --filter @aetas/backend-core bundle
+```
+
+✅ **Commit:** `"feat(ui-e1): leader data (names/colorLight/traits/portraitId) + LeaderPortrait"`
+
+---
+
+### UI-E2 — HUD da tela de jogo (barra + recursos + bottom sheet) · **Opus** 🔴 🧠
+
+```
+Redesenhe o HUD AO REDOR do mapa em `apps/web/src/pages/GameView.tsx` e
+`apps/web/src/components/ActionSheet.tsx`, seguindo `AETAS-design-spec-2.md`
+§A e a imagem `aetas-3a-game.png`.
+
+REGRA DURA: NÃO tocar `HexMap.tsx`, o `game-bg.webp`, nem a lógica de
+seleção/movimento no mapa. É só a interface sobreposta. Zero mudança em
+handlers de jogo (endTurn, combat, diplomacia, foundCity, etc.).
+
+1. Barra superior flutuante "glass" (`background: rgba(13,10,5,.6);
+   backdrop-filter: blur(8px)`), sobre o mapa:
+   - Botão Voltar (34px, glass, `←` dourado) = `onBack` atual.
+   - Selo central "YOUR TURN · T{turnNumber}" — pílula glass com borda
+     `rgba(216,180,90,.5)` + glow `0 0 18px rgba(216,180,90,.18)` + ponto
+     pulsante `#e8c874` (reusar a keyframe de pulso existente ou
+     `anim-glowpulse`). Quando `!isMyTurn`: "WAITING" em `--text-dim`, sem
+     glow. Reusa o `isMyTurn` já calculado.
+   - Menu único ⚙️/⋯ (34px glass) agrupando o que hoje são ícones soltos:
+     Ranking (abre `ScoreModal` via `setShowScoreModal`), Jogadores (idem /
+     `PlayerBar`), Diplomacia (dispara `setDiplomacyOpenSignal`). **Badge
+     vermelho** (`--danger`) com `incomingProposals` (já computado). NÃO
+     incluir "Desfazer" (não existe). Manter o toggle God-mode DEV e o
+     refresh ↺ dentro deste menu ou como estão — decisão sua, mas sem sumir
+     com eles no DEV.
+2. Strip de recursos simplificado (abaixo da barra): 3 pills glass = ícone +
+   valor (`--gold-hi`/`--color-aetas-gold-bright`, bold) + ganho por turno em
+   verde menor. Reusar os dados de `ResourceBar`/`myIncome` (ou o
+   `ResourceChip`); mover o alerta de manutenção/saldo negativo pra dentro do
+   menu ou pro log (não no meio do strip).
+3. Bottom sheet de ações (`ActionSheet.tsx`) — restilo, mantendo a lógica:
+   `border-radius: 18px 18px 0 0`, borda superior dourada, handle arrastável
+   (já existe o toggle expand). Ordem: (a) ALERTA de diplomacia pendente
+   destacado no topo quando houver proposta (card borda dourada + botões
+   Aceitar verde / Recusar — reusar `onRespondDiplomacy`); (b) estado da
+   unidade: SEM seleção → empty state com borda tracejada ("Toque numa unidade
+   para agir · mover · atacar · fortificar"); COM seleção → grade de 4 ações
+   Mover / Atacar / **Fortificar** / Pular; (c) END TURN dourado grande SEMPRE
+   fixo/acessível; (d) LOG recolhível (recolhido por padrão).
+   - Grade de ações: Mover e Atacar já existem (reusar `onInitiateCombat`/
+     lógica de adjacência atual). **Fortificar** = nova ação `fortifyUnit` do
+     UI-E0 (adicionar `onFortifyUnit` como prop, ligada a
+     `submitAction({type:'fortifyUnit', unitId})` em GameView, no mesmo padrão
+     dos outros handlers). **Pular** = só UI: deseleciona a unidade
+     (`setSelectedUnitId(null)`), sem chamada ao motor. Botões indisponíveis
+     (sem alvo pra atacar, unidade já exausta) ficam desabilitados opacity .4.
+4. i18n: chaves novas para "YOUR TURN"/"WAITING"/"Fortificar"/"Pular"/empty
+   state em `apps/web/src/locales/en.json` e `pt.json`.
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-e2): game HUD — glass top bar, resource strip, action bottom sheet"`
+
+🛑 **CHECKPOINT UI-E2 (o mais crítico do bloco):** Jogar um turno completo pela
+nova UI — selo YOUR TURN aparece na sua vez e vira WAITING fora dela; o menu ⚙️
+abre Ranking/Jogadores/Diplomacia e o badge vermelho conta propostas; um alerta
+de pacto pendente aparece no topo do sheet e Aceitar/Recusar funcionam; com uma
+unidade selecionada, Mover/Atacar/Fortificar/Pular fazem exatamente o esperado
+(Fortificar chama a ação do motor, Pular só deseleciona); END TURN sempre
+acessível. Confirmar que o MAPA em si não mudou em nada.
+
+---
+
+### UI-E3 — Topo da Cidade: retrato de líder · Sonnet
+
+```
+Atualize SÓ o cabeçalho de `apps/web/src/components/CityModal.tsx` seguindo
+`AETAS-design-spec-2.md` §B e `aetas-3c-city-top.png`. O resto da tela cheia
+(strip de recursos, card de especialização, abas Buildings/Units, listas — do
+UI-D3) fica INTOCADO.
+
+Header novo (~110px):
+1. Fundo temático por civ: gradiente escuro + wash da cor da civ no canto sup.
+   esquerdo `radial-gradient(70% 100% at 12% 0%, {civ.color}47, transparent
+   55%)` sobre o gradiente âmbar atual.
+2. `<LeaderPortrait civId={ownerCivId} size={60} />` (componente do UI-E1) no
+   lugar do `<CivCrest>` atual do header.
+3. Bloco de texto: linha "PERSAS · LVL {city.level}" na `civ.colorLight` (com
+   um mini-quadrado/hexágono na `civ.color`); NOME DO LÍDER (`civ.leaderName`)
+   em Cinzel 24px `--color-aetas-gold-bright` como protagonista; subtítulo em
+   `font-flavor italic` ("Capital · sua sede de poder" / nome da cidade).
+4. Botão fechar `×` vermelho (SealButton) no canto — como já está.
+5. Barra de nível abaixo: chip "LEVEL {n}" + progress bar + "Pop X/Y → Z"
+   (reusar a lógica de nível que já existe no CityModal, só reposicionada no
+   header).
+
+Buscar a civ do dono via `CIVILIZATIONS.find(c => c.id === ownerPlayer.
+civilizationId)` (padrão já usado no arquivo). i18n para os rótulos novos.
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-e3): city header — leader portrait + civ-themed wash"`
+
+---
+
+### UI-E4 — Novo Jogo: medidores de traços + retrato no hero · Sonnet
+
+```
+Complete `apps/web/src/pages/NewGamePage.tsx` seguindo `AETAS-design-spec-2.md`
+§C e `aetas-3d-newgame.png`. A estrutura do UI-D4 (hero + ability card + fileira
++ 3 setting rows + Begin Reign) permanece — dois acréscimos/trocas:
+
+1. HERO: trocar `<CivCrest size={86}>` por `<LeaderPortrait civId={selectedCiv}
+   size={86} />` (componente do UI-E1). O NOME no hero passa a ser
+   `getCiv(selectedCiv).leaderName` (Cinzel 34px) com a civ/epíteto
+   (`description`) em Garamond italic abaixo — o líder vira o protagonista.
+2. NOVO — Medidores de traços, entre o ability card e a fileira de líderes:
+   linha com 3 barras curtas rotuladas MILITAR / ECON. / EXPANSÃO, valor 1–5 de
+   `getCiv(selectedCiv).traits`, cor por eixo (militar `#e0776e`, economia
+   `#e8c874`, expansão `#3cc4a0`). Barrinha = trilho escuro + preenchimento
+   `(valor/5)` na cor do eixo. Criar um componente pequeno `TraitMeters` (local
+   ou em `components/ui/`).
+3. A FILEIRA de seleção continua com `<CivCrest>` (escudos), como no spec §C.6 —
+   NÃO trocar a fileira por retratos; só o hero usa retrato.
+
+Tudo o mais (states, sheets Opponents/Map/Turn, handleCreate/share-flow)
+inalterado. i18n para MILITAR/ECON./EXPANSÃO.
+
+pnpm --filter @aetas/web build
+```
+
+✅ **Commit:** `"feat(ui-e4): New Game — trait meters + leader portrait hero"`
+
+---
+
+> ⚠️ **NOTA MANUAL — gerar os 10 retratos de líder** (você faz, fora do Claude
+> Code; o layout já reserva o espaço e o `LeaderPortrait` cai no placeholder
+> até os arquivos existirem).
+>
+> 1. Gere 10 imagens 256×256 (uma por líder) com uma IA de imagem, usando um
+>    template FIXO para manter consistência entre os 10:
+>    *"Painterly portrait bust of {leaderName}, ancient {civ} ruler, dramatic
+>    side lighting, warm dark background tinted {colorLight}, epic imperial
+>    style like Civilization VI leader art, centered bust, no text, 256×256"*.
+> 2. Salve cada uma como `apps/web/public/leaders/{portraitId}.png`
+>    (`romans.png`, `greeks.png`, … = o `portraitId` = id da civ).
+> 3. Recarregue: o `LeaderPortrait` troca o placeholder pela arte
+>    automaticamente (via `<img src>` / `onError`). Nenhum código muda.
+
+---
+
+🛑 **CHECKPOINT UI-E FINAL:** Percorrer num celular real (ou DevTools mobile) o
+fluxo completo com a iteração 2: Home → Novo Jogo (retrato + medidores de
+traços) → criar partida → tela de jogo (HUD glass, YOUR TURN, menu ⚙️, sheet de
+ações com Fortificar real, END TURN) → abrir Cidade (topo com retrato de líder).
+Confirmar que o MAPA hexagonal e o `game-bg.webp` continuam idênticos ao que
+eram antes do bloco (nenhuma regressão no centro do jogo). Comparar lado a lado
+com `aetas-3a/3c/3d.png`.
+
+---
+
 ## FASE 5 — Android nativo (Kotlin + Jetpack Compose)
 
 **Arquitetura thin-client:** o motor de jogo roda 100% no servidor (Edge
