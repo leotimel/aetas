@@ -8,6 +8,7 @@ import {
   COMBAT_TIMEOUT_MS,
   MIN_DAMAGE,
   ACTIVE_DEFENSE_BONUS,
+  FORTIFY_DEFENSE_BONUS,
 } from './combat.js'
 import { endTurn } from './turn.js'
 import {
@@ -385,5 +386,26 @@ describe('resolveTimedOutDispute', () => {
     deepFreeze(state)
     expect(() => resolveTimedOutDispute(dispute, state)).not.toThrow()
     expect(state.units.find(u => u.id === 'd')!.stats.hp).toBe(10) // unchanged
+  })
+})
+
+// ─── fortification bonus ────────────────────────────────────────────────────────
+
+describe('resolveCombat — fortification', () => {
+  const plains = { defenderTerrain: TerrainType.Plains }
+
+  it('a fortified defender takes FORTIFY_DEFENSE_BONUS less damage', () => {
+    const atk = makeUnit('a', 'p0', { attack: 8 })
+    const def = makeUnit('d', 'p1', { defense: 2, hp: 10 })
+    const plain = resolveCombat(atk, def, plains)
+    const fort  = resolveCombat(atk, { ...def, isFortified: true }, plains)
+    expect(plain.damageToDefender - fort.damageToDefender).toBe(FORTIFY_DEFENSE_BONUS)
+  })
+
+  it('fortification can save a unit from an otherwise lethal hit', () => {
+    const atk = makeUnit('a', 'p0', { attack: 8 })
+    const def = makeUnit('d', 'p1', { defense: 2, hp: 6 })
+    expect(resolveCombat(atk, def, plains).defenderDestroyed).toBe(true)
+    expect(resolveCombat(atk, { ...def, isFortified: true }, plains).defenderDestroyed).toBe(false)
   })
 })

@@ -23,6 +23,9 @@ export const MIN_DAMAGE = 1
 /** Extra defense granted only to a defender who RESPONDS (vs. an absent one). */
 export const ACTIVE_DEFENSE_BONUS = 2
 
+/** Extra defense while a unit is dug in (fortifyUnit); persists until it moves. */
+export const FORTIFY_DEFENSE_BONUS = 3
+
 const TERRAIN_DEFENSE_BONUS: Record<TerrainType, number> = {
   [TerrainType.Plains]: 0,
   [TerrainType.Forest]: 2,
@@ -97,7 +100,8 @@ export function resolveCombat(
   const defenderDefense =
     defender.stats.defense +
     terrainDefenseBonus(opts.defenderTerrain) +
-    (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) -
+    (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) +
+    (defender.isFortified ? FORTIFY_DEFENSE_BONUS : 0) -
     (defender.isUnderMaintenance ? 1 : 0)
   const attackMult = opts.attackerCivMultiplier ?? 1
   const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense)

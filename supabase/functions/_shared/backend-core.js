@@ -1429,6 +1429,7 @@ function combatMult(state, player) {
 var COMBAT_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var MIN_DAMAGE = 1;
 var ACTIVE_DEFENSE_BONUS = 2;
+var FORTIFY_DEFENSE_BONUS = 3;
 var TERRAIN_DEFENSE_BONUS = {
   ["plains" /* Plains */]: 0,
   ["forest" /* Forest */]: 2,
@@ -1456,7 +1457,7 @@ function resolveCombat(attacker, defender, opts) {
       winnerUnitId: attacker.stats.hp > 0 ? attacker.id : null
     };
   }
-  const defenderDefense = defender.stats.defense + terrainDefenseBonus(opts.defenderTerrain) + (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) - (defender.isUnderMaintenance ? 1 : 0);
+  const defenderDefense = defender.stats.defense + terrainDefenseBonus(opts.defenderTerrain) + (activeDefense ? ACTIVE_DEFENSE_BONUS : 0) + (defender.isFortified ? FORTIFY_DEFENSE_BONUS : 0) - (defender.isUnderMaintenance ? 1 : 0);
   const attackMult = opts.attackerCivMultiplier ?? 1;
   const damageToDefender = Math.max(MIN_DAMAGE, Math.floor(attacker.stats.attack * attackMult) - defenderDefense);
   const defenderHp = defender.stats.hp - damageToDefender;
@@ -2121,6 +2122,14 @@ function validateAction(state, playerId, action, _now) {
       if ((city.hp ?? maxHp) >= maxHp) return { valid: false, reason: "city already at full hp" };
       return { valid: true };
     }
+    case "fortifyUnit": {
+      const unit = findUnit2(state, action.unitId);
+      if (!unit) return { valid: false, reason: "unit not found" };
+      if (unit.ownerId !== playerId) return { valid: false, reason: "unit is not yours" };
+      if (unit.hasMoved) return { valid: false, reason: "unit has already moved this turn" };
+      if (unit.isFortified) return { valid: false, reason: "unit already fortified" };
+      return { valid: true };
+    }
   }
 }
 function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
@@ -2220,7 +2229,7 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
     case "moveUnit": {
       const unit = findUnit2(state, action.unitId);
       const units = state.units.map(
-        (u) => u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u
+        (u) => u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true, isFortified: false } : u
       );
       const movedState = { ...state, units };
       const ownerId = unit.ownerId;
@@ -2315,6 +2324,12 @@ function applyAction(state, playerId, action, now, hooks = DEFAULT_HOOKS) {
           )
         }
       };
+    }
+    case "fortifyUnit": {
+      const units = state.units.map(
+        (u) => u.id === action.unitId ? { ...u, isFortified: true, hasMoved: true, hasAttacked: true } : u
+      );
+      return { ok: true, state: { ...state, units } };
     }
   }
 }
@@ -2915,6 +2930,7 @@ export {
   EVENT_START_TURN,
   Era,
   FOOD_PER_POPULATION_GROWTH,
+  FORTIFY_DEFENSE_BONUS,
   GOLDEN_AGE_DURATION,
   LEVEL_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,

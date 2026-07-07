@@ -166,6 +166,8 @@ export interface Unit {
   /** Set at the end of the owner's turn when gold did not cover maintenance; grants
    *  -1 defense until the owner's next turn begins. Cleared in endTurn Step 6. */
   isUnderMaintenance?: boolean
+  /** True while the unit is dug in: persistent +defense in combat, cleared when it moves. */
+  isFortified?:       boolean
 }
 
 // ─── Buildings ────────────────────────────────────────────────────────────────

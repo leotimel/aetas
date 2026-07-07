@@ -989,3 +989,46 @@ describe('validateAction — territory movement block (BAL-1)', () => {
     expect(validateAction(state, 'p0', move, NOW)).toEqual({ valid: true })
   })
 })
+
+// ─── fortifyUnit ────────────────────────────────────────────────────────────────
+
+describe('fortifyUnit', () => {
+  const fortify: GameAction = { type: 'fortifyUnit', unitId: 'u1' }
+
+  it('fortifies a stationary unit and consumes its turn', () => {
+    const state = makeState({ units: [makeUnit('u1', 'p0', { q: 0, r: 0 })] })
+    const res = applyAction(state, 'p0', fortify, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    const u = res.state.units.find(x => x.id === 'u1')!
+    expect(u.isFortified).toBe(true)
+    expect(u.hasMoved).toBe(true)
+    expect(u.hasAttacked).toBe(true)
+  })
+
+  it('rejects fortifying a unit that already moved this turn', () => {
+    const unit = { ...makeUnit('u1', 'p0', { q: 0, r: 0 }), hasMoved: true }
+    const state = makeState({ units: [unit] })
+    expect(validateAction(state, 'p0', fortify, NOW)).toEqual({ valid: false, reason: 'unit has already moved this turn' })
+  })
+
+  it('rejects fortifying a unit that is already fortified', () => {
+    const unit = { ...makeUnit('u1', 'p0', { q: 0, r: 0 }), isFortified: true }
+    const state = makeState({ units: [unit] })
+    expect(validateAction(state, 'p0', fortify, NOW)).toEqual({ valid: false, reason: 'unit already fortified' })
+  })
+
+  it('rejects fortifying another player\x27s unit', () => {
+    const state = makeState({ units: [makeUnit('u1', 'p1', { q: 0, r: 0 })] })
+    expect(validateAction(state, 'p0', fortify, NOW)).toEqual({ valid: false, reason: 'unit is not yours' })
+  })
+
+  it('moving a fortified unit clears the fortification', () => {
+    const unit = { ...makeUnit('u1', 'p0', { q: 0, r: 0 }), isFortified: true }
+    const state = makeState({ units: [unit], tiles: landTiles() })
+    const res = applyAction(state, 'p0', { type: 'moveUnit', unitId: 'u1', targetCoord: { q: 1, r: 0 } }, NOW)
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.reason)
+    expect(res.state.units.find(x => x.id === 'u1')!.isFortified).toBe(false)
+  })
+})

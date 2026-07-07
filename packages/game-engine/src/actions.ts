@@ -49,6 +49,7 @@ export type GameAction =
   | { type: 'breakPact'; targetId: string }
   | { type: 'respondToDiplomacy'; proposalId: string; accept: boolean }
   | { type: 'fortifyCity'; cityId: string; goldAmount: number }
+  | { type: 'fortifyUnit'; unitId: string }
 
 export type ActionValidation =
   | { valid: true }
@@ -332,6 +333,15 @@ export function validateAction(
       if ((city.hp ?? maxHp) >= maxHp) return { valid: false, reason: 'city already at full hp' }
       return { valid: true }
     }
+
+    case 'fortifyUnit': {
+      const unit = findUnit(state, action.unitId)
+      if (!unit) return { valid: false, reason: 'unit not found' }
+      if (unit.ownerId !== playerId) return { valid: false, reason: 'unit is not yours' }
+      if (unit.hasMoved) return { valid: false, reason: 'unit has already moved this turn' }
+      if (unit.isFortified) return { valid: false, reason: 'unit already fortified' }
+      return { valid: true }
+    }
   }
 }
 
@@ -462,7 +472,7 @@ export function applyAction(
     case 'moveUnit': {
       const unit = findUnit(state, action.unitId)!
       const units = state.units.map(u =>
-        u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true } : u,
+        u.id === unit.id ? { ...u, position: action.targetCoord, hasMoved: true, isFortified: false } : u,
       )
       const movedState = { ...state, units }
       const ownerId    = unit.ownerId
@@ -576,6 +586,14 @@ export function applyAction(
           ),
         },
       }
+    }
+
+    case 'fortifyUnit': {
+      // Dig in: gain a persistent defense bonus; consume the unit's turn.
+      const units = state.units.map(u =>
+        u.id === action.unitId ? { ...u, isFortified: true, hasMoved: true, hasAttacked: true } : u,
+      )
+      return { ok: true, state: { ...state, units } }
     }
   }
 }
