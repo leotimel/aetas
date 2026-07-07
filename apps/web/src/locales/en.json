@@ -335,7 +335,16 @@
     "createShare": "Create and Share Link",
     "createGame": "Create Game",
     "humanSummary": "{{count}} human(s)",
-    "aiSummary": "· {{count}} AI(s)"
+    "aiSummary": "· {{count}} AI(s)",
+    "chooseLeader": "Choose Your Leader",
+    "uniqueAbility": "Unique Ability",
+    "beginReign": "Begin Reign →",
+    "opponents": "Opponents",
+    "map": "Map",
+    "turnLimit": "Turn limit",
+    "sumAI": "{{n}} AI",
+    "sumMixed": "{{h}}H / {{ai}} AI",
+    "sumHumans": "{{n}} players"
   },
   "lobby": {
     "title": "Waiting Room",

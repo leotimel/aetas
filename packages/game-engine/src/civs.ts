@@ -17,6 +17,10 @@ export const CIVILIZATIONS: readonly CivDefinition[] = [
   { id: 'egyptians', name: 'Egípcios',  flag: '☀️',  color: '#f59e0b', unlockLevel: 4, description: 'Construtores de civilizações eternas.' },
   { id: 'mongols',   name: 'Mongóis',   flag: '🏹',  color: '#22c55e', unlockLevel: 6, description: 'Conquistadores das estepes sem fim.' },
   { id: 'china',     name: 'China',     flag: '🐉',  color: '#c0392b', unlockLevel: 8, description: 'Comércio e tecnologia avançada.' },
+  { id: 'persians',  name: 'Persas',    flag: '🦁',  color: '#8b5cf6', unlockLevel: 5, description: 'Império mercantil da era antiga. A Rota Real conecta e enriquece.' },
+  { id: 'aztecs',    name: 'Astecas',   flag: '🦅',  color: '#14b8a6', unlockLevel: 7, description: 'Expansão ritual. Cada conquista alimenta a máquina de guerra.' },
+  { id: 'japanese',  name: 'Japoneses', flag: '⛩️',  color: '#ec4899', unlockLevel: 8, description: 'Caminho do guerreiro. O Bushido eleva todo combatente.' },
+  { id: 'ottomans',  name: 'Otomanos',  flag: '🌙',  color: '#84cc16', unlockLevel: 9, description: 'Mestres do cerco. Catapultas chegam mais cedo e custam menos.' },
 ] as const
 
 // ─── Level / XP ──────────────────────────────────────────────────────────────

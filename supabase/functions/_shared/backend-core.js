@@ -2630,7 +2630,11 @@ var CIVILIZATIONS = [
   { id: "vikings", name: "Vikings", flag: "\u2694\uFE0F", color: "#6b7280", unlockLevel: 3, description: "Guerreiros do norte inclemente." },
   { id: "egyptians", name: "Eg\xEDpcios", flag: "\u2600\uFE0F", color: "#f59e0b", unlockLevel: 4, description: "Construtores de civiliza\xE7\xF5es eternas." },
   { id: "mongols", name: "Mong\xF3is", flag: "\u{1F3F9}", color: "#22c55e", unlockLevel: 6, description: "Conquistadores das estepes sem fim." },
-  { id: "china", name: "China", flag: "\u{1F409}", color: "#c0392b", unlockLevel: 8, description: "Com\xE9rcio e tecnologia avan\xE7ada." }
+  { id: "china", name: "China", flag: "\u{1F409}", color: "#c0392b", unlockLevel: 8, description: "Com\xE9rcio e tecnologia avan\xE7ada." },
+  { id: "persians", name: "Persas", flag: "\u{1F981}", color: "#8b5cf6", unlockLevel: 5, description: "Imp\xE9rio mercantil da era antiga. A Rota Real conecta e enriquece." },
+  { id: "aztecs", name: "Astecas", flag: "\u{1F985}", color: "#14b8a6", unlockLevel: 7, description: "Expans\xE3o ritual. Cada conquista alimenta a m\xE1quina de guerra." },
+  { id: "japanese", name: "Japoneses", flag: "\u26E9\uFE0F", color: "#ec4899", unlockLevel: 8, description: "Caminho do guerreiro. O Bushido eleva todo combatente." },
+  { id: "ottomans", name: "Otomanos", flag: "\u{1F319}", color: "#84cc16", unlockLevel: 9, description: "Mestres do cerco. Catapultas chegam mais cedo e custam menos." }
 ];
 var LEVEL_XP_THRESHOLDS = [0, 50, 150, 300, 500, 750, 1050, 1400, 1800];
 var XP_FOR_PLAYING = 10;

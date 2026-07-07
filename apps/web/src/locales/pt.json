@@ -335,7 +335,16 @@
     "createShare": "Criar e Compartilhar Link",
     "createGame": "Criar Partida",
     "humanSummary": "{{count}} humano(s)",
-    "aiSummary": "· {{count}} IA(s)"
+    "aiSummary": "· {{count}} IA(s)",
+    "chooseLeader": "Escolha Seu Líder",
+    "uniqueAbility": "Habilidade Única",
+    "beginReign": "Iniciar Reinado →",
+    "opponents": "Oponentes",
+    "map": "Mapa",
+    "turnLimit": "Limite de turnos",
+    "sumAI": "{{n}} IA",
+    "sumMixed": "{{h}}H / {{ai}} IA",
+    "sumHumans": "{{n}} jogadores"
   },
   "lobby": {
     "title": "Sala de Espera",
