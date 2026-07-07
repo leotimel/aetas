@@ -1,26 +1,36 @@
 // ─── Civilization definitions ─────────────────────────────────────────────────
 // Pure data — no I/O, no DOM. Safe to import in engine, web, and Edge Functions.
 
+export interface CivTraits {
+  readonly military:  number  // 1–5
+  readonly economy:   number  // 1–5
+  readonly expansion: number  // 1–5
+}
+
 export interface CivDefinition {
   readonly id:           string
   readonly name:         string
   readonly flag:         string  // emoji
   readonly color:        string  // player color in-game
+  readonly colorLight:   string  // light tint of `color`, for text on dark backgrounds
   readonly unlockLevel:  number  // minimum player level required
   readonly description:  string
+  readonly leaderName:   string  // historical leader shown as the civ's "face"
+  readonly portraitId:   string  // → /leaders/{portraitId}.png (falls back to a placeholder)
+  readonly traits:       CivTraits
 }
 
 export const CIVILIZATIONS: readonly CivDefinition[] = [
-  { id: 'romans',    name: 'Romanos',   flag: '🏛️', color: '#ef4444', unlockLevel: 1, description: 'Mestres da engenharia e da lei.' },
-  { id: 'greeks',    name: 'Gregos',    flag: '⚡',  color: '#3b82f6', unlockLevel: 1, description: 'Filósofos e estrategistas.' },
-  { id: 'vikings',   name: 'Vikings',   flag: '⚔️',  color: '#6b7280', unlockLevel: 3, description: 'Guerreiros do norte inclemente.' },
-  { id: 'egyptians', name: 'Egípcios',  flag: '☀️',  color: '#f59e0b', unlockLevel: 4, description: 'Construtores de civilizações eternas.' },
-  { id: 'mongols',   name: 'Mongóis',   flag: '🏹',  color: '#22c55e', unlockLevel: 6, description: 'Conquistadores das estepes sem fim.' },
-  { id: 'china',     name: 'China',     flag: '🐉',  color: '#c0392b', unlockLevel: 8, description: 'Comércio e tecnologia avançada.' },
-  { id: 'persians',  name: 'Persas',    flag: '🦁',  color: '#8b5cf6', unlockLevel: 5, description: 'Império mercantil da era antiga. A Rota Real conecta e enriquece.' },
-  { id: 'aztecs',    name: 'Astecas',   flag: '🦅',  color: '#14b8a6', unlockLevel: 7, description: 'Expansão ritual. Cada conquista alimenta a máquina de guerra.' },
-  { id: 'japanese',  name: 'Japoneses', flag: '⛩️',  color: '#ec4899', unlockLevel: 8, description: 'Caminho do guerreiro. O Bushido eleva todo combatente.' },
-  { id: 'ottomans',  name: 'Otomanos',  flag: '🌙',  color: '#84cc16', unlockLevel: 9, description: 'Mestres do cerco. Catapultas chegam mais cedo e custam menos.' },
+  { id: 'romans',    name: 'Romanos',   flag: '🏛️', color: '#ef4444', colorLight: '#f0a6a6', unlockLevel: 1, description: 'Mestres da engenharia e da lei.', leaderName: 'Augusto', portraitId: 'romans', traits: { military: 3, economy: 5, expansion: 3 } },
+  { id: 'greeks',    name: 'Gregos',    flag: '⚡',  color: '#3b82f6', colorLight: '#a6c4f0', unlockLevel: 1, description: 'Filósofos e estrategistas.', leaderName: 'Alexandre, o Grande', portraitId: 'greeks', traits: { military: 4, economy: 3, expansion: 4 } },
+  { id: 'vikings',   name: 'Vikings',   flag: '⚔️',  color: '#6b7280', colorLight: '#c9ced6', unlockLevel: 3, description: 'Guerreiros do norte inclemente.', leaderName: 'Ragnar Lodbrok', portraitId: 'vikings', traits: { military: 5, economy: 3, expansion: 5 } },
+  { id: 'egyptians', name: 'Egípcios',  flag: '☀️',  color: '#f59e0b', colorLight: '#f0d29a', unlockLevel: 4, description: 'Construtores de civilizações eternas.', leaderName: 'Ramessés II', portraitId: 'egyptians', traits: { military: 3, economy: 5, expansion: 3 } },
+  { id: 'mongols',   name: 'Mongóis',   flag: '🏹',  color: '#22c55e', colorLight: '#9af0b4', unlockLevel: 6, description: 'Conquistadores das estepes sem fim.', leaderName: 'Genghis Khan', portraitId: 'mongols', traits: { military: 5, economy: 3, expansion: 4 } },
+  { id: 'china',     name: 'China',     flag: '🐉',  color: '#c0392b', colorLight: '#f0a29a', unlockLevel: 8, description: 'Comércio e tecnologia avançada.', leaderName: 'Kublai Khan', portraitId: 'china', traits: { military: 3, economy: 5, expansion: 3 } },
+  { id: 'persians',  name: 'Persas',    flag: '🦁',  color: '#8b5cf6', colorLight: '#c9a6f0', unlockLevel: 5, description: 'Império mercantil da era antiga. A Rota Real conecta e enriquece.', leaderName: 'Ciro, o Grande', portraitId: 'persians', traits: { military: 3, economy: 4, expansion: 3 } },
+  { id: 'aztecs',    name: 'Astecas',   flag: '🦅',  color: '#14b8a6', colorLight: '#7cf0d0', unlockLevel: 7, description: 'Expansão ritual. Cada conquista alimenta a máquina de guerra.', leaderName: 'Moctezuma', portraitId: 'aztecs', traits: { military: 3, economy: 3, expansion: 5 } },
+  { id: 'japanese',  name: 'Japoneses', flag: '⛩️',  color: '#ec4899', colorLight: '#f0a6c9', unlockLevel: 8, description: 'Caminho do guerreiro. O Bushido eleva todo combatente.', leaderName: 'Oda Nobunaga', portraitId: 'japanese', traits: { military: 5, economy: 3, expansion: 3 } },
+  { id: 'ottomans',  name: 'Otomanos',  flag: '🌙',  color: '#84cc16', colorLight: '#c9e0a6', unlockLevel: 9, description: 'Mestres do cerco. Catapultas chegam mais cedo e custam menos.', leaderName: 'Solimão', portraitId: 'ottomans', traits: { military: 5, economy: 3, expansion: 3 } },
 ] as const
 
 // ─── Level / XP ──────────────────────────────────────────────────────────────
