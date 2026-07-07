@@ -51,6 +51,8 @@
     "production": "Production",
     "specCurrent": "Current specialization:",
     "buildings": "Buildings",
+    "units": "Units",
+    "foodStored": "{{n}} food stored",
     "buildBtn": "Build",
     "trainBtn": "Train",
     "allBuilt": "All buildings for this specialization already constructed.",

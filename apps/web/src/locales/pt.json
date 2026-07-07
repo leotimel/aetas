@@ -51,6 +51,8 @@
     "production": "Produção",
     "specCurrent": "Especialização atual:",
     "buildings": "Construções",
+    "units": "Unidades",
+    "foodStored": "{{n}} de comida",
     "buildBtn": "Construir",
     "trainBtn": "Treinar",
     "allBuilt": "Todos os edifícios desta especialização já construídos.",
