@@ -354,7 +354,10 @@
     "turnLimit": "Limite de turnos",
     "sumAI": "{{n}} IA",
     "sumMixed": "{{h}}H / {{ai}} IA",
-    "sumHumans": "{{n}} jogadores"
+    "sumHumans": "{{n}} jogadores",
+    "traitMilitary": "Militar",
+    "traitEconomy": "Econ.",
+    "traitExpansion": "Expansão"
   },
   "lobby": {
     "title": "Sala de Espera",

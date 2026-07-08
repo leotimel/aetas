@@ -354,7 +354,10 @@
     "turnLimit": "Turn limit",
     "sumAI": "{{n}} AI",
     "sumMixed": "{{h}}H / {{ai}} AI",
-    "sumHumans": "{{n}} players"
+    "sumHumans": "{{n}} players",
+    "traitMilitary": "Military",
+    "traitEconomy": "Econ.",
+    "traitExpansion": "Expansion"
   },
   "lobby": {
     "title": "Waiting Room",

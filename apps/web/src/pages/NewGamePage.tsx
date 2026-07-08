@@ -13,6 +13,7 @@ import {
 } from '@aetas/game-engine'
 import MapPreviewMini from '../components/MapPreviewMini.tsx'
 import { CivCrest } from '../components/ui/CivCrest'
+import { LeaderPortrait } from '../components/ui/LeaderPortrait'
 import { BottomSheet } from '../components/ui/BottomSheet'
 import { SettingRow } from '../components/ui/SettingRow'
 import { createTestGame, type CreateGameParams } from '../api.ts'
@@ -52,6 +53,31 @@ function CornerOrnaments() {
         </svg>
       ))}
     </>
+  )
+}
+
+/** Three 1–5 trait bars (military/economy/expansion), color-coded per axis (spec-2 §C.5). */
+function TraitMeters({ traits }: { traits: { military: number; economy: number; expansion: number } }) {
+  const { t } = useTranslation()
+  const AXES = [
+    { key: 'military'  as const, label: t('newgame.traitMilitary'),  color: '#e0776e' },
+    { key: 'economy'   as const, label: t('newgame.traitEconomy'),   color: '#e8c874' },
+    { key: 'expansion' as const, label: t('newgame.traitExpansion'), color: '#3cc4a0' },
+  ]
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      {AXES.map(a => (
+        <div key={a.key}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[9px] uppercase tracking-wider text-aetas-dim font-semibold">{a.label}</span>
+            <span className="text-[10px] font-bold" style={{ color: a.color }}>{traits[a.key]}</span>
+          </div>
+          <div className="h-1.5 rounded-sm overflow-hidden bg-aetas-raised">
+            <div className="h-full rounded-sm transition-all" style={{ width: `${(traits[a.key] / 5) * 100}%`, background: a.color }} />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -202,10 +228,10 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
           className="absolute top-4 left-4 z-10 text-aetas-muted hover:text-aetas-text transition-colors text-xl leading-none"
         >←</button>
         <div className="relative z-[1] flex flex-col items-center gap-2 px-8 text-center">
-          <CivCrest civId={selectedCiv} size={86} />
+          <LeaderPortrait civId={selectedCiv} size={86} />
           <p className="font-body text-aetas-label text-[11px] uppercase tracking-[0.2em]">{t('newgame.chooseLeader')}</p>
-          <h1 className="font-display font-semibold text-aetas-gold leading-none" style={{ fontSize: 32 }}>{heroCiv.name}</h1>
-          <p className="font-flavor italic text-aetas-muted text-sm leading-snug">{heroCiv.description}</p>
+          <h1 className="font-display font-semibold text-aetas-gold leading-none" style={{ fontSize: 34 }}>{heroCiv.leaderName}</h1>
+          <p className="font-flavor italic text-aetas-muted text-sm leading-snug">{heroCiv.name} · {heroCiv.description}</p>
         </div>
       </div>
 
@@ -230,6 +256,9 @@ export default function NewGamePage({ userId, onBack, onGameCreated, onLobby }: 
             )}
           </div>
         )}
+
+        {/* ── Trait meters ────────────────────────────────────── */}
+        <TraitMeters traits={heroCiv.traits} />
 
         {/* ── Leader row ──────────────────────────────────────── */}
         <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-2 -mx-4 px-4">
