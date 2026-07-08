@@ -26,6 +26,8 @@ interface Props extends DiplomacyHandlers {
   onInitiateCombat?: (attackerUnitId: string, defenderUnitId: string) => void
   onFoundCity?: (unitId: string) => void
   onAttackCity?: (unitId: string, cityId: string) => void
+  onFortifyUnit?: (unitId: string) => void
+  onDeselectUnit?: () => void
 }
 
 function civName(players: GameState['players'], playerId: string): string {
@@ -35,7 +37,7 @@ function civName(players: GameState['players'], playerId: string): string {
 
 export default function ActionSheet({
   gameState, myEnginePlayerId, isMyTurn, selectedUnitId, log, expandSignal,
-  onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity, onAttackCity,
+  onEndTurn, onResolveDispute, onInitiateCombat, onFoundCity, onAttackCity, onFortifyUnit, onDeselectUnit,
   onProposePact, onDeclareWar, onBreakPact, onProposePeace, onProposeTrade, onRespondDiplomacy,
 }: Props) {
   const { t } = useTranslation()
@@ -72,7 +74,17 @@ export default function ActionSheet({
     <>
       {/* ── Mobile: fixed bottom sheet ── */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-20">
-        <div className={`bg-aetas-surface border-t border-aetas-border-strong transition-all duration-300 ${expanded ? 'max-h-[50vh]' : 'max-h-20'} overflow-hidden`}>
+        <div
+          className={`transition-all duration-300 ${expanded ? 'max-h-[55vh]' : 'max-h-20'} overflow-hidden`}
+          style={{
+            background: 'rgba(13,10,5,0.72)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            borderRadius: '18px 18px 0 0',
+            borderTop: '1px solid rgba(201,169,78,0.4)',
+            boxShadow: '0 -12px 30px rgba(0,0,0,0.5)',
+          }}
+        >
           {/* Handle + quick actions */}
           <div className="relative flex items-center gap-2 px-3 pt-3 pb-2">
             {/* Drag handle — full-width touch target, visual is just the line */}
@@ -133,6 +145,8 @@ export default function ActionSheet({
                 isFoundCityValid={isFoundCityValid}
                 onFoundCity={onFoundCity}
                 onAttackCity={onAttackCity}
+                onFortifyUnit={onFortifyUnit}
+                onDeselectUnit={onDeselectUnit}
                 diplomacyHandlers={diplomacyHandlers}
               />
             </div>
@@ -176,6 +190,8 @@ export default function ActionSheet({
             isFoundCityValid={isFoundCityValid}
             onFoundCity={onFoundCity}
             onAttackCity={onAttackCity}
+            onFortifyUnit={onFortifyUnit}
+            onDeselectUnit={onDeselectUnit}
             diplomacyHandlers={diplomacyHandlers}
           />
         </div>
@@ -193,7 +209,7 @@ function formatCountdown(expiresAt: number, now: number): string {
 
 function ExpandedContent({
   selectedUnit, isMyTurn, myPendingDisputes, myEnginePlayerId, gameState, players, units, cities, log,
-  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity, diplomacyHandlers,
+  onResolveDispute, onInitiateCombat, isFoundCityValid, onFoundCity, onAttackCity, onFortifyUnit, onDeselectUnit, diplomacyHandlers,
 }: {
   selectedUnit: Unit | undefined
   isMyTurn: boolean
@@ -209,17 +225,66 @@ function ExpandedContent({
   isFoundCityValid?: boolean
   onFoundCity?: (unitId: string) => void
   onAttackCity?: (unitId: string, cityId: string) => void
+  onFortifyUnit?: (unitId: string) => void
+  onDeselectUnit?: () => void
   diplomacyHandlers: DiplomacyHandlers
 }) {
   const { t } = useTranslation()
   const [now, setNow] = useState(Date.now())
+  const [showLog, setShowLog] = useState(false)
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [])
 
+  const incomingProposals = gameState.diplomaticProposals.filter(
+    p => p.status === 'pending' && p.targetId === myEnginePlayerId,
+  )
+
   return (
     <>
+      {/* Pending diplomacy alert — highlighted at the top of the sheet */}
+      {incomingProposals.length > 0 && (
+        <div className="flex flex-col gap-2 mb-2">
+          {incomingProposals.map(p => {
+            const fromCiv = civName(players, p.proposerId)
+            const kind = p.kind ?? (p.terms ? 'trade' : 'pact')
+            const label = kind === 'peace' ? t('diplo.incomingPeace')
+              : kind === 'pact' ? t('diplo.incomingPact')
+              : t('diplo.incomingUnknown')
+            return (
+              <div
+                key={p.id}
+                className="rounded-lg p-2.5"
+                style={{ border: '1px solid rgba(216,180,90,0.5)', boxShadow: '0 0 14px rgba(216,180,90,0.12)', background: 'rgba(30,20,8,0.6)' }}
+              >
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span>⚖</span>
+                  <span className="text-aetas-gold-bright text-xs font-semibold">{fromCiv}</span>
+                  <span className="text-aetas-dim text-[11px] flex-1 truncate">{label}</span>
+                  <span className="text-aetas-streak text-[9px] font-bold uppercase tracking-wider">{t('diplo.pending')}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => diplomacyHandlers.onRespondDiplomacy(p.id, true)}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white"
+                    style={{ background: 'linear-gradient(180deg,#2f7d54,#1f6440)' }}
+                  >
+                    {t('diplo.accept')}
+                  </button>
+                  <button
+                    onClick={() => diplomacyHandlers.onRespondDiplomacy(p.id, false)}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-aetas-raised text-aetas-muted hover:bg-aetas-panel transition-colors"
+                  >
+                    {t('diplo.refuse')}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Selected unit panel */}
       {selectedUnit ? (
         <div className="bg-aetas-raised rounded-lg p-2.5 text-xs">
@@ -260,22 +325,36 @@ function ExpandedContent({
               c => c.ownerId !== myEnginePlayerId &&
                    hexDistance(c.position, selectedUnit.position) === 1,
             )
+            const canAttack = adjacentEnemies.length > 0 && !selectedUnit.hasAttacked
             return (
               <div className="flex flex-col gap-1.5">
-                <div className="flex gap-1.5">
-                  <div className={`flex-1 py-1.5 text-center rounded-lg text-[10px] font-medium ${
-                    selectedUnit.hasMoved ? 'text-aetas-dim' : 'border border-aetas-border text-aetas-muted'
+                {/* 4-action grid: Move / Attack / Fortify / Skip */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  <div className={`py-1.5 text-center rounded-lg text-[10px] font-medium ${
+                    selectedUnit.hasMoved ? 'text-aetas-dim opacity-40' : 'border border-aetas-border text-aetas-muted'
                   }`}>
                     {selectedUnit.hasMoved ? t('unit.moved') : t('unit.move')}
                   </div>
-                  {adjacentEnemies.length > 0 && !selectedUnit.hasAttacked && (
-                    <button
-                      onClick={() => onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id)}
-                      className="flex-1 py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors"
-                    >
-                      {t('unit.attack')}
-                    </button>
-                  )}
+                  <button
+                    disabled={!canAttack}
+                    onClick={() => { if (adjacentEnemies[0]) onInitiateCombat?.(selectedUnit.id, adjacentEnemies[0].id) }}
+                    className="py-1.5 rounded-lg bg-red-900/70 text-red-300 text-[10px] font-medium hover:bg-red-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {t('unit.attack')}
+                  </button>
+                  <button
+                    disabled={selectedUnit.hasMoved || !!selectedUnit.isFortified}
+                    onClick={() => onFortifyUnit?.(selectedUnit.id)}
+                    className="py-1.5 rounded-lg border border-aetas-border text-aetas-muted text-[10px] font-medium hover:bg-aetas-raised transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    🛡 {t('unit.fortify')}
+                  </button>
+                  <button
+                    onClick={() => onDeselectUnit?.()}
+                    className="py-1.5 rounded-lg text-aetas-dim text-[10px] font-medium hover:bg-aetas-raised transition-colors"
+                  >
+                    {t('unit.skip')}
+                  </button>
                 </div>
                 {adjacentEnemyCities.length > 0 && !selectedUnit.hasAttacked && (
                   <button
@@ -306,7 +385,11 @@ function ExpandedContent({
           )}
         </div>
       ) : isMyTurn ? (
-        <p className="text-aetas-dim text-xs py-1">{t('unit.selectPrompt')}</p>
+        <div className="rounded-lg p-4 text-center" style={{ border: '1px dashed rgba(201,169,78,0.35)' }}>
+          <p className="text-2xl mb-1">👆</p>
+          <p className="text-aetas-muted text-xs font-medium">{t('unit.tapPrompt')}</p>
+          <p className="text-aetas-dim text-[10px] mt-0.5">{t('unit.tapPromptSub')}</p>
+        </div>
       ) : null}
 
       {/* Diplomacy */}
@@ -349,22 +432,30 @@ function ExpandedContent({
         </div>
       )}
 
-      {/* Event log */}
+      {/* Event log — collapsible, collapsed by default */}
       <div>
-        <p className="font-display text-xs text-aetas-dim uppercase tracking-wider mb-1.5">{t('log.title')}</p>
-        <div className="bg-aetas-bg rounded-lg p-2 text-xs space-y-0.5 max-h-40 overflow-y-auto">
-          {log.length === 0
-            ? <span className="text-aetas-border-strong">{t('log.empty')}</span>
-            : log.map((entry, i) => (
-              <p key={i} className={
-                entry.includes('✗') ? 'text-red-400' :
-                entry.startsWith('★') ? 'text-aetas-gold' : 'text-aetas-dim'
-              }>
-                {entry}
-              </p>
-            ))
-          }
-        </div>
+        <button
+          onClick={() => setShowLog(v => !v)}
+          className="w-full flex items-center justify-between font-display text-xs text-aetas-dim uppercase tracking-wider mb-1.5"
+        >
+          <span>{t('log.title')}</span>
+          <span className="text-[10px]">{showLog ? '▴' : '▾'}</span>
+        </button>
+        {showLog && (
+          <div className="bg-aetas-bg/60 rounded-lg p-2 text-xs space-y-0.5 max-h-40 overflow-y-auto">
+            {log.length === 0
+              ? <span className="text-aetas-border-strong">{t('log.empty')}</span>
+              : log.map((entry, i) => (
+                <p key={i} className={
+                  entry.includes('✗') ? 'text-red-400' :
+                  entry.startsWith('★') ? 'text-aetas-gold' : 'text-aetas-dim'
+                }>
+                  {entry}
+                </p>
+              ))
+            }
+          </div>
+        )}
       </div>
     </>
   )

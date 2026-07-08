@@ -35,6 +35,10 @@
     "rankBadge": "{{pos}}º/{{total}}",
     "yourTurn": "● SUA VEZ",
     "theirTurn": "○ vez de {{player}}",
+    "yourTurnShort": "SUA VEZ",
+    "waitingShort": "AGUARDANDO",
+    "menuScore": "Placar",
+    "maintenance": "{{n}} unidades · -{{g}}g manutenção",
     "finished": "★ {{winner}} venceu",
     "draw": "Empate",
     "diplomacyTitle": "Diplomacia",
@@ -101,7 +105,11 @@
     "attackCity": "Atacar Cidade 🏰",
     "foundCity": "Fundar Cidade",
     "selectPrompt": "Selecione uma unidade no mapa para agir.",
-    "foundInvalidTitle": "Muito perto de outra cidade ou terreno inválido"
+    "foundInvalidTitle": "Muito perto de outra cidade ou terreno inválido",
+    "fortify": "Fortificar",
+    "skip": "Pular",
+    "tapPrompt": "Toque numa unidade para agir",
+    "tapPromptSub": "mover · atacar · fortificar"
   },
   "action": {
     "endTurnMobile": "Terminar Turno ✓",
@@ -150,6 +158,7 @@
     "proposePeace": "Propor Paz 🕊️",
     "accept": "Aceitar",
     "refuse": "Recusar",
+    "pending": "PENDENTE",
     "waitingResp": "⏳ Aguardando resposta…",
     "turnHint": "Só no seu turno",
     "neutral": "Neutro",

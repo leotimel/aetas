@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { GameState, HexCoord, CitySpecialization, Unit, Resources } from '@aetas/game-engine'
 import { Era, BuildingType, UnitType, CIVILIZATIONS, UNIT_CATALOG, SPECIAL_UNIT_CATALOG, BUILDING_CATALOG, CombatDisputeStatus, relationBetween, xpToLevel, computeCityProduction, rankPlayers, getWonderDef, GOLDEN_AGE_DURATION } from '@aetas/game-engine'
@@ -6,7 +6,7 @@ import { supabase } from '../supabase.ts'
 import { submitAction, resolveDispute, awardXp, awardActionXp } from '../api.ts'
 import HexMap from '../components/HexMap.tsx'
 import ActionSheet from '../components/ActionSheet.tsx'
-import PlayerBar from '../components/PlayerBar.tsx'
+import { RESOURCE_ICONS } from '../components/ui/ResourceChip'
 import CityModal from '../components/CityModal.tsx'
 import FoundCityModal from '../components/FoundCityModal.tsx'
 import CombatPreviewModal from '../components/CombatPreviewModal.tsx'
@@ -18,7 +18,6 @@ import EraModal, { ERA_ICONS } from '../components/EraModal.tsx'
 import XpToast, { type XpToastItem } from '../components/XpToast.tsx'
 import EventToast, { type EventToastItem } from '../components/EventToast.tsx'
 import LevelUpModal from '../components/LevelUpModal.tsx'
-import ResourceBar from '../components/ResourceBar.tsx'
 import TutorialOverlay from '../components/TutorialOverlay.tsx'
 import i18n from '../i18n.ts'
 
@@ -34,10 +33,12 @@ const ERA_NAME_KEY: Record<Era, 'era.ancient' | 'era.classical' | 'era.medieval'
   [Era.Medieval]:  'era.medieval',
 }
 
-const ERA_BG_COLOR: Record<Era, string> = {
-  [Era.Ancient]:   'rgba(180, 100, 30, 0.04)',
-  [Era.Classical]: 'rgba(70, 130, 180, 0.04)',
-  [Era.Medieval]:  'rgba(100, 110, 120, 0.04)',
+/** Frosted-glass surface for the floating in-game HUD (spec-2 §A). */
+const GLASS: CSSProperties = {
+  background: 'rgba(13,10,5,0.6)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
+  border: '1px solid rgba(201,169,78,0.18)',
 }
 
 function civName(players: GameState['players'] | null | undefined, playerId: string): string {
@@ -515,6 +516,12 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) applyOrFetch(res.data?.state)
   }
 
+  const handleFortifyUnit = async (unitId: string) => {
+    const res = await submitAction(gameId, { type: 'fortifyUnit', unitId })
+    addLog(res.ok ? i18n.t('unit.fortify') : `✗ ${errorLabel(res.error)}`)
+    if (res.ok) { setSelectedUnitId(null); applyOrFetch(res.data?.state) }
+  }
+
   const handleAttackCity = async (unitId: string, cityId: string) => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'attackCity', unitId, cityId })
@@ -654,136 +661,11 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     p => p.status === 'pending' && p.targetId === enginePlayerId,
   ).length
 
+  const myUnitCount = gameState.units.filter(u => u.ownerId === enginePlayerId).length
+
   return (
     <div className="flex flex-col h-screen bg-aetas-bg text-aetas-text overflow-hidden">
-      {/* ── Top bar ── */}
-      <header
-        className="flex items-center gap-2 px-3 py-2 bg-aetas-surface border-b border-aetas-border flex-shrink-0"
-        style={{ background: `linear-gradient(to right, ${ERA_BG_COLOR[gameState.era]}, transparent), var(--color-aetas-surface)` }}
-      >
-        <button
-          onClick={onBack}
-          className="text-aetas-muted hover:text-aetas-text transition-colors text-sm"
-        >
-          {t('ui.backToList')}
-        </button>
-
-        <span className="flex-1 min-w-0 text-aetas-dim text-xs truncate" title={gameId}>
-          {(() => {
-            const opponents = gameState.players.filter(p => p.id !== enginePlayerId)
-            if (opponents.length === 0) return gameId.slice(0, 8) + '…'
-            const names = opponents.map(p => {
-              const civ = CIVILIZATIONS.find(c => c.id === p.civilizationId)
-              return p.displayName !== p.id.slice(0, 8)
-                ? p.displayName
-                : (civ?.name ?? p.id.slice(0, 6))
-            }).join(' · ')
-            const label = `vs ${names}`
-            return label.length > 28 ? label.slice(0, 27) + '…' : label
-          })()}
-        </span>
-
-        <span className="hidden sm:inline text-aetas-dim text-xs flex-shrink-0">
-          {t('game.turnStatus', { n: gameState.turnNumber, max: gameState.maxTurns })}
-        </span>
-
-        <span className="hidden sm:inline-flex items-center gap-1 text-xs text-aetas-muted border border-aetas-border rounded-full px-2 py-0.5">
-          {ERA_ICONS[gameState.era]} {t(ERA_NAME_KEY[gameState.era])}
-        </span>
-
-        <span className={`flex-shrink-0 text-xs font-semibold ${isMyTurn ? 'text-aetas-gold' : 'text-aetas-dim'}`}>
-          {isFinished
-            ? gameState.winner
-              ? t('game.finished', { winner: civName(gameState.players, gameState.winner) })
-              : t('game.draw')
-            : isMyTurn
-              ? t('game.yourTurn')
-              : t('game.theirTurn', { player: civName(gameState.players, gameState.currentPlayerId) })}
-        </span>
-
-        {/* Live rank position — click to open full scoreboard */}
-        {myRank && !isFinished && (
-          <button
-            onClick={() => setShowScoreModal(true)}
-            className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-aetas-gold bg-aetas-raised rounded-full px-2 py-1 hover:brightness-110 transition-colors"
-            title={t('score.title')}
-          >
-            🏆 {t('game.rankBadge', { pos: myRank.position, total: myRank.total })}
-          </button>
-        )}
-
-        {/* Mobile: player scores badge */}
-        <button
-          onClick={() => setShowScoreModal(true)}
-          className="md:hidden flex items-center gap-1 text-xs text-aetas-muted bg-aetas-raised rounded-full px-2 py-1 hover:text-aetas-text transition-colors"
-          title="Pontuações"
-        >
-          👥 {gameState.players.length}
-        </button>
-
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => setDiplomacyOpenSignal(s => s + 1)}
-            className="relative h-10 px-2 sm:px-3 flex items-center gap-1 justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
-            title={t('game.diplomacyTitle')}
-          >
-            ⚖️
-            <span className="hidden sm:inline text-xs">{t('game.diplomacyTitle')}</span>
-            {incomingProposals > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold">
-                {incomingProposals}
-              </span>
-            )}
-          </button>
-          {import.meta.env.DEV && (
-            <label className="flex items-center gap-1.5 text-aetas-dim text-xs cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={godMode}
-                onChange={e => setGodMode(e.target.checked)}
-                className="accent-aetas-gold"
-              />
-              God
-            </label>
-          )}
-          <button
-            onClick={() => void fetchGame()}
-            className="h-10 px-2 sm:px-3 flex items-center gap-1 justify-center rounded-lg bg-aetas-raised text-aetas-muted hover:text-aetas-text transition-colors text-sm"
-            title={t('game.refreshTitle')}
-          >
-            ↺
-            <span className="hidden sm:inline text-xs">{t('game.refreshTitle')}</span>
-          </button>
-        </div>
-      </header>
-
-      {/* ── Turn progress bar ── */}
-      <div className="h-0.5 bg-aetas-raised flex-shrink-0">
-        <div
-          className="h-full bg-aetas-gold transition-all duration-500"
-          style={{ width: `${Math.min(100, (gameState.turnNumber / gameState.maxTurns) * 100)}%` }}
-        />
-      </div>
-
-      {/* ── Resource HUD ── */}
-      {myPlayer && (
-        <ResourceBar
-          resources={myPlayer.resources}
-          income={myIncome}
-          unitCount={gameState.units.filter(u => u.ownerId === enginePlayerId).length}
-        />
-      )}
-
-      {/* ── Player bar (desktop only — mobile uses score badge in header) ── */}
-      <div className="hidden md:block flex-shrink-0 border-b border-aetas-border">
-        <PlayerBar
-          gameState={gameState}
-          myEnginePlayerId={enginePlayerId}
-          onScoreClick={() => setShowScoreModal(true)}
-        />
-      </div>
-
-      {/* ── Main area ── */}
+      {/* ── Main area (map fills the screen; HUD floats over it) ── */}
       <div className="flex flex-1 min-h-0">
         {/* Hex map */}
         <div
@@ -806,6 +688,77 @@ export default function GameView({ gameId, userId, onBack }: Props) {
             onMoveUnit={(id, coord) => { void handleMoveUnit(id, coord) }}
             newUnitIds={newUnitIds}
           />
+
+          {/* ── Floating glass HUD (over the map — never touches HexMap) ── */}
+          <div className="absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-2 pointer-events-none">
+            {/* Top bar */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onBack}
+                className="pointer-events-auto w-[34px] h-[34px] flex-shrink-0 flex items-center justify-center rounded-lg text-aetas-gold text-lg hover:brightness-125 transition"
+                style={GLASS}
+                title={t('game.back')}
+              >←</button>
+
+              {/* Turn seal */}
+              <div className="flex-1 flex justify-center min-w-0">
+                {isFinished ? (
+                  <div className="pointer-events-auto px-3 py-1.5 rounded-full font-display text-[11px] font-semibold tracking-wider text-aetas-muted truncate" style={GLASS}>
+                    {gameState.winner ? t('game.finished', { winner: civName(gameState.players, gameState.winner) }) : t('game.draw')}
+                  </div>
+                ) : isMyTurn ? (
+                  <div
+                    className="pointer-events-auto anim-glowpulse flex items-center gap-2 px-3 py-1.5 rounded-full"
+                    style={{ ...GLASS, border: '1px solid rgba(216,180,90,0.5)', boxShadow: '0 0 18px rgba(216,180,90,0.18)' }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#e8c874' }} />
+                    <span className="font-display text-[11px] font-bold tracking-[0.1em] text-aetas-gold-bright">{t('game.yourTurnShort')}</span>
+                    <span className="text-[10px] text-aetas-dim">· T{gameState.turnNumber}</span>
+                  </div>
+                ) : (
+                  <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full" style={GLASS}>
+                    <span className="font-display text-[11px] font-bold tracking-[0.1em] text-aetas-dim">{t('game.waitingShort')}</span>
+                    <span className="text-[10px] text-aetas-dim">· T{gameState.turnNumber}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Era chip */}
+              <div className="pointer-events-auto hidden sm:flex flex-shrink-0 items-center gap-1 px-2 h-[34px] rounded-lg text-[11px] text-aetas-muted" style={GLASS}>
+                {ERA_ICONS[gameState.era]} {t(ERA_NAME_KEY[gameState.era])}
+              </div>
+
+              {/* Menu */}
+              <GameMenu
+                rank={myRank}
+                incomingProposals={incomingProposals}
+                maintenanceUnits={myUnitCount}
+                godMode={godMode}
+                onScore={() => setShowScoreModal(true)}
+                onDiplomacy={() => setDiplomacyOpenSignal(s => s + 1)}
+                onRefresh={() => void fetchGame()}
+                onToggleGod={setGodMode}
+              />
+            </div>
+
+            {/* Resource strip */}
+            {myPlayer && (
+              <div className="flex justify-center gap-2">
+                {(['gold', 'food', 'production'] as const).map(k => {
+                  const inc = myIncome[k]
+                  return (
+                    <div key={k} className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={GLASS}>
+                      {RESOURCE_ICONS[k]}
+                      <span className="text-sm font-bold text-aetas-gold-bright leading-none">{myPlayer.resources[k]}</span>
+                      <span className={`text-[11px] font-medium leading-none ${inc >= 0 ? 'text-aetas-positive' : 'text-red-400'}`}>
+                        {inc >= 0 ? `+${inc}` : inc}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ActionSheet: desktop sidebar OR mobile bottom sheet */}
@@ -821,6 +774,8 @@ export default function GameView({ gameId, userId, onBack }: Props) {
           onInitiateCombat={handleInitiateCombat}
           onFoundCity={setFoundingUnitId}
           onAttackCity={(uid, cid) => { void handleAttackCity(uid, cid) }}
+          onFortifyUnit={(uid) => { void handleFortifyUnit(uid) }}
+          onDeselectUnit={() => setSelectedUnitId(null)}
           onProposePact={(tgt) => { void handleProposePact(tgt) }}
           onDeclareWar={(tgt) => setWarTarget(tgt)}
           onBreakPact={(tgt) => { void handleBreakPact(tgt) }}
@@ -951,6 +906,74 @@ export default function GameView({ gameId, userId, onBack }: Props) {
 
       {/* ── Tutorial overlay ── */}
       <TutorialOverlay step={tutorialStep} onSkip={skipTutorial} />
+    </div>
+  )
+}
+
+/** Consolidated ⚙️ menu (spec-2 §A.1): scoreboard/rank, diplomacy, refresh, God. */
+function GameMenu({
+  rank, incomingProposals, maintenanceUnits, godMode,
+  onScore, onDiplomacy, onRefresh, onToggleGod,
+}: {
+  rank: { position: number; total: number } | null
+  incomingProposals: number
+  maintenanceUnits: number
+  godMode: boolean
+  onScore: () => void
+  onDiplomacy: () => void
+  onRefresh: () => void
+  onToggleGod: (v: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const item = 'w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-aetas-muted hover:bg-white/5 transition-colors'
+
+  return (
+    <div className="pointer-events-auto relative flex-shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative w-[34px] h-[34px] flex items-center justify-center rounded-lg text-aetas-muted hover:text-aetas-text text-lg"
+        style={GLASS}
+        title={t('game.diplomacyTitle')}
+      >
+        ⚙
+        {incomingProposals > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold">
+            {incomingProposals}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 w-52 rounded-lg overflow-hidden" style={{ ...GLASS, border: '1px solid rgba(201,169,78,0.3)' }}>
+            <button className={item} onClick={() => { onScore(); setOpen(false) }}>
+              🏆 <span className="flex-1">{t('game.menuScore')}</span>
+              {rank && <span className="text-aetas-dim text-xs">{t('game.rankBadge', { pos: rank.position, total: rank.total })}</span>}
+            </button>
+            <button className={item} onClick={() => { onDiplomacy(); setOpen(false) }}>
+              ⚖️ <span className="flex-1">{t('game.diplomacyTitle')}</span>
+              {incomingProposals > 0 && (
+                <span className="min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold">{incomingProposals}</span>
+              )}
+            </button>
+            <button className={item} onClick={() => { onRefresh(); setOpen(false) }}>
+              ↺ <span className="flex-1">{t('game.refreshTitle')}</span>
+            </button>
+            {import.meta.env.DEV && (
+              <label className="flex items-center gap-2 px-3 py-2.5 text-sm text-aetas-dim cursor-pointer select-none hover:bg-white/5">
+                <input type="checkbox" checked={godMode} onChange={e => onToggleGod(e.target.checked)} className="accent-aetas-gold" />
+                God mode
+              </label>
+            )}
+            {maintenanceUnits > 0 && (
+              <div className="px-3 py-2 text-[11px] text-aetas-dim border-t border-white/10">
+                {t('game.maintenance', { n: maintenanceUnits, g: maintenanceUnits })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

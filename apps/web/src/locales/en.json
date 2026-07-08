@@ -35,6 +35,10 @@
     "rankBadge": "#{{pos}}/{{total}}",
     "yourTurn": "● YOUR TURN",
     "theirTurn": "○ {{player}}'s turn",
+    "yourTurnShort": "YOUR TURN",
+    "waitingShort": "WAITING",
+    "menuScore": "Scoreboard",
+    "maintenance": "{{n}} units · -{{g}}g upkeep",
     "finished": "★ {{winner}} won",
     "draw": "Draw",
     "diplomacyTitle": "Diplomacy",
@@ -101,7 +105,11 @@
     "attackCity": "Attack City 🏰",
     "foundCity": "Found City",
     "selectPrompt": "Select a unit on the map to act.",
-    "foundInvalidTitle": "Too close to another city or invalid terrain"
+    "foundInvalidTitle": "Too close to another city or invalid terrain",
+    "fortify": "Fortify",
+    "skip": "Skip",
+    "tapPrompt": "Tap a unit to act",
+    "tapPromptSub": "move · attack · fortify"
   },
   "action": {
     "endTurnMobile": "End Turn ✓",
@@ -150,6 +158,7 @@
     "proposePeace": "Propose Peace 🕊️",
     "accept": "Accept",
     "refuse": "Refuse",
+    "pending": "PENDING",
     "waitingResp": "⏳ Awaiting response…",
     "turnHint": "Only on your turn",
     "neutral": "Neutral",
