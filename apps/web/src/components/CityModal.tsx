@@ -5,7 +5,7 @@ import { Era, CitySpecialization, BuildingType, unitsForCiv, trainingCost, BUILD
 import { ERA_ICONS, ERA_ORDER_UI } from './EraModal.tsx'
 import { SealButton } from './ui/SealButton'
 import { ResourceChip } from './ui/ResourceChip'
-import { CivCrest } from './ui/CivCrest'
+import { LeaderPortrait } from './ui/LeaderPortrait'
 import i18n from '../i18n.ts'
 
 const AMBER_GRAD = 'radial-gradient(80% 120% at 50% 0%, #3a2a12, #160f06)'
@@ -76,7 +76,8 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
 
   const isMyCity = city.ownerId === myEnginePlayerId
   const ownerPlayer = gameState.players.find(p => p.id === city.ownerId)
-  const ownerCivName = CIVILIZATIONS.find(c => c.id === ownerPlayer?.civilizationId)?.name
+  const ownerCiv = CIVILIZATIONS.find(c => c.id === ownerPlayer?.civilizationId)
+  const ownerCivName = ownerCiv?.name
   const myResources = gameState.players.find(p => p.id === myEnginePlayerId)?.resources
 
   const myPlayer = gameState.players.find(p => p.id === myEnginePlayerId)
@@ -107,28 +108,60 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
   // Per-city per-turn output — feeds the resource-strip deltas.
   const cityIncome: Resources = computeCityProduction(city, gameState.cities, gameState.map.tiles)
 
-  const ownerLabel = [
-    ownerCivName ?? ownerPlayer?.id.slice(0, 8) ?? '?',
-    isMyCity ? t('ui.you') : null,
-    ownerPlayer?.isAIControlled ? 'AI' : null,
-    `LVL ${city.level}`,
-  ].filter(Boolean).join(' · ')
-
   return (
     <div className="fixed inset-0 z-50 bg-aetas-bg flex flex-col">
-      {/* Header — amber gradient */}
+      {/* Header — civ-themed wash over amber gradient (spec-2 §B) */}
       <header
-        className="flex-shrink-0 flex items-center gap-3 px-4 py-4"
-        style={{ background: AMBER_GRAD, borderBottom: '1px solid rgba(201,168,76,0.3)' }}
+        className="flex-shrink-0 px-4 py-4"
+        style={{
+          background: `radial-gradient(70% 100% at 12% 0%, ${(ownerCiv?.color ?? '#c9a84c')}47, transparent 55%), ${AMBER_GRAD}`,
+          borderBottom: '1px solid rgba(201,168,76,0.3)',
+        }}
       >
-        <CivCrest civId={ownerPlayer?.civilizationId ?? ''} size={44} />
-        <div className="min-w-0">
-          <p className="font-body text-aetas-label text-[11px] uppercase tracking-wider truncate">{ownerLabel}</p>
-          <h2 className="font-display text-aetas-gold font-semibold leading-tight" style={{ fontSize: 25 }}>{city.name}</h2>
+        <div className="flex items-start gap-3">
+          <LeaderPortrait civId={ownerPlayer?.civilizationId ?? ''} size={60} />
+          <div className="min-w-0 flex-1">
+            <p className="font-body text-[11px] uppercase tracking-wider flex items-center gap-1.5 flex-wrap leading-none">
+              <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: ownerCiv?.color ?? '#c9a84c' }} />
+              <span style={{ color: ownerCiv?.colorLight ?? 'var(--color-aetas-muted)' }}>{ownerCivName ?? '?'}</span>
+              {isMyCity && <span className="text-aetas-dim">· {t('ui.you')}</span>}
+              {ownerPlayer?.isAIControlled && <span className="text-aetas-dim">· AI</span>}
+              <span className="text-aetas-dim">· LVL {city.level}</span>
+            </p>
+            <h2 className="font-display font-semibold text-aetas-gold-bright leading-tight truncate mt-1" style={{ fontSize: 24 }}>
+              {ownerCiv?.leaderName ?? ownerCivName ?? city.name}
+            </h2>
+            <p className="font-flavor italic text-aetas-muted text-xs truncate">{city.name} · {t('city.seat')}</p>
+          </div>
+          <div className="flex-shrink-0">
+            <SealButton variant="red" size="sm" onClick={onClose}>✕</SealButton>
+          </div>
         </div>
-        <div className="ml-auto flex-shrink-0">
-          <SealButton variant="red" size="sm" onClick={onClose}>✕</SealButton>
-        </div>
+
+        {/* Level bar (moved from the double-row) */}
+        {(() => {
+          const threshold = city.level === 1 ? 2 : 4
+          const pct = Math.min(100, Math.round((city.population / threshold) * 100))
+          return (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="flex-shrink-0 px-2 py-0.5 rounded-sm bg-aetas-gold/15 border border-aetas-gold/40 text-aetas-gold text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+                {t('city.level')} {city.level}
+              </span>
+              {isMyCity && city.level < 3 ? (
+                <>
+                  <div className="flex-1 h-1.5 rounded-sm overflow-hidden" style={{ background: 'rgba(122,79,30,0.3)' }}>
+                    <div className="h-full bg-aetas-gold transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-[10px] text-aetas-gold/80 whitespace-nowrap">
+                    {t('city.levelProgress', { pop: city.population, threshold, next: city.level + 1 })}
+                  </span>
+                </>
+              ) : city.level === 3 ? (
+                <span className="text-xs text-aetas-gold">{t('city.maxLevel')}</span>
+              ) : null}
+            </div>
+          )
+        })()}
       </header>
 
       {/* Scrollable body — centered column */}
@@ -144,39 +177,12 @@ export default function CityModal({ city, gameState, myEnginePlayerId, onClose, 
             </div>
           )}
 
-          {/* Double row — Specialization + Level */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Specialization card */}
-            <div className="rounded-sm p-3" style={{ background: 'rgba(111,143,74,0.10)', border: '1px solid rgba(111,143,74,0.25)' }}>
-              <p className="text-sm font-medium text-aetas-text mb-0.5">
-                {SPEC_ICON[city.specialization]} {t(SPEC_LABEL_KEY[city.specialization])}
-              </p>
-              <p className="text-xs text-aetas-dim">{t(SPEC_DESC_KEY[city.specialization])}</p>
-            </div>
-
-            {/* Level card */}
-            <div className="rounded-sm p-3" style={{ background: 'var(--color-aetas-panel)', border: '1px solid var(--color-aetas-border)' }}>
-              {isMyCity && city.level < 3 ? (() => {
-                const threshold = city.level === 1 ? 2 : 4
-                const nextLevel = city.level + 1
-                const pct = Math.min(100, Math.round((city.population / threshold) * 100))
-                return (
-                  <>
-                    <p className="font-display text-[10px] text-aetas-gold/80 mb-1.5">
-                      {t('city.levelProgress', { pop: city.population, threshold, next: nextLevel })}
-                    </p>
-                    <div className="h-1.5 rounded-sm overflow-hidden" style={{ background: 'rgba(122,79,30,0.3)' }}>
-                      <div className="h-full bg-aetas-gold transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                  </>
-                )
-              })() : (
-                <p className="text-sm font-medium text-aetas-gold">
-                  {city.level === 3 ? t('city.maxLevel') : `${t('city.level')} ${city.level}`}
-                </p>
-              )}
-              <p className="text-[11px] text-aetas-dim mt-1.5">🌾 {t('city.foodStored', { n: city.foodStored })}</p>
-            </div>
+          {/* Specialization card (full width; level moved to the header) */}
+          <div className="rounded-sm p-3" style={{ background: 'rgba(111,143,74,0.10)', border: '1px solid rgba(111,143,74,0.25)' }}>
+            <p className="text-sm font-medium text-aetas-text mb-0.5">
+              {SPEC_ICON[city.specialization]} {t(SPEC_LABEL_KEY[city.specialization])}
+            </p>
+            <p className="text-xs text-aetas-dim">{t(SPEC_DESC_KEY[city.specialization])}</p>
           </div>
 
           {/* Fortify city (own damaged cities only) */}
