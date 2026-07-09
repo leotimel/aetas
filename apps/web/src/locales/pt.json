@@ -391,7 +391,13 @@
     "xpGame": "Partida jogada",
     "xpVictory": "Vitória",
     "xpDaily": "Daily (jogada)",
-    "xpDailyWin": "Daily (vitória)"
+    "xpDailyWin": "Daily (vitória)",
+    "consulRank": "Rank de Cônsul",
+    "achievements": "Conquistas",
+    "achievementsComingSoon": "Sistema de conquistas em construção — em breve.",
+    "campaignProgress": "Progresso da Campanha",
+    "unlocked": "Desbloqueada",
+    "civilizationsCount": "Civilizações · {{unlocked}}/{{total}}"
   },
   "login": {
     "tagline": "Civilizações através das eras",

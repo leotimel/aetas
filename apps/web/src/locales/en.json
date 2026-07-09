@@ -391,7 +391,13 @@
     "xpGame": "Game played",
     "xpVictory": "Victory",
     "xpDaily": "Daily (played)",
-    "xpDailyWin": "Daily (victory)"
+    "xpDailyWin": "Daily (victory)",
+    "consulRank": "Consul Rank",
+    "achievements": "Achievements",
+    "achievementsComingSoon": "Achievement system under construction — coming soon.",
+    "campaignProgress": "Campaign Progress",
+    "unlocked": "Unlocked",
+    "civilizationsCount": "Civilizations · {{unlocked}}/{{total}}"
   },
   "login": {
     "tagline": "Civilizations through the ages",

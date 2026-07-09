@@ -2,3 +2,8 @@
 @import "tailwindcss";
 @import "./styles/tokens.css";
 @import "./styles/animations.css";
+
+/* Hide the scrollbar on horizontally-scrollable strips (e.g. the Campaign
+   Progress trail) while keeping native touch/drag scroll. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
