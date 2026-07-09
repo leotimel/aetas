@@ -530,6 +530,12 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       if (postState) setGameState(postState)
       else void fetchGame()
       addLog(formatCityAttackLog(preState, postState, unitId, cityId))
+      // Achievement counter: a city I now own that I didn't before = a capture.
+      const preCity = preState.cities.find(c => c.id === cityId)
+      const postCity = postState?.cities.find(c => c.id === cityId)
+      if (preCity && postCity && postCity.ownerId === enginePlayerId && preCity.ownerId !== enginePlayerId) {
+        void awardActionXp('city_captured', `${gameId}:capture:${cityId}:${enginePlayerId}`, 0)
+      }
       setSelectedUnitId(null)
     } else {
       addLog(`✗ ${errorLabel(res.error)}`)
@@ -584,6 +590,18 @@ export default function GameView({ gameId, userId, onBack }: Props) {
     if (res.ok) { setTradeTarget(null); applyOrFetch(res.data?.state) }
   }
 
+  // Achievement counter: a non-aggression pact I'm party to that didn't exist
+  // before = a pact I just signed. Idempotent action_id (amount 0 → no XP).
+  const firePactCounter = (pre: GameState, post: GameState) => {
+    const key = (p: { proposerId: string; acceptorId: string }) => [p.proposerId, p.acceptorId].sort().join('-')
+    const preKeys = new Set(pre.nonAggressionPacts.map(key))
+    for (const p of post.nonAggressionPacts) {
+      if ((p.proposerId === enginePlayerId || p.acceptorId === enginePlayerId) && !preKeys.has(key(p))) {
+        void awardActionXp('pact_signed', `${gameId}:pact:${key(p)}`, 0)
+      }
+    }
+  }
+
   const handleRespondDiplomacy = async (proposalId: string, accept: boolean) => {
     const preState = gameState!
     const res = await submitAction(gameId, { type: 'respondToDiplomacy', proposalId, accept })
@@ -592,9 +610,10 @@ export default function GameView({ gameId, userId, onBack }: Props) {
       if (postState) {
         setGameState(postState)
         for (const line of diffDiplomacyForLog(preState, postState)) addLog(line)
+        firePactCounter(preState, postState)
       } else {
         const fetched = await fetchGame()
-        if (fetched) for (const line of diffDiplomacyForLog(preState, fetched)) addLog(line)
+        if (fetched) { for (const line of diffDiplomacyForLog(preState, fetched)) addLog(line); firePactCounter(preState, fetched) }
       }
     } else {
       addLog(`✗ ${errorLabel(res.error)}`)

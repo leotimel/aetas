@@ -67,3 +67,7 @@ export const awardXp = (gameId: string) =>
 
 export const awardActionXp = (event: string, actionId: string, amount: number) =>
   post<{ xpGained: number; newXp: number; alreadyAwarded: boolean }>('/award-xp', { event, actionId, amount })
+
+/** Server-side re-check of achievements. No args = batch (all not-yet-unlocked). */
+export const checkAchievements = (achievementId?: string, gameId?: string) =>
+  post<{ unlocked: string[]; newly: string[] }>('/check-achievement', { achievementId, gameId })

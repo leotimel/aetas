@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../supabase.ts'
 import {
-  CIVILIZATIONS, CIVILIZATION_CATALOG, SPECIAL_UNIT_CATALOG,
+  CIVILIZATIONS, CIVILIZATION_CATALOG, SPECIAL_UNIT_CATALOG, ACHIEVEMENTS,
   xpToLevel, xpProgress, xpForNextLevel, unlockedCivs, LEVEL_XP_THRESHOLDS,
 } from '@aetas/game-engine'
+import { checkAchievements } from '../api.ts'
 import { CivCrest } from '../components/ui/CivCrest'
 import { CornerOrnaments } from '../components/ui/CornerOrnaments'
 
@@ -31,6 +32,8 @@ export default function ProfilePage({ userId, onClose }: Props) {
   const [displayName, setDisplayName] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [tutorialReset, setTutorialReset] = useState(false)
+  const [unlockedMap, setUnlockedMap] = useState<Record<string, string>>({})  // achievement_id → unlocked_at ISO
+  const [newlyAch, setNewlyAch] = useState<Set<string>>(new Set())
 
   const handleReactivateTutorial = () => {
     localStorage.removeItem('aetas-tutorial-done')
@@ -61,6 +64,18 @@ export default function ProfilePage({ userId, onClose }: Props) {
       .then(({ data }) => {
         if (data) setDisplayName((data as { display_name: string }).display_name)
       })
+    // Server-side re-check of all achievements on load, then read the
+    // authoritative roster (with unlock dates) back for display.
+    void (async () => {
+      const res = await checkAchievements()
+      if (res.ok && res.data) setNewlyAch(new Set(res.data.newly))
+      const { data } = await supabase
+        .from('user_achievements').select('achievement_id, unlocked_at').eq('user_id', userId)
+      if (data) {
+        const rows = data as { achievement_id: string; unlocked_at: string }[]
+        setUnlockedMap(Object.fromEntries(rows.map(r => [r.achievement_id, r.unlocked_at])))
+      }
+    })()
   }, [userId])
 
   const selectCiv = async (civId: string) => {
@@ -166,21 +181,38 @@ export default function ProfilePage({ userId, onClose }: Props) {
           </div>
         </div>
 
-        {/* Achievements — placeholder (real system: UI-F3) */}
-        <p className="text-aetas-label text-[11px] uppercase tracking-[0.2em] mb-2">{t('profile.achievements')}</p>
-        <div className="rounded-2xl p-4 mb-6" style={{ border: '1px solid rgba(201,169,78,0.18)', background: '#141009' }}>
-          <div className="grid grid-cols-5 gap-2 mb-3">
-            {['🏆', '⚔️', '👑', '🛡️', '⭐'].map((icon, i) => (
+        {/* Achievements */}
+        <p className="text-aetas-label text-[11px] uppercase tracking-[0.2em] mb-2">
+          {t('profile.achievements')} · {Object.keys(unlockedMap).length}/{ACHIEVEMENTS.length}
+        </p>
+        <div className="rounded-2xl p-4 mb-6 flex flex-col gap-2" style={{ border: '1px solid rgba(201,169,78,0.18)', background: '#141009' }}>
+          {ACHIEVEMENTS.map(a => {
+            const unlockedAt = unlockedMap[a.id]
+            const unlocked = unlockedAt !== undefined
+            const isNew = newlyAch.has(a.id)
+            return (
               <div
-                key={i}
-                className="aspect-square rounded-lg flex items-center justify-center text-lg"
-                style={{ border: '1px dashed rgba(201,169,78,0.28)', background: 'rgba(201,169,78,0.04)', color: '#4a4032' }}
+                key={a.id}
+                className={`flex items-center gap-3 rounded-lg p-2.5 ${isNew ? 'anim-glowpulse' : ''}`}
+                style={{
+                  border: unlocked ? '1px solid rgba(201,169,78,0.3)' : '1px solid rgba(201,169,78,0.1)',
+                  background: unlocked ? 'rgba(201,169,78,0.06)' : 'transparent',
+                }}
               >
-                {icon}
+                <span className="text-2xl flex-shrink-0" style={{ filter: unlocked ? 'none' : 'grayscale(1)', opacity: unlocked ? 1 : 0.35 }}>{a.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <p className={`font-body font-semibold text-sm ${unlocked ? 'text-aetas-gold-bright' : 'text-aetas-dim'}`}>{a.name}</p>
+                  <p className="text-aetas-dim text-xs leading-tight">{a.description}</p>
+                </div>
+                {unlocked && (
+                  <span className="flex-shrink-0 text-right">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider" style={{ color: '#7bbf6a' }}>{t('profile.unlocked')}</span>
+                    <span className="block text-[9px] text-aetas-dim">{new Date(unlockedAt).toLocaleDateString(i18n.language)}</span>
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-          <p className="text-aetas-dim text-xs text-center">{t('profile.achievementsComingSoon')}</p>
+            )
+          })}
         </div>
 
         {/* Campaign Progress — winding level trail (replaces the old flat ladder) */}

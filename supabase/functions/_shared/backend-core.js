@@ -2797,6 +2797,119 @@ function resolveWorldEvents(state, round) {
   return { ...s, lastEvents: events };
 }
 
+// ../game-engine/src/achievements.ts
+var CATALOG_ENTRIES5 = [
+  {
+    id: "first_win",
+    icon: "\u{1F3C6}",
+    category: "victory",
+    name: "Primeira Vit\xF3ria",
+    description: "Ven\xE7a sua primeira partida.",
+    condition: { kind: "winCount", threshold: 1 }
+  },
+  {
+    id: "veteran",
+    icon: "\u{1F3C6}",
+    category: "victory",
+    name: "Veterano",
+    description: "Ven\xE7a 10 partidas.",
+    condition: { kind: "winCount", threshold: 10 }
+  },
+  {
+    id: "first_blood",
+    icon: "\u2694\uFE0F",
+    category: "combat",
+    name: "Primeiro Sangue",
+    description: "Ven\xE7a seu primeiro combate.",
+    condition: { kind: "eventCount", event: "combat_won", threshold: 1 }
+  },
+  {
+    id: "total_domination",
+    icon: "\u2694\uFE0F",
+    category: "combat",
+    name: "Domina\xE7\xE3o Total",
+    description: "Ven\xE7a eliminando todos os oponentes.",
+    condition: { kind: "gameState", check: "domination" }
+  },
+  {
+    id: "conqueror",
+    icon: "\u2694\uFE0F",
+    category: "combat",
+    name: "Conquistador",
+    description: "Capture 5 cidades inimigas.",
+    condition: { kind: "eventCount", event: "city_captured", threshold: 5 }
+  },
+  {
+    id: "consul",
+    icon: "\u{1F451}",
+    category: "level",
+    name: "C\xF4nsul",
+    description: "Alcance o n\xEDvel 5.",
+    condition: { kind: "level", threshold: 5 }
+  },
+  {
+    id: "emperor",
+    icon: "\u{1F451}",
+    category: "level",
+    name: "Imperador",
+    description: "Alcance o n\xEDvel 20 (m\xE1ximo).",
+    condition: { kind: "level", threshold: 20 }
+  },
+  {
+    id: "collector",
+    icon: "\u{1F451}",
+    category: "level",
+    name: "Colecionador",
+    description: "Desbloqueie todas as civiliza\xE7\xF5es.",
+    condition: { kind: "allCivs" }
+  },
+  {
+    id: "architect",
+    icon: "\u{1F6E1}\uFE0F",
+    category: "building",
+    name: "Arquiteto",
+    description: "Construa uma Maravilha do Mundo.",
+    condition: { kind: "gameState", check: "wonder" }
+  },
+  {
+    id: "metropolis",
+    icon: "\u{1F6E1}\uFE0F",
+    category: "building",
+    name: "Metr\xF3pole",
+    description: "Leve uma cidade ao n\xEDvel 3.",
+    condition: { kind: "gameState", check: "metropolis" }
+  },
+  {
+    id: "founder",
+    icon: "\u2B50",
+    category: "expansion",
+    name: "Fundador",
+    description: "Funde uma segunda cidade.",
+    condition: { kind: "eventCount", event: "city_founded", threshold: 2 }
+  },
+  {
+    id: "diplomat",
+    icon: "\u2B50",
+    category: "expansion",
+    name: "Diplomata",
+    description: "Assine 5 pactos de n\xE3o-agress\xE3o.",
+    condition: { kind: "eventCount", event: "pact_signed", threshold: 5 }
+  },
+  {
+    id: "streak7",
+    icon: "\u2B50",
+    category: "expansion",
+    name: "Sequ\xEAncia de 7",
+    description: "7 dias seguidos no desafio di\xE1rio.",
+    condition: { kind: "dailyStreak", threshold: 7 }
+  }
+];
+var ACHIEVEMENT_CATALOG = new Map(CATALOG_ENTRIES5.map((a) => [a.id, a]));
+var ACHIEVEMENTS = CATALOG_ENTRIES5;
+function getAchievement(id) {
+  return ACHIEVEMENT_CATALOG.get(id);
+}
+
 // src/orchestration.ts
 var TURN_TIMEOUT_MS = 24 * 60 * 60 * 1e3;
 var FULL_HOOKS = { resolveTimedOutDispute, determineWinner, resolveWorldEvents };
@@ -2929,6 +3042,8 @@ async function sweepTimeouts(repo, params) {
   return summary;
 }
 export {
+  ACHIEVEMENTS,
+  ACHIEVEMENT_CATALOG,
   ACTIVE_DEFENSE_BONUS,
   BARBARIAN_OWNER_ID,
   BARB_CITY_DAMAGE,
@@ -3005,6 +3120,7 @@ export {
   eraAtLeast,
   finalizeIfDominated,
   generateMap,
+  getAchievement,
   getBuildingDef,
   getBuildingsBySpecialization,
   getCityDefenseBonus,
