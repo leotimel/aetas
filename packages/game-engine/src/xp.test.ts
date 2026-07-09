@@ -47,9 +47,9 @@ describe('xpToLevel', () => {
   it('1050 XP → nível 7', () => expect(xpToLevel(1050)).toBe(7))
   it('1400 XP → nível 8', () => expect(xpToLevel(1400)).toBe(8))
   it('1800 XP → nível 9', () => expect(xpToLevel(1800)).toBe(9))
-  it('9999 XP → nível máximo (não lança)', () => {
-    const level = xpToLevel(9999)
-    expect(level).toBeGreaterThanOrEqual(9)
+  it('99999 XP → nível máximo 20 (não lança)', () => {
+    const level = xpToLevel(99999)
+    expect(level).toBe(20)
   })
   it('nível nunca fica abaixo de 1 mesmo com XP 0', () => {
     expect(xpToLevel(0)).toBeGreaterThanOrEqual(1)
@@ -61,7 +61,8 @@ describe('xpToLevel', () => {
 describe('xpForNextLevel', () => {
   it('nível 1 → próximo em 50', () => expect(xpForNextLevel(1)).toBe(50))
   it('nível 2 → próximo em 150', () => expect(xpForNextLevel(2)).toBe(150))
-  it('nível 9 (max) → Infinity', () => expect(xpForNextLevel(9)).toBe(Infinity))
+  it('nível 9 → próximo em 2250 (deixou de ser o teto na expansão pra 20 níveis)', () => expect(xpForNextLevel(9)).toBe(2250))
+  it('nível 20 (max) → Infinity', () => expect(xpForNextLevel(20)).toBe(Infinity))
 })
 
 // ─── Suite 4 — xpProgress ────────────────────────────────────────────────────
@@ -94,8 +95,8 @@ describe('xpProgress', () => {
     }
   })
 
-  it('no nível máximo (1800 XP), cur e range são 0 (sem próximo nível)', () => {
-    const [cur, range] = xpProgress(1800)
+  it('no nível máximo (9500 XP), cur e range são 0 (sem próximo nível)', () => {
+    const [cur, range] = xpProgress(9500)
     expect(cur).toBe(0)
     expect(range).toBe(0)
   })
