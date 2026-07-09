@@ -3282,6 +3282,212 @@ com `aetas-3a/3c/3d.png`.
 
 ---
 
+## BLOCO UI-F — Perfil: níveis, nick e sistema de conquistas
+
+Origem: `docs/design/AETAS-design-spec-3.md` + `docs/design/aetas-4b-profile.png`.
+Redesenha a tela de Perfil (`apps/web/src/pages/ProfilePage.tsx`) e adiciona
+duas mecânicas de meta-progressão novas. Decisões travadas via AskUserQuestions:
+
+- **Nick do jogador**: entra como uma linha dentro do card de Nível/Rank
+  (acima de "CONSUL RANK"), mantendo "◆ PROFILE ◆" como título fixo do header
+  (fiel ao spec-3 §1). Fonte = `user_profiles.display_name` (o mesmo fetch que
+  o `GameListPage` já usa desde o UI-D2 — o `ProfilePage` NÃO busca isso hoje).
+- **Níveis**: expandir de 9 para **20 níveis**, mesma fórmula triangular
+  (`25·n·(n+1)`); redistribuir os `unlockLevel` das 10 civs no novo range.
+- **Conquistas**: primeiro só o **placeholder visual** do spec §3 (UI-F2);
+  depois o **sistema real** (schema + lógica de desbloqueio + UI) num bloco
+  próprio (UI-F3), com a lista inicial de 13 conquistas já aprovada.
+
+Estado real auditado: não existe NADA de conquistas no projeto. XP é
+concedido por `award-xp` Edge Function (2 modos: fim de jogo idempotente via
+`games.xp_awarded`, e granular via `xp_events(user_id, action_id)` UNIQUE).
+`LEVEL_XP_THRESHOLDS` e `xpToLevel/xpProgress/xpForNextLevel` moram em
+`packages/game-engine/src/civs.ts`. A "Level ladder" atual (grade simples) e o
+grid 2-col de civs são o que o spec-3 §4/§6 substituem.
+
+---
+
+### UI-F1 — Expandir o sistema de níveis (9 → 20) · Sonnet 🧠
+
+```
+Expanda a progressão de níveis de 9 para 20 em
+`packages/game-engine/src/civs.ts`, mantendo a MESMA fórmula triangular que a
+curva atual já segue (cada nível N pede 25·N·(N+1) de XP acumulado).
+
+1. `LEVEL_XP_THRESHOLDS` passa a ter 20 entradas (índice 0 = nível 1):
+   [0, 50, 150, 300, 500, 750, 1050, 1400, 1800, 2250, 2750, 3300, 3900,
+    4550, 5250, 6000, 6800, 7650, 8550, 9500]
+   (Confira: é 25·(i)·(i+1) para i=0..19. As 9 primeiras batem com as de
+   hoje, então ninguém perde nível.)
+
+2. As funções `xpToLevel`/`xpForNextLevel`/`xpProgress` já iteram sobre o
+   array — NÃO hardcodam 9. Confirme que continuam corretas com 20 entradas
+   (nível máximo agora é 20; `xpForNextLevel(20)` deve retornar Infinity).
+
+3. Redistribuir `unlockLevel` das 10 civs em `CIVILIZATIONS` (mesmo arquivo)
+   pro novo range, mantendo os 2 starters no nível 1:
+     romans 1 · greeks 1 · vikings 4 · egyptians 6 · persians 8 · mongols 10 ·
+     aztecs 12 · china 14 · japanese 16 · ottomans 18.
+
+4. Se algum teste em `packages/game-engine` fixar o length do array (9) ou um
+   unlockLevel específico, ajuste o teste; rodar
+   `pnpm --filter @aetas/game-engine test` — sem regressão além das 3 falhas
+   pré-existentes conhecidas (checkpoint full-sim, combat 24/25).
+
+NÃO tocar UI neste prompt. NÃO mudar a semântica de XP (fontes de XP e valores
++10/+35/+15/+50 continuam).
+
+pnpm --filter @aetas/game-engine test
+
+# 🔻 civs.ts ∈ game-engine → regenerar bundle (higiene; nenhuma Edge Function
+#    depende de threshold/level hoje, então deploy é opcional):
+pnpm --filter @aetas/backend-core bundle
+```
+
+✅ **Commit:** `"feat(ui-f1): expand level system to 20 levels + redistribute civ unlocks"`
+
+---
+
+### UI-F2 — Redesign visual do Perfil + nick do jogador · Sonnet 🧠
+
+```
+Redesenhe `apps/web/src/pages/ProfilePage.tsx` seguindo
+`docs/design/AETAS-design-spec-3.md` e a imagem `aetas-4b-profile.png`. Reuse
+os tokens/componentes das specs 1 e 2 (Cinzel, `--color-aetas-gold-bright`,
+`font-flavor`, `CivCrest`, cantos ornamentais do DailyCard). Ordem das seções:
+Header → Card de Nível/Rank → Conquistas (placeholder) → Campaign Progress →
+Tutorial → Civilizations.
+
+1. HEADER (spec §1): mantém as 3 zonas atuais (Back · EN|PT · Logout, já
+   presentes) mas restilizado: centro com "◆ PROFILE ◆" (Cinzel 800,
+   `--color-aetas-gold-bright`, losangos dourados nas laterais); fundo
+   `radial-gradient(120% 100% at 50% 0%, #241a0b, #120d06)`, borda inferior
+   ouro sutil. NÃO substituir "PROFILE" pelo nick — o nick vai no card de Rank.
+
+2. NICK: buscar `user_profiles.display_name` (`.eq('id', userId)`) — MESMO
+   padrão do `GameListPage.tsx` (que já lê essa tabela); fallback
+   `t('list.playerFallback')`. Renderizar o nick (Barlow 700, `--text`) como
+   uma linha DENTRO do card de Nível/Rank, ACIMA do rótulo "CONSUL RANK".
+
+3. CARD DE NÍVEL/RANK (spec §2): emblema = escudo com o NÚMERO do nível dentro
+   (reusar o path/gradiente de escudo do `CivCrest.tsx` — extrair o
+   `<svg>` do escudo pra um helper compartilhável OU renderizar um escudo
+   simples com o número; NÃO forçar o `CivCrest` a virar outra coisa).
+   Rótulo "CONSUL RANK" → "Level {N}" (Cinzel) → "{xp} XP total · {status}".
+   Barra de progresso cheia (`--gold-btn`); no nível máximo, 100%. O grid 2×2
+   de estatísticas (as 4 fontes de XP +10/+35/+15/+50) é MANTIDO como está
+   hoje — são fontes de XP, não conquistas.
+
+4. CONQUISTAS (spec §3) — SÓ PLACEHOLDER: título "CONQUISTAS", card com 5
+   slots quadrados tracejados (ícones apagados troféu/espadas/coroa/escudo/
+   estrela) + texto "Sistema de conquistas em construção — em breve." NÃO
+   inventar conquistas reais aqui (o sistema vem no UI-F3).
+
+5. CAMPAIGN PROGRESS (spec §4): substitui a "Level ladder" atual por uma
+   TRILHA horizontal com scroll SEM barra visível (`scrollbar-width:none` +
+   `::-webkit-scrollbar{display:none}` — pode precisar de uma classe utilitária
+   nova em `index.css`/`tokens`). Renderiza dinamicamente os N níveis de
+   `LEVEL_XP_THRESHOLDS` (agora 20): marcos (círculos com número + XP
+   necessário), linha conectora SVG ondulada (trecho alcançado em `--gold`,
+   futuro em cinza), marco atual maior com glow e "{xp} · YOU". Deslocamento
+   vertical alternado pros marcos (sensação de caminho).
+
+6. TUTORIAL (spec §5): sem mudança estrutural, só restilo do botão
+   "Reactivate".
+
+7. CIVILIZATIONS (spec §6): grid vira COLUNA ÚNICA full-width. Cada card:
+   `<CivCrest civId={civ.id}>` à esquerda (reusar — NÃO desenhar 10 emblemas
+   à mão); wash da cor da civ no fundo; nome + bônus (do
+   `CIVILIZATION_CATALOG`) + unidade especial "★ {nome}"; badge de estado
+   (UNLOCKED verde / 🔒 LVL {N}); locked → opacidade ~.6, crista cinza,
+   descrição trocada por "Alcance Level {N} para desbloquear." Título com
+   contador "CIVILIZATIONS · {desbloqueadas}/{total}". Mantém o
+   clique-para-selecionar (`selectCiv`) que já existe.
+
+i18n para todos os rótulos novos. `pnpm --filter @aetas/web build`.
+```
+
+✅ **Commit:** `"feat(ui-f2): profile redesign — nick, rank card, campaign trail, civ cards"`
+
+🛑 **CHECKPOINT UI-F2:** Abrir o Perfil e conferir: nick real no card de Rank;
+a trilha de 20 níveis rola horizontalmente SEM barra de rolagem visível
+(testar em DevTools mobile); civs bloqueadas mostram "🔒 LVL {N}" e as
+desbloqueadas "UNLOCKED"; selecionar uma civ ainda funciona.
+
+---
+
+### UI-F3 — Sistema de conquistas (schema + lógica + UI) · **Opus** 🔴 🧠
+
+```
+Implemente o sistema de CONQUISTAS de verdade — motor, backend e UI. Planeje
+antes de codar (🧠): defina o catálogo, o schema e o gatilho de desbloqueio,
+e SÓ DEPOIS implemente.
+
+1. CATÁLOGO (motor) — novo `packages/game-engine/src/achievements.ts`, mesmo
+   padrão de `wonders.ts`/`WONDER_CATALOG`:
+   `AchievementDefinition { id, icon, category, name, description,
+   condition }` onde `category` ∈ 'victory'|'combat'|'level'|'building'|
+   'expansion'. Catálogo estático `ACHIEVEMENTS` com as 13 conquistas:
+     🏆 first_win — vencer 1 partida
+     🏆 veteran — vencer 10 partidas
+     ⚔️ first_blood — vencer o primeiro combate
+     ⚔️ total_domination — vencer eliminando todos os oponentes
+     ⚔️ conqueror — capturar 5 cidades inimigas (acumulado)
+     👑 consul — alcançar nível 5
+     👑 emperor — alcançar nível 20 (máximo)
+     👑 collector — desbloquear as 10 civilizações
+     🛡️ architect — construir uma Maravilha do Mundo
+     🛡️ metropolis — uma cidade alcança nível 3
+     ⭐ founder — fundar uma 2ª cidade
+     ⭐ diplomat — assinar 5 pactos de não-agressão (acumulado)
+     ⭐ streak7 — 7 dias seguidos no desafio diário
+   Exportar via `index.ts`. Testes em `achievements.test.ts` (integridade do
+   catálogo; ids únicos).
+
+2. SCHEMA — nova migration `supabase/migrations/2026...._achievements.sql`:
+   tabela `user_achievements(user_id uuid, achievement_id text, unlocked_at
+   timestamptz default now(), PRIMARY KEY (user_id, achievement_id))`. RLS:
+   dono lê os seus; escrita só via service role (Edge Function). (Idempotência
+   pela PK composta — não precisa de `xp_events`.)
+
+3. DESBLOQUEIO (backend) — nova Edge Function `check-achievement` espelhando o
+   padrão do `award-xp`: recebe `{ achievementId, gameId? }`, valida a
+   condição SERVER-SIDE sempre que possível (ex.: vitórias/cidades capturadas
+   contadas em `games`/`game_players`, nível derivado de `profiles.xp`,
+   civs desbloqueadas de `xpToLevel`), e faz `INSERT ... ON CONFLICT DO
+   NOTHING` em `user_achievements`. Retornar `{ unlocked: boolean, newly:
+   boolean }`. Conquistas puramente de conta (nível/civs/streak) podem ser
+   reavaliadas no load do Perfil; as de partida (vitória/combate/maravilha/
+   captura/fundação/pacto) são disparadas pelo cliente NO evento (como o
+   `awardActionXp` já faz), mas a Edge Function reconfere antes de gravar.
+   NÃO confiar cegamente no cliente.
+
+4. UI — na seção Conquistas do `ProfilePage` (que era placeholder no UI-F2):
+   buscar `user_achievements` do usuário, cruzar com `ACHIEVEMENTS`, e render
+   os cards reais (desbloqueada = ícone colorido + data; bloqueada = ícone
+   apagado + descrição do critério). Um toast/realce quando uma nova é
+   desbloqueada (reusar o padrão de `XpToast`/`EventToast`).
+
+pnpm --filter @aetas/game-engine test
+pnpm --filter @aetas/web build
+
+# 🔻 Mudou o motor + backend → bundle + deploy (functions E migration):
+pnpm --filter @aetas/backend-core bundle
+npx supabase db push        # aplica a migration nova
+npx supabase functions deploy
+```
+
+✅ **Commit:** `"feat(ui-f3): achievements system — catalog, schema, unlock logic, UI"`
+
+🛑 **CHECKPOINT UI-F FINAL:** Numa partida real, disparar pelo menos uma
+conquista de partida (ex.: vencer um combate → `first_blood`) e uma de conta
+(ex.: já estar no nível ≥5 → `consul`): confirmar que aparecem como
+desbloqueadas no Perfil, com data, e que reabrir o Perfil não duplica nem
+reseta. Conferir que uma conquista NÃO se desbloqueia sozinha sem cumprir o
+critério (a Edge Function recusa gravação sem a condição server-side).
+
+---
+
 ## FASE 5 — Android nativo (Kotlin + Jetpack Compose)
 
 **Arquitetura thin-client:** o motor de jogo roda 100% no servidor (Edge
